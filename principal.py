@@ -14,7 +14,7 @@ class AplicacionGit:
 
     Las operaciones locales y remotas pasan por ServicioRemotoGit.
 
-    Las operaciones de red se ejecutan en un hilo secundario
+    Las operaciones de red se ejecutan en hilos secundarios
     para evitar que la interfaz de Tkinter se congele.
     """
 
@@ -22,42 +22,42 @@ class AplicacionGit:
         # Ventana principal de Tkinter.
         self.ventana_principal = ventana_principal
 
-        # Servicio que contiene operaciones locales,
-        # Fetch, sincronización y Push seguro.
+        # Servicio que contiene las operaciones locales,
+        # Fetch, Pull y Push.
         self.servicio_git = ServicioRemotoGit()
 
         # Repositorio actualmente seleccionado.
         self.ruta_repositorio = ""
 
-        # Lista de remotos del repositorio actual.
+        # Lista de remotos del repositorio seleccionado.
         self.remotos_repositorio = []
 
-        # Relaciona las filas de la tabla con CambioArchivo.
+        # Relaciona las filas visuales con CambioArchivo.
         self.cambios_por_elemento = {}
 
-        # Indica si actualmente existen cambios pendientes.
+        # Indica si existen cambios pendientes de commit.
         self.hay_cambios_pendientes = False
 
         # Guarda el último EstadoSincronizacion calculado.
         self.estado_sincronizacion_actual = None
 
-        # Para habilitar Push exigimos al menos un Fetch
-        # exitoso durante la sesión actual del repositorio.
+        # Pull y Push solamente se habilitan después
+        # de un Fetch exitoso durante la sesión actual.
         self.fetch_exitoso_en_sesion = False
 
-        # Los hilos secundarios nunca modifican
-        # directamente los controles de Tkinter.
+        # Los hilos secundarios devolverán resultados
+        # mediante esta cola.
         self.cola_resultados = queue.Queue()
 
-        # Evita ejecutar dos operaciones de red simultáneamente.
+        # Evita ejecutar varias operaciones remotas simultáneamente.
         self.operacion_remota_en_curso = False
 
         self.configurar_ventana()
         self.crear_interfaz()
         self.verificar_git()
 
-        # Tkinter revisará periódicamente si algún hilo
-        # secundario dejó resultados en la cola.
+        # Tkinter revisará periódicamente la cola
+        # de resultados de los hilos.
         self.ventana_principal.after(
             100,
             self.procesar_cola_resultados
@@ -414,7 +414,7 @@ class AplicacionGit:
         ttk.Label(
             marco_sincronizacion,
             textvariable=self.variable_estado_sincronizacion,
-            wraplength=720
+            wraplength=650
         ).grid(
             row=1,
             column=1,
@@ -423,7 +423,10 @@ class AplicacionGit:
             pady=(8, 0)
         )
 
-        # Marco separado para las operaciones remotas.
+        # ---------------------------------------------------------
+        # Botones remotos
+        # ---------------------------------------------------------
+
         marco_botones_remotos = ttk.Frame(
             marco_sincronizacion
         )
@@ -445,6 +448,18 @@ class AplicacionGit:
 
         self.boton_fetch.pack(
             side=tk.LEFT
+        )
+
+        self.boton_pull = ttk.Button(
+            marco_botones_remotos,
+            text="Pull",
+            command=self.iniciar_pull,
+            state=tk.DISABLED
+        )
+
+        self.boton_pull.pack(
+            side=tk.LEFT,
+            padx=(10, 0)
         )
 
         self.boton_push = ttk.Button(
@@ -802,7 +817,7 @@ class AplicacionGit:
         Valida y carga un repositorio.
 
         Cuando reiniciar_fetch es True se exige un nuevo Fetch
-        antes de habilitar Push.
+        antes de habilitar Pull o Push.
         """
 
         self.variable_estado.set(
@@ -884,7 +899,7 @@ class AplicacionGit:
 
         self.cargar_cambios()
 
-        # Esta consulta utiliza únicamente referencias locales.
+        # Esta consulta no accede a Internet.
         self.cargar_estado_sincronizacion_local()
 
     def cargar_cambios(self):
@@ -910,7 +925,7 @@ class AplicacionGit:
 
             self.deshabilitar_botones_de_archivos()
 
-            self.actualizar_estado_boton_push()
+            self.actualizar_estado_botones_sincronizacion()
 
             messagebox.showerror(
                 "Error al consultar Git",
@@ -990,7 +1005,7 @@ class AplicacionGit:
             )
         )
 
-        self.actualizar_estado_boton_push()
+        self.actualizar_estado_botones_sincronizacion()
 
         if cantidad == 0:
             self.variable_estado.set(
@@ -1009,10 +1024,10 @@ class AplicacionGit:
 
     def cargar_estado_sincronizacion_local(self):
         """
-        Muestra el estado basado en las referencias
-        disponibles localmente.
+        Muestra el estado utilizando únicamente
+        las referencias disponibles localmente.
 
-        Este método NO realiza conexión de red.
+        No realiza conexión de red.
         """
 
         if not self.ruta_repositorio:
@@ -1047,7 +1062,7 @@ class AplicacionGit:
                 estado.error
             )
 
-            self.actualizar_estado_boton_push()
+            self.actualizar_estado_botones_sincronizacion()
 
             return
 
@@ -1086,7 +1101,7 @@ class AplicacionGit:
             estado.mensaje
         )
 
-        self.actualizar_estado_boton_push()
+        self.actualizar_estado_botones_sincronizacion()
 
     def actualizar_repositorio(self):
         """
@@ -1103,6 +1118,10 @@ class AplicacionGit:
             self.ruta_repositorio,
             reiniciar_fetch=False
         )
+
+    # =============================================================
+    # FETCH
+    # =============================================================
 
     def iniciar_fetch(self):
         """
@@ -1195,6 +1214,223 @@ class AplicacionGit:
             )
         )
 
+    # =============================================================
+    # PULL
+    # =============================================================
+
+    def iniciar_pull(self):
+        """
+        Prepara y confirma un Pull seguro.
+
+        La operación real se ejecuta en un hilo secundario.
+        """
+
+        if self.operacion_remota_en_curso:
+            return
+
+        if not self.ruta_repositorio:
+            return
+
+        if not self.fetch_exitoso_en_sesion:
+            messagebox.showinfo(
+                "Fetch requerido",
+                (
+                    "Ejecute Fetch antes de realizar Pull.\n\n"
+                    "Además, el motor de Pull realizará otro Fetch "
+                    "inmediatamente antes de descargar los commits."
+                )
+            )
+
+            return
+
+        # Consultamos nuevamente el área de trabajo.
+        resultado_cambios = self.servicio_git.obtener_cambios(
+            self.ruta_repositorio
+        )
+
+        if not resultado_cambios.exitoso:
+            messagebox.showerror(
+                "No se puede realizar Pull",
+                resultado_cambios.error
+            )
+
+            return
+
+        if resultado_cambios.cambios:
+            self.cargar_cambios()
+
+            messagebox.showwarning(
+                "Cambios pendientes",
+                (
+                    "No se realizará Pull porque existen cambios "
+                    "sin commit en el repositorio.\n\n"
+                    "La aplicación exige un área de trabajo "
+                    "completamente limpia."
+                )
+            )
+
+            return
+
+        estado = self.servicio_git.obtener_estado_sincronizacion(
+            self.ruta_repositorio
+        )
+
+        self.aplicar_estado_sincronizacion(
+            estado
+        )
+
+        if not estado.exitoso:
+            messagebox.showerror(
+                "No se puede realizar Pull",
+                estado.error
+            )
+
+            return
+
+        if not estado.upstream_configurado:
+            messagebox.showwarning(
+                "Upstream no configurado",
+                (
+                    "No se puede realizar Pull porque la rama "
+                    "actual no tiene upstream configurado."
+                )
+            )
+
+            return
+
+        if estado.divergente:
+            messagebox.showwarning(
+                "Ramas divergentes",
+                (
+                    "No se realizará Pull porque la rama local "
+                    "y la rama remota han divergido.\n\n"
+                    f"Por enviar: {estado.commits_por_subir}\n"
+                    f"Por descargar: {estado.commits_por_bajar}\n\n"
+                    "La aplicación no realizará Merge ni Rebase "
+                    "automáticamente."
+                )
+            )
+
+            return
+
+        if estado.commits_por_subir > 0:
+            messagebox.showwarning(
+                "Hay commits locales",
+                (
+                    "No se realizará Pull porque existen commits "
+                    "locales pendientes de enviar.\n\n"
+                    f"Por enviar: {estado.commits_por_subir}"
+                )
+            )
+
+            return
+
+        if estado.commits_por_bajar <= 0:
+            messagebox.showinfo(
+                "Nada para descargar",
+                "No hay commits remotos pendientes de descargar."
+            )
+
+            return
+
+        mensaje_confirmacion = (
+            self._crear_mensaje_confirmacion_pull(
+                estado
+            )
+        )
+
+        confirmado = messagebox.askyesno(
+            "Confirmar Pull",
+            mensaje_confirmacion
+        )
+
+        if not confirmado:
+            return
+
+        ruta_repositorio = (
+            self.ruta_repositorio
+        )
+
+        self.operacion_remota_en_curso = True
+
+        self.actualizar_controles_operacion_remota()
+
+        self.variable_estado.set(
+            "Verificando el remoto y ejecutando Pull..."
+        )
+
+        self.variable_ultima_consulta.set(
+            (
+                "Pull en curso. Se ejecutará Fetch nuevamente "
+                "antes de descargar."
+            )
+        )
+
+        hilo_pull = threading.Thread(
+            target=self.trabajo_pull,
+            args=(
+                ruta_repositorio,
+            ),
+            daemon=True
+        )
+
+        hilo_pull.start()
+
+    def trabajo_pull(
+        self,
+        ruta_repositorio
+    ):
+        """
+        Ejecuta Pull seguro fuera del hilo principal.
+
+        Este método nunca modifica controles Tkinter.
+        """
+
+        resultado_pull = (
+            self.servicio_git.ejecutar_pull_seguro(
+                ruta_repositorio
+            )
+        )
+
+        resultado_fetch_final = None
+        estado_sincronizacion = None
+
+        if resultado_pull.exitoso:
+            resultado_remoto = (
+                self.servicio_git.obtener_remoto_sincronizacion(
+                    ruta_repositorio
+                )
+            )
+
+            if resultado_remoto.exitoso:
+                resultado_fetch_final = (
+                    self.servicio_git.ejecutar_fetch(
+                        ruta_repositorio,
+                        resultado_remoto.salida
+                    )
+                )
+
+                if resultado_fetch_final.exitoso:
+                    estado_sincronizacion = (
+                        self.servicio_git.obtener_estado_sincronizacion(
+                            ruta_repositorio
+                        )
+                    )
+
+        self.cola_resultados.put(
+            (
+                "pull",
+                ruta_repositorio,
+                resultado_pull,
+                resultado_fetch_final,
+                estado_sincronizacion
+            )
+        )
+
+    # =============================================================
+    # PUSH
+    # =============================================================
+
     def iniciar_push(self):
         """
         Prepara y confirma un Push seguro.
@@ -1220,8 +1456,6 @@ class AplicacionGit:
 
             return
 
-        # Volvemos a consultar los archivos justo antes
-        # de mostrar la confirmación.
         resultado_cambios = self.servicio_git.obtener_cambios(
             self.ruta_repositorio
         )
@@ -1249,8 +1483,6 @@ class AplicacionGit:
 
             return
 
-        # Recalculamos la sincronización usando las referencias
-        # obtenidas por el último Fetch.
         estado = self.servicio_git.obtener_estado_sincronizacion(
             self.ruta_repositorio
         )
@@ -1300,8 +1532,10 @@ class AplicacionGit:
 
             return
 
-        mensaje_confirmacion = self._crear_mensaje_confirmacion_push(
-            estado
+        mensaje_confirmacion = (
+            self._crear_mensaje_confirmacion_push(
+                estado
+            )
         )
 
         confirmado = messagebox.askyesno(
@@ -1325,7 +1559,10 @@ class AplicacionGit:
         )
 
         self.variable_ultima_consulta.set(
-            "Push en curso. Se ejecutará Fetch nuevamente antes de enviar."
+            (
+                "Push en curso. Se ejecutará Fetch nuevamente "
+                "antes de enviar."
+            )
         )
 
         hilo_push = threading.Thread(
@@ -1358,8 +1595,6 @@ class AplicacionGit:
         estado_sincronizacion = None
 
         if resultado_push.exitoso:
-            # Después del Push hacemos un Fetch final para
-            # comprobar el estado remoto definitivo.
             resultado_remoto = (
                 self.servicio_git.obtener_remoto_sincronizacion(
                     ruta_repositorio
@@ -1391,6 +1626,10 @@ class AplicacionGit:
             )
         )
 
+    # =============================================================
+    # COLA DE RESULTADOS
+    # =============================================================
+
     def procesar_cola_resultados(self):
         """
         Procesa los resultados enviados por los hilos secundarios.
@@ -1406,6 +1645,11 @@ class AplicacionGit:
 
                 if tipo_operacion == "fetch":
                     self.procesar_resultado_fetch(
+                        *elemento[1:]
+                    )
+
+                elif tipo_operacion == "pull":
+                    self.procesar_resultado_pull(
                         *elemento[1:]
                     )
 
@@ -1451,7 +1695,7 @@ class AplicacionGit:
                 "El último Fetch no pudo completarse."
             )
 
-            self.actualizar_estado_boton_push()
+            self.actualizar_estado_botones_sincronizacion()
 
             detalle = (
                 resultado_fetch.error
@@ -1470,10 +1714,13 @@ class AplicacionGit:
 
         if estado_sincronizacion is None:
             self.variable_estado.set(
-                "Fetch completado, pero no se pudo calcular el estado."
+                (
+                    "Fetch completado, pero no se pudo "
+                    "calcular el estado."
+                )
             )
 
-            self.actualizar_estado_boton_push()
+            self.actualizar_estado_botones_sincronizacion()
 
             return
 
@@ -1491,8 +1738,108 @@ class AplicacionGit:
             )
         else:
             self.variable_estado.set(
-                "Fetch completado, pero el estado no pudo calcularse."
+                (
+                    "Fetch completado, pero el estado "
+                    "no pudo calcularse."
+                )
             )
+
+    def procesar_resultado_pull(
+        self,
+        ruta_repositorio,
+        resultado_pull,
+        resultado_fetch_final,
+        estado_sincronizacion
+    ):
+        """
+        Actualiza la interfaz cuando Pull termina.
+        """
+
+        self.operacion_remota_en_curso = False
+
+        self.actualizar_controles_operacion_remota()
+
+        if ruta_repositorio != self.ruta_repositorio:
+            return
+
+        if not resultado_pull.exitoso:
+            # Exigimos otro Fetch después de cualquier Pull fallido.
+            self.fetch_exitoso_en_sesion = False
+
+            # El motor pudo haber actualizado las referencias remotas
+            # antes de decidir que Pull no era seguro.
+            self.cargar_estado_sincronizacion_local()
+
+            self.variable_estado.set(
+                "Pull no realizado."
+            )
+
+            self.variable_ultima_consulta.set(
+                (
+                    "Pull no realizado. Ejecute Fetch nuevamente "
+                    "antes de reintentarlo."
+                )
+            )
+
+            detalle = (
+                resultado_pull.error
+                if resultado_pull.error
+                else resultado_pull.salida
+            )
+
+            messagebox.showerror(
+                "Pull no realizado",
+                detalle
+            )
+
+            return
+
+        # Pull fue exitoso.
+        self.fetch_exitoso_en_sesion = True
+
+        if (
+            resultado_fetch_final is not None
+            and resultado_fetch_final.exitoso
+            and estado_sincronizacion is not None
+        ):
+            self.aplicar_estado_sincronizacion(
+                estado_sincronizacion
+            )
+
+            self.variable_ultima_consulta.set(
+                (
+                    "Pull completado y estado remoto "
+                    "verificado correctamente."
+                )
+            )
+
+        else:
+            self.cargar_estado_sincronizacion_local()
+
+            self.variable_ultima_consulta.set(
+                (
+                    "Pull completado. No fue posible completar "
+                    "la verificación remota posterior."
+                )
+            )
+
+        # Los archivos del repositorio pudieron cambiar
+        # como consecuencia del fast-forward.
+        self.cargar_cambios()
+
+        self.variable_estado.set(
+            "Pull completado correctamente mediante fast-forward."
+        )
+
+        messagebox.showinfo(
+            "Pull completado",
+            (
+                "Los commits remotos fueron descargados correctamente.\n\n"
+                "La actualización se realizó mediante fast-forward.\n\n"
+                "No se creó ningún Merge automático.\n"
+                "No se realizó ningún Rebase automático."
+            )
+        )
 
     def procesar_resultado_push(
         self,
@@ -1513,12 +1860,21 @@ class AplicacionGit:
             return
 
         if not resultado_push.exitoso:
-            # El motor de Push pudo haber realizado un Fetch antes
-            # de detectar que no era seguro enviar.
+            # Después de un fallo exigimos otro Fetch
+            # antes de permitir un nuevo Push.
+            self.fetch_exitoso_en_sesion = False
+
             self.cargar_estado_sincronizacion_local()
 
             self.variable_estado.set(
                 "Push no realizado."
+            )
+
+            self.variable_ultima_consulta.set(
+                (
+                    "Push no realizado. Ejecute Fetch nuevamente "
+                    "antes de reintentarlo."
+                )
             )
 
             detalle = (
@@ -1534,7 +1890,6 @@ class AplicacionGit:
 
             return
 
-        # Push fue exitoso.
         self.fetch_exitoso_en_sesion = True
 
         if (
@@ -1547,12 +1902,13 @@ class AplicacionGit:
             )
 
             self.variable_ultima_consulta.set(
-                "Push completado y estado remoto verificado correctamente."
+                (
+                    "Push completado y estado remoto "
+                    "verificado correctamente."
+                )
             )
 
         else:
-            # El Push fue exitoso aunque la verificación posterior
-            # no haya podido completarse.
             self.cargar_estado_sincronizacion_local()
 
             self.variable_ultima_consulta.set(
@@ -1562,11 +1918,11 @@ class AplicacionGit:
                 )
             )
 
+        self.cargar_cambios()
+
         self.variable_estado.set(
             "Push completado correctamente."
         )
-
-        self.cargar_cambios()
 
         messagebox.showinfo(
             "Push completado",
@@ -1577,10 +1933,14 @@ class AplicacionGit:
             )
         )
 
+    # =============================================================
+    # ESTADO DE CONTROLES REMOTOS
+    # =============================================================
+
     def actualizar_controles_operacion_remota(self):
         """
         Evita operaciones incompatibles mientras
-        Fetch o Push están activos.
+        Fetch, Pull o Push están activos.
         """
 
         if self.operacion_remota_en_curso:
@@ -1593,6 +1953,10 @@ class AplicacionGit:
             )
 
             self.boton_fetch.config(
+                state=tk.DISABLED
+            )
+
+            self.boton_pull.config(
                 state=tk.DISABLED
             )
 
@@ -1625,34 +1989,64 @@ class AplicacionGit:
             )
         )
 
-        self.actualizar_estado_boton_push()
+        self.actualizar_estado_botones_sincronizacion()
 
-    def actualizar_estado_boton_push(self):
+    def actualizar_estado_botones_sincronizacion(self):
         """
-        Habilita Push solamente cuando las condiciones
-        visibles conocidas permiten considerarlo candidato.
+        Habilita Pull o Push solamente cuando el estado
+        conocido permite considerarlos candidatos.
 
-        El motor vuelve a validar todo antes de enviar.
+        El servicio vuelve a validar todo antes
+        de ejecutar la operación real.
         """
 
+        puede_hacer_pull = False
         puede_hacer_push = False
 
         estado = (
             self.estado_sincronizacion_actual
         )
 
-        if (
+        condiciones_generales = (
             not self.operacion_remota_en_curso
-            and self.ruta_repositorio
+            and bool(self.ruta_repositorio)
             and self.fetch_exitoso_en_sesion
             and not self.hay_cambios_pendientes
             and estado is not None
             and estado.exitoso
             and not estado.divergente
-            and estado.commits_por_subir > 0
-            and estado.commits_por_bajar == 0
-        ):
-            puede_hacer_push = True
+        )
+
+        if condiciones_generales:
+            # Pull:
+            #
+            # - upstream configurado
+            # - ningún commit local pendiente
+            # - uno o más commits remotos pendientes
+            if (
+                estado.upstream_configurado
+                and estado.commits_por_subir == 0
+                and estado.commits_por_bajar > 0
+            ):
+                puede_hacer_pull = True
+
+            # Push:
+            #
+            # - uno o más commits locales pendientes
+            # - ningún commit remoto pendiente
+            if (
+                estado.commits_por_subir > 0
+                and estado.commits_por_bajar == 0
+            ):
+                puede_hacer_push = True
+
+        self.boton_pull.config(
+            state=(
+                tk.NORMAL
+                if puede_hacer_pull
+                else tk.DISABLED
+            )
+        )
 
         self.boton_push.config(
             state=(
@@ -1661,6 +2055,10 @@ class AplicacionGit:
                 else tk.DISABLED
             )
         )
+
+    # =============================================================
+    # ARCHIVOS
+    # =============================================================
 
     def seleccionar_todos_los_cambios(self):
         """
@@ -1864,6 +2262,10 @@ class AplicacionGit:
 
         self.cargar_cambios()
 
+    # =============================================================
+    # COMMIT
+    # =============================================================
+
     def crear_commit_desde_interfaz(self):
         """
         Crea un commit local con todos los archivos preparados.
@@ -1980,9 +2382,6 @@ class AplicacionGit:
             ""
         )
 
-        # Después de un nuevo commit recalculamos la cantidad
-        # de commits locales pendientes utilizando las últimas
-        # referencias remotas conocidas.
         self.cargar_repositorio(
             self.ruta_repositorio,
             reiniciar_fetch=False
@@ -1997,6 +2396,10 @@ class AplicacionGit:
                 "Utilice Push cuando desee enviarlo al remoto."
             )
         )
+
+    # =============================================================
+    # LIMPIEZA
+    # =============================================================
 
     def limpiar_tabla(self):
         """
@@ -2062,7 +2465,7 @@ class AplicacionGit:
             "Todavía no se ejecutó Fetch en esta sesión."
         )
 
-        self.actualizar_estado_boton_push()
+        self.actualizar_estado_botones_sincronizacion()
 
     def limpiar_repositorio(self):
         """
@@ -2099,6 +2502,10 @@ class AplicacionGit:
             state=tk.DISABLED
         )
 
+        self.boton_pull.config(
+            state=tk.DISABLED
+        )
+
         self.boton_push.config(
             state=tk.DISABLED
         )
@@ -2109,8 +2516,47 @@ class AplicacionGit:
 
         self.limpiar_estado_sincronizacion()
 
+    # =============================================================
+    # MENSAJES DE CONFIRMACIÓN
+    # =============================================================
+
+    @staticmethod
+    def _crear_mensaje_confirmacion_pull(
+        estado
+    ):
+        """
+        Construye la confirmación detallada de Pull.
+        """
+
+        cantidad = (
+            estado.commits_por_bajar
+        )
+
+        if cantidad == 1:
+            encabezado = (
+                "Se descargará 1 commit."
+            )
+        else:
+            encabezado = (
+                f"Se descargarán {cantidad} commits."
+            )
+
+        return (
+            f"{encabezado}\n\n"
+            f"Rama local: {estado.rama_local}\n"
+            f"Remoto: {estado.remoto}\n"
+            f"Origen: {estado.rama_remota}\n\n"
+            "Antes de descargar se ejecutará Fetch nuevamente.\n"
+            "Si el estado remoto cambió, Pull será bloqueado.\n\n"
+            "La actualización solamente se permitirá mediante "
+            "fast-forward.\n\n"
+            "No se realizará Merge automático.\n"
+            "No se realizará Rebase automático.\n\n"
+            "¿Desea continuar?"
+        )
+
+    @staticmethod
     def _crear_mensaje_confirmacion_push(
-        self,
         estado
     ):
         """
@@ -2158,7 +2604,7 @@ class AplicacionGit:
             f"Destino: {estado.rama_remota}\n\n"
             f"{explicacion_destino}\n\n"
             "Antes de enviar se ejecutará Fetch nuevamente.\n"
-            "Si el remoto cambió, el Push será bloqueado.\n\n"
+            "Si el remoto cambió, Push será bloqueado.\n\n"
             "Nunca se utilizará Push forzado.\n\n"
             "¿Desea continuar?"
         )
