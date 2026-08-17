@@ -899,6 +899,230 @@ class PruebasServicioGit(unittest.TestCase):
                 cambios.cambios[0].preparado
             )
 
+    def test_quitar_archivo_nuevo_preparado(self):
+        """
+        Comprueba que un archivo nuevo pueda quitarse
+        del área preparada sin eliminarse del disco.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(carpeta_temporal)
+
+            servicio_git, _ = (
+                self.preparar_repositorio_con_commit(
+                    ruta_temporal
+                )
+            )
+
+            archivo_nuevo = ruta_temporal / "nuevo.sql"
+
+            archivo_nuevo.write_text(
+                "SELECT 900;\n",
+                encoding="utf-8"
+            )
+
+            servicio_git.agregar_archivos(
+                ruta_temporal,
+                ["nuevo.sql"]
+            )
+
+            resultado = (
+                servicio_git.quitar_archivos_preparados(
+                    ruta_temporal,
+                    ["nuevo.sql"]
+                )
+            )
+
+            self.assertTrue(
+                resultado.exitoso,
+                resultado.error
+            )
+
+            # El archivo físico debe continuar existiendo.
+            self.assertTrue(
+                archivo_nuevo.exists()
+            )
+
+            cambios = servicio_git.obtener_cambios(
+                ruta_temporal
+            )
+
+            cambio = cambios.cambios[0]
+
+            self.assertEqual(
+                cambio.descripcion,
+                "Nuevo"
+            )
+
+            self.assertFalse(
+                cambio.preparado
+            )
+
+    def test_quitar_archivo_modificado_preparado(self):
+        """
+        Comprueba que un archivo modificado vuelva
+        al estado no preparado.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(carpeta_temporal)
+
+            servicio_git, archivo_base = (
+                self.preparar_repositorio_con_commit(
+                    ruta_temporal
+                )
+            )
+
+            archivo_base.write_text(
+                "SELECT 1000;\n",
+                encoding="utf-8"
+            )
+
+            servicio_git.agregar_archivos(
+                ruta_temporal,
+                ["archivo_base.sql"]
+            )
+
+            resultado = (
+                servicio_git.quitar_archivos_preparados(
+                    ruta_temporal,
+                    ["archivo_base.sql"]
+                )
+            )
+
+            self.assertTrue(
+                resultado.exitoso,
+                resultado.error
+            )
+
+            cambios = servicio_git.obtener_cambios(
+                ruta_temporal
+            )
+
+            cambio = cambios.cambios[0]
+
+            self.assertEqual(
+                cambio.descripcion,
+                "Modificado"
+            )
+
+            self.assertFalse(
+                cambio.preparado
+            )
+
+    def test_quitar_archivo_eliminado_preparado(self):
+        """
+        Comprueba que una eliminación preparada pueda
+        quitarse del área preparada.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(carpeta_temporal)
+
+            servicio_git, archivo_base = (
+                self.preparar_repositorio_con_commit(
+                    ruta_temporal
+                )
+            )
+
+            archivo_base.unlink()
+
+            servicio_git.agregar_archivos(
+                ruta_temporal,
+                ["archivo_base.sql"]
+            )
+
+            resultado = (
+                servicio_git.quitar_archivos_preparados(
+                    ruta_temporal,
+                    ["archivo_base.sql"]
+                )
+            )
+
+            self.assertTrue(
+                resultado.exitoso,
+                resultado.error
+            )
+
+            cambios = servicio_git.obtener_cambios(
+                ruta_temporal
+            )
+
+            cambio = cambios.cambios[0]
+
+            self.assertEqual(
+                cambio.descripcion,
+                "Eliminado"
+            )
+
+            self.assertFalse(
+                cambio.preparado
+            )
+
+    def test_quitar_preparado_sin_commit_inicial(self):
+        """
+        Comprueba el caso especial de un repositorio
+        que todavía no tiene ningún commit.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(carpeta_temporal)
+
+            servicio_git = ServicioGit()
+
+            resultado_init = servicio_git.ejecutar_git(
+                argumentos=["init"],
+                ruta_repositorio=ruta_temporal
+            )
+
+            self.assertTrue(
+                resultado_init.exitoso,
+                resultado_init.error
+            )
+
+            archivo_nuevo = ruta_temporal / "primero.sql"
+
+            archivo_nuevo.write_text(
+                "SELECT 1100;\n",
+                encoding="utf-8"
+            )
+
+            servicio_git.agregar_archivos(
+                ruta_temporal,
+                ["primero.sql"]
+            )
+
+            resultado = (
+                servicio_git.quitar_archivos_preparados(
+                    ruta_temporal,
+                    ["primero.sql"]
+                )
+            )
+
+            self.assertTrue(
+                resultado.exitoso,
+                resultado.error
+            )
+
+            # rm --cached no debe eliminar el archivo físico.
+            self.assertTrue(
+                archivo_nuevo.exists()
+            )
+
+            cambios = servicio_git.obtener_cambios(
+                ruta_temporal
+            )
+
+            cambio = cambios.cambios[0]
+
+            self.assertEqual(
+                cambio.descripcion,
+                "Nuevo"
+            )
+
+            self.assertFalse(
+                cambio.preparado
+            )
 
 if __name__ == "__main__":
     unittest.main()

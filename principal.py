@@ -10,8 +10,6 @@ class AplicacionGit:
     """
     Ventana principal de la aplicación Gestor Git.
 
-    Esta clase solamente se encarga de la interfaz gráfica.
-
     Toda comunicación con Git se realiza mediante ServicioGit.
     """
 
@@ -19,22 +17,17 @@ class AplicacionGit:
         # Guardamos la ventana principal.
         self.ventana_principal = ventana_principal
 
-        # Creamos una única instancia del servicio encargado de Git.
+        # Servicio encargado de comunicarse con Git.
         self.servicio_git = ServicioGit()
 
-        # Guardará la ruta del repositorio actualmente seleccionado.
+        # Ruta del repositorio actualmente seleccionado.
         self.ruta_repositorio = ""
 
-        # Relaciona cada fila de la tabla con su objeto CambioArchivo.
+        # Relaciona las filas de la tabla con CambioArchivo.
         self.cambios_por_elemento = {}
 
-        # Configuramos la ventana.
         self.configurar_ventana()
-
-        # Creamos los controles.
         self.crear_interfaz()
-
-        # Verificamos que Git esté disponible.
         self.verificar_git()
 
     def configurar_ventana(self):
@@ -46,12 +39,10 @@ class AplicacionGit:
             "Gestor Git"
         )
 
-        # Tamaño inicial de la aplicación.
         self.ventana_principal.geometry(
             "1100x700"
         )
 
-        # Evitamos que la ventana pueda reducirse demasiado.
         self.ventana_principal.minsize(
             850,
             550
@@ -59,7 +50,7 @@ class AplicacionGit:
 
     def crear_interfaz(self):
         """
-        Crea todos los controles visibles de la aplicación.
+        Crea todos los controles visibles.
         """
 
         # ---------------------------------------------------------
@@ -81,7 +72,6 @@ class AplicacionGit:
             weight=1
         )
 
-        # La fila de la tabla debe ocupar el espacio sobrante.
         marco_principal.rowconfigure(
             4,
             weight=1
@@ -105,7 +95,7 @@ class AplicacionGit:
         )
 
         # ---------------------------------------------------------
-        # Selección del repositorio
+        # Repositorio
         # ---------------------------------------------------------
 
         marco_repositorio = ttk.LabelFrame(
@@ -168,7 +158,7 @@ class AplicacionGit:
         )
 
         # ---------------------------------------------------------
-        # Información general del repositorio
+        # Información
         # ---------------------------------------------------------
 
         marco_informacion = ttk.LabelFrame(
@@ -256,7 +246,7 @@ class AplicacionGit:
         )
 
         # ---------------------------------------------------------
-        # Título de la lista de cambios
+        # Archivos con cambios
         # ---------------------------------------------------------
 
         etiqueta_cambios = ttk.Label(
@@ -271,10 +261,6 @@ class AplicacionGit:
             sticky="w",
             pady=(5, 5)
         )
-
-        # ---------------------------------------------------------
-        # Tabla de archivos modificados
-        # ---------------------------------------------------------
 
         marco_tabla = ttk.Frame(
             marco_principal
@@ -326,7 +312,7 @@ class AplicacionGit:
 
         self.tabla_cambios.column(
             "estado",
-            width=260,
+            width=280,
             minwidth=180
         )
 
@@ -349,7 +335,6 @@ class AplicacionGit:
             sticky="nsew"
         )
 
-        # Barra vertical.
         barra_vertical = ttk.Scrollbar(
             marco_tabla,
             orient=tk.VERTICAL,
@@ -366,7 +351,6 @@ class AplicacionGit:
             yscrollcommand=barra_vertical.set
         )
 
-        # Barra horizontal.
         barra_horizontal = ttk.Scrollbar(
             marco_tabla,
             orient=tk.HORIZONTAL,
@@ -384,7 +368,7 @@ class AplicacionGit:
         )
 
         # ---------------------------------------------------------
-        # Botones para preparar archivos
+        # Acciones
         # ---------------------------------------------------------
 
         marco_acciones = ttk.Frame(
@@ -421,6 +405,18 @@ class AplicacionGit:
             padx=(10, 0)
         )
 
+        self.boton_quitar_preparados = ttk.Button(
+            marco_acciones,
+            text="Quitar de preparados",
+            command=self.quitar_preparados_seleccionados,
+            state=tk.DISABLED
+        )
+
+        self.boton_quitar_preparados.pack(
+            side=tk.LEFT,
+            padx=(10, 0)
+        )
+
         # ---------------------------------------------------------
         # Barra de estado
         # ---------------------------------------------------------
@@ -446,7 +442,7 @@ class AplicacionGit:
 
     def verificar_git(self):
         """
-        Verifica que git.exe se encuentre disponible.
+        Verifica que git.exe esté disponible.
         """
 
         if self.servicio_git.git_disponible():
@@ -482,15 +478,13 @@ class AplicacionGit:
 
     def seleccionar_repositorio(self):
         """
-        Permite seleccionar una carpeta mediante
-        el explorador de Windows.
+        Permite seleccionar un repositorio.
         """
 
         ruta_seleccionada = filedialog.askdirectory(
             title="Seleccionar repositorio Git"
         )
 
-        # Si el usuario canceló, no hacemos nada.
         if not ruta_seleccionada:
             return
 
@@ -500,7 +494,7 @@ class AplicacionGit:
 
     def cargar_repositorio(self, ruta_repositorio):
         """
-        Valida y carga la información de un repositorio.
+        Valida y carga un repositorio.
         """
 
         self.variable_estado.set(
@@ -527,39 +521,29 @@ class AplicacionGit:
 
             return
 
-        # Guardamos la raíz real que informó Git.
         self.ruta_repositorio = estado.ruta_raiz
 
         self.variable_ruta.set(
             estado.ruta_raiz
         )
 
-        if estado.rama_actual:
-            self.variable_rama.set(
-                estado.rama_actual
-            )
-        else:
-            self.variable_rama.set(
-                "No determinada"
-            )
+        self.variable_rama.set(
+            estado.rama_actual
+            if estado.rama_actual
+            else "No determinada"
+        )
 
-        if estado.remotos:
-            self.variable_remoto.set(
-                ", ".join(estado.remotos)
-            )
-        else:
-            self.variable_remoto.set(
-                "Sin remoto"
-            )
+        self.variable_remoto.set(
+            ", ".join(estado.remotos)
+            if estado.remotos
+            else "Sin remoto"
+        )
 
-        if estado.tiene_commits:
-            self.variable_commits.set(
-                "Sí"
-            )
-        else:
-            self.variable_commits.set(
-                "No"
-            )
+        self.variable_commits.set(
+            "Sí"
+            if estado.tiene_commits
+            else "No"
+        )
 
         self.boton_actualizar.config(
             state=tk.NORMAL
@@ -569,7 +553,7 @@ class AplicacionGit:
 
     def cargar_cambios(self):
         """
-        Consulta Git y muestra los archivos pendientes en la tabla.
+        Consulta y muestra los archivos pendientes.
         """
 
         self.limpiar_tabla()
@@ -586,13 +570,7 @@ class AplicacionGit:
                 "No fue posible consultar los cambios."
             )
 
-            self.boton_seleccionar_todo.config(
-                state=tk.DISABLED
-            )
-
-            self.boton_preparar.config(
-                state=tk.DISABLED
-            )
+            self.deshabilitar_botones_de_archivos()
 
             messagebox.showerror(
                 "Error al consultar Git",
@@ -601,13 +579,13 @@ class AplicacionGit:
 
             return
 
-        # Insertamos cada cambio en la tabla.
         for cambio in resultado.cambios:
 
-            if cambio.preparado:
-                texto_preparado = "Sí"
-            else:
-                texto_preparado = "No"
+            texto_preparado = (
+                "Sí"
+                if cambio.preparado
+                else "No"
+            )
 
             identificador = self.tabla_cambios.insert(
                 "",
@@ -619,8 +597,6 @@ class AplicacionGit:
                 )
             )
 
-            # Guardamos el objeto CambioArchivo relacionado
-            # con la fila de la tabla.
             self.cambios_por_elemento[
                 identificador
             ] = cambio
@@ -629,12 +605,18 @@ class AplicacionGit:
             resultado.cambios
         )
 
+        hay_no_preparados = any(
+            not cambio.preparado
+            for cambio in resultado.cambios
+        )
+
+        hay_preparados = any(
+            cambio.preparado
+            for cambio in resultado.cambios
+        )
+
         if cantidad > 0:
             self.boton_seleccionar_todo.config(
-                state=tk.NORMAL
-            )
-
-            self.boton_preparar.config(
                 state=tk.NORMAL
             )
         else:
@@ -642,7 +624,21 @@ class AplicacionGit:
                 state=tk.DISABLED
             )
 
+        if hay_no_preparados:
             self.boton_preparar.config(
+                state=tk.NORMAL
+            )
+        else:
+            self.boton_preparar.config(
+                state=tk.DISABLED
+            )
+
+        if hay_preparados:
+            self.boton_quitar_preparados.config(
+                state=tk.NORMAL
+            )
+        else:
+            self.boton_quitar_preparados.config(
                 state=tk.DISABLED
             )
 
@@ -663,8 +659,7 @@ class AplicacionGit:
 
     def actualizar_repositorio(self):
         """
-        Vuelve a consultar la información y los cambios
-        del repositorio actualmente seleccionado.
+        Vuelve a consultar el repositorio seleccionado.
         """
 
         if not self.ruta_repositorio:
@@ -676,7 +671,7 @@ class AplicacionGit:
 
     def seleccionar_todos_los_cambios(self):
         """
-        Selecciona todos los archivos visibles en la tabla.
+        Selecciona todos los archivos visibles.
         """
 
         elementos = self.tabla_cambios.get_children()
@@ -690,8 +685,7 @@ class AplicacionGit:
 
     def preparar_seleccionados(self):
         """
-        Prepara para commit los archivos actualmente
-        seleccionados en la tabla.
+        Prepara los archivos seleccionados para commit.
         """
 
         if not self.ruta_repositorio:
@@ -718,8 +712,6 @@ class AplicacionGit:
             if cambio is None:
                 continue
 
-            # Si el archivo ya está preparado, no hace falta
-            # volver a ejecutar git add sobre él.
             if cambio.preparado:
                 continue
 
@@ -742,7 +734,6 @@ class AplicacionGit:
             rutas_archivos
         )
 
-        # Antes de modificar el índice mostramos una confirmación.
         if cantidad == 1:
             mensaje = (
                 "Se preparará 1 archivo para el próximo commit.\n\n"
@@ -793,12 +784,120 @@ class AplicacionGit:
 
             return
 
-        # Volvemos a consultar Git inmediatamente.
+        self.cargar_cambios()
+
+    def quitar_preparados_seleccionados(self):
+        """
+        Quita del área preparada los archivos seleccionados.
+
+        Esta operación NO borra archivos.
+        """
+
+        if not self.ruta_repositorio:
+            return
+
+        seleccion = self.tabla_cambios.selection()
+
+        if not seleccion:
+            messagebox.showinfo(
+                "Sin selección",
+                "Seleccione al menos un archivo preparado."
+            )
+
+            return
+
+        rutas_archivos = []
+
+        for identificador in seleccion:
+
+            cambio = self.cambios_por_elemento.get(
+                identificador
+            )
+
+            if cambio is None:
+                continue
+
+            if not cambio.preparado:
+                continue
+
+            rutas_archivos.append(
+                cambio.ruta
+            )
+
+        if not rutas_archivos:
+            messagebox.showinfo(
+                "Sin archivos preparados",
+                (
+                    "Los archivos seleccionados no están "
+                    "preparados para commit."
+                )
+            )
+
+            return
+
+        cantidad = len(
+            rutas_archivos
+        )
+
+        if cantidad == 1:
+            mensaje = (
+                "Se quitará 1 archivo del próximo commit.\n\n"
+                f"{rutas_archivos[0]}\n\n"
+                "El archivo NO será eliminado del disco.\n\n"
+                "¿Desea continuar?"
+            )
+
+        else:
+            lista_archivos = "\n".join(
+                rutas_archivos
+            )
+
+            mensaje = (
+                f"Se quitarán {cantidad} archivos "
+                "del próximo commit.\n\n"
+                f"{lista_archivos}\n\n"
+                "Los archivos NO serán eliminados del disco.\n\n"
+                "¿Desea continuar?"
+            )
+
+        confirmado = messagebox.askyesno(
+            "Quitar de preparados",
+            mensaje
+        )
+
+        if not confirmado:
+            return
+
+        self.variable_estado.set(
+            "Quitando archivos del área preparada..."
+        )
+
+        self.ventana_principal.update_idletasks()
+
+        resultado = (
+            self.servicio_git.quitar_archivos_preparados(
+                self.ruta_repositorio,
+                rutas_archivos
+            )
+        )
+
+        if not resultado.exitoso:
+            self.variable_estado.set(
+                "No fue posible quitar los archivos."
+            )
+
+            messagebox.showerror(
+                "Error al quitar archivos",
+                resultado.error
+            )
+
+            return
+
         self.cargar_cambios()
 
     def limpiar_tabla(self):
         """
-        Elimina todos los registros de la tabla de cambios.
+        Limpia la tabla.
         """
 
         for elemento in self.tabla_cambios.get_children():
@@ -806,36 +905,12 @@ class AplicacionGit:
                 elemento
             )
 
-        # También eliminamos las asociaciones anteriores
-        # entre filas y objetos CambioArchivo.
         self.cambios_por_elemento.clear()
 
-    def limpiar_repositorio(self):
+    def deshabilitar_botones_de_archivos(self):
         """
-        Restablece toda la información visual del repositorio.
+        Deshabilita las acciones relacionadas con archivos.
         """
-
-        self.ruta_repositorio = ""
-
-        self.variable_ruta.set(
-            "Ningún repositorio seleccionado"
-        )
-
-        self.variable_rama.set(
-            "-"
-        )
-
-        self.variable_remoto.set(
-            "-"
-        )
-
-        self.variable_commits.set(
-            "-"
-        )
-
-        self.boton_actualizar.config(
-            state=tk.DISABLED
-        )
 
         self.boton_seleccionar_todo.config(
             state=tk.DISABLED
@@ -845,12 +920,37 @@ class AplicacionGit:
             state=tk.DISABLED
         )
 
+        self.boton_quitar_preparados.config(
+            state=tk.DISABLED
+        )
+
+    def limpiar_repositorio(self):
+        """
+        Restablece la información visual.
+        """
+
+        self.ruta_repositorio = ""
+
+        self.variable_ruta.set(
+            "Ningún repositorio seleccionado"
+        )
+
+        self.variable_rama.set("-")
+        self.variable_remoto.set("-")
+        self.variable_commits.set("-")
+
+        self.boton_actualizar.config(
+            state=tk.DISABLED
+        )
+
+        self.deshabilitar_botones_de_archivos()
+
         self.limpiar_tabla()
 
 
 def iniciar_aplicacion():
     """
-    Crea la ventana principal e inicia la aplicación.
+    Inicia la aplicación.
     """
 
     ventana_principal = tk.Tk()

@@ -59,7 +59,6 @@ class ServicioGit:
             Un objeto ResultadoComando.
         """
 
-        # No intentamos ejecutar nada si Git no está disponible.
         if not self.git_disponible():
             return ResultadoComando(
                 exitoso=False,
@@ -69,14 +68,12 @@ class ServicioGit:
                 comando=""
             )
 
-        # Construimos el comando utilizando una lista.
-        #
+        # Construimos siempre el comando utilizando una lista.
         # Nunca utilizamos shell=True.
         comando = [self.ruta_git] + argumentos
 
         carpeta_trabajo = None
 
-        # Si se indicó una carpeta, comprobamos que exista.
         if ruta_repositorio is not None:
             carpeta_trabajo = Path(ruta_repositorio)
 
@@ -110,13 +107,8 @@ class ServicioGit:
                 shell=False
             )
 
-            # IMPORTANTE:
-            #
-            # No utilizamos strip() porque eliminaría espacios
-            # al principio de la salida.
-            #
-            # En algunos comandos de Git los espacios iniciales
-            # tienen significado.
+            # No utilizamos strip() porque algunos espacios
+            # iniciales tienen significado para Git.
             salida = resultado.stdout.rstrip("\r\n")
             error = resultado.stderr.rstrip("\r\n")
 
@@ -170,8 +162,6 @@ class ServicioGit:
     def obtener_version(self):
         """
         Obtiene la versión instalada de Git.
-
-        No modifica ningún repositorio.
         """
 
         return self.ejecutar_git(
@@ -183,8 +173,7 @@ class ServicioGit:
         Analiza una carpeta para determinar si contiene
         un repositorio Git válido.
 
-        Esta función solamente ejecuta comandos de lectura.
-        No modifica el repositorio.
+        Esta operación solamente consulta información.
         """
 
         if ruta_repositorio is None:
@@ -215,7 +204,6 @@ class ServicioGit:
                 mensaje="La ruta indicada no corresponde a una carpeta."
             )
 
-        # Preguntamos a Git si estamos dentro de un árbol de trabajo.
         resultado_validacion = self.ejecutar_git(
             argumentos=[
                 "rev-parse",
@@ -233,7 +221,6 @@ class ServicioGit:
                 mensaje="La carpeta no corresponde a un repositorio Git."
             )
 
-        # Obtenemos la carpeta raíz real del repositorio.
         resultado_raiz = self.ejecutar_git(
             argumentos=[
                 "rev-parse",
@@ -247,7 +234,6 @@ class ServicioGit:
         else:
             ruta_raiz = str(carpeta.resolve())
 
-        # Obtenemos la rama actual.
         resultado_rama = self.ejecutar_git(
             argumentos=[
                 "symbolic-ref",
@@ -263,7 +249,6 @@ class ServicioGit:
         else:
             rama_actual = ""
 
-        # Comprobamos si HEAD ya apunta a un commit.
         resultado_head = self.ejecutar_git(
             argumentos=[
                 "rev-parse",
@@ -275,11 +260,8 @@ class ServicioGit:
 
         tiene_commits = resultado_head.exitoso
 
-        # Obtenemos los remotos configurados.
         resultado_remotos = self.ejecutar_git(
-            argumentos=[
-                "remote"
-            ],
+            argumentos=["remote"],
             ruta_repositorio=ruta_raiz
         )
 
@@ -306,7 +288,6 @@ class ServicioGit:
         Obtiene todos los archivos que tienen cambios.
 
         Esta operación solamente consulta información.
-        No modifica el repositorio.
         """
 
         resultado = self.ejecutar_git(
@@ -325,7 +306,6 @@ class ServicioGit:
                 error=resultado.error
             )
 
-        # Si Git no devuelve información, el repositorio está limpio.
         if not resultado.salida:
             return ResultadoCambios(
                 exitoso=True,
@@ -334,7 +314,6 @@ class ServicioGit:
 
         cambios = []
 
-        # Con -z los registros son separados mediante NUL.
         registros = resultado.salida.split("\0")
 
         indice = 0
@@ -346,9 +325,6 @@ class ServicioGit:
                 indice += 1
                 continue
 
-            # La estructura normal es:
-            #
-            # XY archivo
             if len(registro) < 4:
                 return ResultadoCambios(
                     exitoso=False,
@@ -360,14 +336,10 @@ class ServicioGit:
 
             estado_indice = registro[0]
             estado_trabajo = registro[1]
-
-            # Saltamos los dos estados y el espacio separador.
             ruta_archivo = registro[3:]
 
             ruta_anterior = ""
 
-            # Los archivos renombrados o copiados utilizan
-            # una segunda ruta dentro del formato -z.
             if (
                 estado_indice in ("R", "C")
                 or estado_trabajo in ("R", "C")
@@ -382,7 +354,6 @@ class ServicioGit:
                     )
 
                 ruta_anterior = registros[indice + 1]
-
                 indice += 1
 
             descripcion = self._traducir_estado_archivo(
@@ -390,24 +361,21 @@ class ServicioGit:
                 estado_trabajo
             )
 
-            # El primer carácter indica el estado del índice.
             preparado = estado_indice not in (
                 " ",
                 "?",
                 "!"
             )
 
-            cambio = CambioArchivo(
-                ruta=ruta_archivo,
-                estado_indice=estado_indice,
-                estado_trabajo=estado_trabajo,
-                descripcion=descripcion,
-                preparado=preparado,
-                ruta_anterior=ruta_anterior
-            )
-
             cambios.append(
-                cambio
+                CambioArchivo(
+                    ruta=ruta_archivo,
+                    estado_indice=estado_indice,
+                    estado_trabajo=estado_trabajo,
+                    descripcion=descripcion,
+                    preparado=preparado,
+                    ruta_anterior=ruta_anterior
+                )
             )
 
             indice += 1
@@ -425,13 +393,9 @@ class ServicioGit:
         """
         Prepara uno o varios archivos para el próximo commit.
 
-        Esta operación equivale a ejecutar git add.
-
-        Los archivos deben recibirse utilizando rutas relativas
-        al repositorio.
+        Equivale a git add.
         """
 
-        # Comprobamos primero que el repositorio sea válido.
         estado_repositorio = self.analizar_repositorio(
             ruta_repositorio
         )
@@ -445,91 +409,21 @@ class ServicioGit:
                 comando=""
             )
 
-        if rutas_archivos is None:
+        rutas_validas, mensaje_error = (
+            self._validar_rutas_relativas(
+                rutas_archivos
+            )
+        )
+
+        if mensaje_error:
             return ResultadoComando(
                 exitoso=False,
                 codigo_salida=-1,
                 salida="",
-                error="No se indicó ningún archivo para agregar.",
+                error=mensaje_error,
                 comando=""
             )
 
-        rutas_validas = []
-
-        for ruta_archivo in rutas_archivos:
-
-            if ruta_archivo is None:
-                return ResultadoComando(
-                    exitoso=False,
-                    codigo_salida=-1,
-                    salida="",
-                    error="Se recibió una ruta de archivo inválida.",
-                    comando=""
-                )
-
-            ruta_texto = str(
-                ruta_archivo
-            )
-
-            if not ruta_texto or ruta_texto.isspace():
-                return ResultadoComando(
-                    exitoso=False,
-                    codigo_salida=-1,
-                    salida="",
-                    error="Se recibió una ruta de archivo vacía.",
-                    comando=""
-                )
-
-            ruta_objeto = Path(
-                ruta_texto
-            )
-
-            # Solamente aceptamos rutas relativas.
-            if ruta_objeto.is_absolute():
-                return ResultadoComando(
-                    exitoso=False,
-                    codigo_salida=-1,
-                    salida="",
-                    error=(
-                        "Los archivos deben indicarse mediante "
-                        "rutas relativas al repositorio."
-                    ),
-                    comando=""
-                )
-
-            # Evitamos rutas que intenten salir del repositorio.
-            if ".." in ruta_objeto.parts:
-                return ResultadoComando(
-                    exitoso=False,
-                    codigo_salida=-1,
-                    salida="",
-                    error=(
-                        "La ruta del archivo intenta salir "
-                        "del repositorio."
-                    ),
-                    comando=""
-                )
-
-            # Evitamos agregar dos veces la misma ruta.
-            if ruta_texto not in rutas_validas:
-                rutas_validas.append(
-                    ruta_texto
-                )
-
-        if not rutas_validas:
-            return ResultadoComando(
-                exitoso=False,
-                codigo_salida=-1,
-                salida="",
-                error="No se indicó ningún archivo para agregar.",
-                comando=""
-            )
-
-        # --literal-pathspecs evita que caracteres como *, ?, [ o ]
-        # sean interpretados como patrones por Git.
-        #
-        # -- indica que a partir de ese punto todo corresponde
-        # a nombres de archivos y no a opciones del comando.
         argumentos = [
             "--literal-pathspecs",
             "add",
@@ -543,6 +437,167 @@ class ServicioGit:
         return self.ejecutar_git(
             argumentos=argumentos,
             ruta_repositorio=estado_repositorio.ruta_raiz
+        )
+
+    def quitar_archivos_preparados(
+        self,
+        ruta_repositorio,
+        rutas_archivos
+    ):
+        """
+        Quita uno o varios archivos del área preparada.
+
+        IMPORTANTE:
+            Esta operación NO elimina los archivos del disco.
+
+        Si el repositorio ya tiene commits utilizamos:
+
+            git restore --staged
+
+        Si todavía no existe ningún commit utilizamos:
+
+            git rm --cached
+
+        porque todavía no existe HEAD contra el cual restaurar.
+        """
+
+        estado_repositorio = self.analizar_repositorio(
+            ruta_repositorio
+        )
+
+        if not estado_repositorio.es_repositorio:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=estado_repositorio.mensaje,
+                comando=""
+            )
+
+        rutas_validas, mensaje_error = (
+            self._validar_rutas_relativas(
+                rutas_archivos
+            )
+        )
+
+        if mensaje_error:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=mensaje_error,
+                comando=""
+            )
+
+        if estado_repositorio.tiene_commits:
+            # El repositorio ya tiene HEAD.
+            #
+            # restore --staged modifica solamente el índice.
+            argumentos = [
+                "--literal-pathspecs",
+                "restore",
+                "--staged",
+                "--",
+            ]
+
+        else:
+            # En un repositorio sin commits todavía no existe HEAD.
+            #
+            # rm --cached quita el archivo del índice pero conserva
+            # el archivo físicamente en el disco.
+            argumentos = [
+                "--literal-pathspecs",
+                "rm",
+                "--cached",
+                "--",
+            ]
+
+        argumentos.extend(
+            rutas_validas
+        )
+
+        return self.ejecutar_git(
+            argumentos=argumentos,
+            ruta_repositorio=estado_repositorio.ruta_raiz
+        )
+
+    @staticmethod
+    def _validar_rutas_relativas(rutas_archivos):
+        """
+        Valida una colección de rutas recibidas desde la interfaz.
+
+        Las rutas deben ser relativas al repositorio.
+
+        Devuelve:
+            rutas_validas
+            mensaje_error
+        """
+
+        if rutas_archivos is None:
+            return (
+                None,
+                "No se indicó ningún archivo."
+            )
+
+        rutas_validas = []
+
+        for ruta_archivo in rutas_archivos:
+
+            if ruta_archivo is None:
+                return (
+                    None,
+                    "Se recibió una ruta de archivo inválida."
+                )
+
+            ruta_texto = str(
+                ruta_archivo
+            )
+
+            if not ruta_texto or ruta_texto.isspace():
+                return (
+                    None,
+                    "Se recibió una ruta de archivo vacía."
+                )
+
+            ruta_objeto = Path(
+                ruta_texto
+            )
+
+            # Nunca permitimos rutas absolutas.
+            if ruta_objeto.is_absolute():
+                return (
+                    None,
+                    (
+                        "Los archivos deben indicarse mediante "
+                        "rutas relativas al repositorio."
+                    )
+                )
+
+            # Evitamos salir del repositorio mediante ..
+            if ".." in ruta_objeto.parts:
+                return (
+                    None,
+                    (
+                        "La ruta del archivo intenta salir "
+                        "del repositorio."
+                    )
+                )
+
+            # Eliminamos duplicados conservando el orden.
+            if ruta_texto not in rutas_validas:
+                rutas_validas.append(
+                    ruta_texto
+                )
+
+        if not rutas_validas:
+            return (
+                None,
+                "No se indicó ningún archivo."
+            )
+
+        return (
+            rutas_validas,
+            ""
         )
 
     @staticmethod
@@ -563,7 +618,6 @@ class ServicioGit:
         if codigo == "!!":
             return "Ignorado"
 
-        # Estados de conflicto informados por Git.
         codigos_conflicto = {
             "DD",
             "AU",
@@ -623,8 +677,6 @@ class ServicioGit:
         """
         Convierte la lista del comando en texto únicamente
         para mostrarla o registrarla.
-
-        Este texto nunca se utiliza para ejecutar el comando.
         """
 
         return " ".join(
