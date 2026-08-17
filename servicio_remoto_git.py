@@ -6,10 +6,10 @@ class ServicioRemotoGit(ServicioGit):
     """
     Amplía ServicioGit con operaciones relacionadas con remotos.
 
-    En esta etapa solamente permitimos consultar el remoto mediante
-    Fetch y calcular el estado de sincronización.
+    Las operaciones de red utilizan tiempos máximos superiores
+    a las operaciones locales.
 
-    Todavía NO implementamos Push ni Pull.
+    Nunca utilizamos Push forzado.
     """
 
     def obtener_remoto_sincronizacion(self, ruta_repositorio):
@@ -29,30 +29,18 @@ class ServicioRemotoGit(ServicioGit):
         )
 
         if not estado.es_repositorio:
-            return ResultadoComando(
-                exitoso=False,
-                codigo_salida=-1,
-                salida="",
-                error=estado.mensaje,
-                comando=""
+            return self._crear_resultado_error(
+                estado.mensaje
             )
 
         if not estado.rama_actual:
-            return ResultadoComando(
-                exitoso=False,
-                codigo_salida=-1,
-                salida="",
-                error=(
+            return self._crear_resultado_error(
+                (
                     "No se puede determinar el remoto porque HEAD "
                     "no está asociado a una rama."
-                ),
-                comando=""
+                )
             )
 
-        # Consultamos el remoto asociado al upstream de la rama.
-        #
-        # Si la rama todavía no tiene upstream, Git devolverá
-        # una cadena vacía.
         resultado_remoto_upstream = self.ejecutar_git(
             argumentos=[
                 "for-each-ref",
@@ -67,19 +55,13 @@ class ServicioRemotoGit(ServicioGit):
                 resultado_remoto_upstream.salida.strip()
             )
 
-            # Git utiliza "." para representar el propio
-            # repositorio local como upstream.
             if remoto_upstream == ".":
-                return ResultadoComando(
-                    exitoso=False,
-                    codigo_salida=-1,
-                    salida="",
-                    error=(
-                        "La rama utiliza el repositorio local como upstream. "
-                        "Esa configuración no se utilizará para operaciones "
-                        "de red."
-                    ),
-                    comando=""
+                return self._crear_resultado_error(
+                    (
+                        "La rama utiliza el repositorio local como "
+                        "upstream. Esa configuración no se utilizará "
+                        "para operaciones de red."
+                    )
                 )
 
             if remoto_upstream:
@@ -93,19 +75,14 @@ class ServicioRemotoGit(ServicioGit):
                         comando=""
                     )
 
-                return ResultadoComando(
-                    exitoso=False,
-                    codigo_salida=-1,
-                    salida="",
-                    error=(
+                return self._crear_resultado_error(
+                    (
                         f"La rama indica un remoto upstream llamado "
-                        f"'{remoto_upstream}', pero ese remoto ya no existe."
-                    ),
-                    comando=""
+                        f"'{remoto_upstream}', pero ese remoto "
+                        "ya no existe."
+                    )
                 )
 
-        # Si todavía no hay upstream pero solamente existe
-        # un remoto, podemos seleccionarlo de forma inequívoca.
         if len(estado.remotos) == 1:
             return ResultadoComando(
                 exitoso=True,
@@ -116,24 +93,15 @@ class ServicioRemotoGit(ServicioGit):
             )
 
         if len(estado.remotos) == 0:
-            return ResultadoComando(
-                exitoso=False,
-                codigo_salida=-1,
-                salida="",
-                error="El repositorio no tiene ningún remoto configurado.",
-                comando=""
+            return self._crear_resultado_error(
+                "El repositorio no tiene ningún remoto configurado."
             )
 
-        # No queremos adivinar cuando existen varios remotos.
-        return ResultadoComando(
-            exitoso=False,
-            codigo_salida=-1,
-            salida="",
-            error=(
+        return self._crear_resultado_error(
+            (
                 "La rama no tiene upstream y existen varios remotos. "
                 "La aplicación no elegirá uno automáticamente."
-            ),
-            comando=""
+            )
         )
 
     def ejecutar_fetch(
@@ -142,13 +110,9 @@ class ServicioRemotoGit(ServicioGit):
         remoto
     ):
         """
-        Ejecuta git fetch --prune sobre un remoto existente.
+        Ejecuta Fetch sobre un remoto existente.
 
-        Fetch actualiza las referencias remotas locales.
-
-        No modifica los archivos del área de trabajo.
-        No crea commits.
-        No hace Push.
+        Fetch no modifica los archivos del área de trabajo.
         """
 
         estado = self.analizar_repositorio(
@@ -156,41 +120,39 @@ class ServicioRemotoGit(ServicioGit):
         )
 
         if not estado.es_repositorio:
-            return ResultadoComando(
-                exitoso=False,
-                codigo_salida=-1,
-                salida="",
-                error=estado.mensaje,
-                comando=""
+            return self._crear_resultado_error(
+                estado.mensaje
             )
 
-        if remoto is None or not str(remoto).strip():
-            return ResultadoComando(
-                exitoso=False,
-                codigo_salida=-1,
-                salida="",
-                error="No se indicó el remoto que debe consultarse.",
-                comando=""
+        if remoto is None:
+            return self._crear_resultado_error(
+                "No se indicó el remoto que debe consultarse."
             )
 
         nombre_remoto = str(
             remoto
         ).strip()
 
-        if nombre_remoto not in estado.remotos:
-            return ResultadoComando(
-                exitoso=False,
-                codigo_salida=-1,
-                salida="",
-                error=(
-                    f"El remoto '{nombre_remoto}' no existe "
-                    "en este repositorio."
-                ),
-                comando=""
+        if not nombre_remoto:
+            return self._crear_resultado_error(
+                "No se indicó el remoto que debe consultarse."
             )
 
-        # Las operaciones remotas tienen un tiempo máximo
-        # superior al utilizado para operaciones locales.
+        # Rechazamos nombres que podrían interpretarse
+        # accidentalmente como opciones de línea de comandos.
+        if nombre_remoto.startswith("-"):
+            return self._crear_resultado_error(
+                "El nombre del remoto no es válido."
+            )
+
+        if nombre_remoto not in estado.remotos:
+            return self._crear_resultado_error(
+                (
+                    f"El remoto '{nombre_remoto}' no existe "
+                    "en este repositorio."
+                )
+            )
+
         return self.ejecutar_git(
             argumentos=[
                 "fetch",
@@ -208,13 +170,10 @@ class ServicioRemotoGit(ServicioGit):
         """
         Calcula commits por subir y commits por bajar.
 
-        IMPORTANTE:
-
         Este método NO se conecta a Internet.
 
-        Utiliza las referencias remotas disponibles localmente.
-        Para disponer de información actualizada debe ejecutarse
-        Fetch antes.
+        Para disponer de información actualizada debe
+        ejecutarse Fetch antes.
         """
 
         estado = self.analizar_repositorio(
@@ -231,8 +190,8 @@ class ServicioRemotoGit(ServicioGit):
             return EstadoSincronizacion(
                 exitoso=False,
                 error=(
-                    "No se puede calcular la sincronización porque HEAD "
-                    "no está asociado a una rama."
+                    "No se puede calcular la sincronización porque "
+                    "HEAD no está asociado a una rama."
                 )
             )
 
@@ -249,7 +208,6 @@ class ServicioRemotoGit(ServicioGit):
 
         remoto = resultado_remoto.salida
 
-        # Intentamos obtener el upstream configurado.
         resultado_upstream = self.ejecutar_git(
             argumentos=[
                 "rev-parse",
@@ -282,6 +240,265 @@ class ServicioRemotoGit(ServicioGit):
             tiene_commits=estado.tiene_commits
         )
 
+    def ejecutar_push_seguro(
+        self,
+        ruta_repositorio
+    ):
+        """
+        Ejecuta un Push conservador.
+
+        Antes de enviar:
+
+        1. Valida el repositorio.
+        2. Comprueba que exista una rama actual.
+        3. Comprueba que existan commits.
+        4. Bloquea operaciones Git en curso.
+        5. Bloquea index.lock.
+        6. Exige un área de trabajo limpia.
+        7. Ejecuta Fetch nuevamente.
+        8. Calcula nuevamente la sincronización.
+        9. Bloquea Push si existen commits por descargar.
+        10. Bloquea ramas divergentes.
+
+        Nunca utiliza --force.
+        """
+
+        estado = self.analizar_repositorio(
+            ruta_repositorio
+        )
+
+        if not estado.es_repositorio:
+            return self._crear_resultado_error(
+                estado.mensaje
+            )
+
+        if not estado.rama_actual:
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Push porque HEAD "
+                    "no está asociado a una rama."
+                )
+            )
+
+        if not estado.tiene_commits:
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Push porque "
+                    "el repositorio todavía no tiene commits."
+                )
+            )
+
+        operacion_en_curso = self.detectar_operacion_en_curso(
+            estado.ruta_raiz
+        )
+
+        if operacion_en_curso:
+            return self._crear_resultado_error(
+                operacion_en_curso
+            )
+
+        # Nunca eliminamos index.lock automáticamente.
+        ruta_bloqueo = self._obtener_ruta_git_interna(
+            estado.ruta_raiz,
+            "index.lock"
+        )
+
+        if (
+            ruta_bloqueo is not None
+            and ruta_bloqueo.exists()
+        ):
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Push porque existe "
+                    "un archivo index.lock.\n\n"
+                    "Compruebe que no haya otro proceso Git "
+                    "trabajando sobre el repositorio.\n\n"
+                    "La aplicación no eliminará el bloqueo "
+                    "automáticamente."
+                )
+            )
+
+        resultado_cambios = self.obtener_cambios(
+            estado.ruta_raiz
+        )
+
+        if not resultado_cambios.exitoso:
+            return self._crear_resultado_error(
+                resultado_cambios.error
+            )
+
+        archivos_conflicto = [
+            cambio.ruta
+            for cambio in resultado_cambios.cambios
+            if cambio.descripcion == "Conflicto"
+        ]
+
+        if archivos_conflicto:
+            lista_archivos = "\n".join(
+                archivos_conflicto
+            )
+
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Push porque existen "
+                    "archivos con conflictos:\n\n"
+                    f"{lista_archivos}"
+                )
+            )
+
+        # Aunque Git técnicamente permite Push con cambios
+        # pendientes, nuestra aplicación será más conservadora.
+        if resultado_cambios.cambios:
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Push porque existen "
+                    "cambios sin commit en el repositorio.\n\n"
+                    "Prepare y confirme esos cambios, o déjelos "
+                    "fuera del área de trabajo antes de continuar."
+                )
+            )
+
+        resultado_remoto = self.obtener_remoto_sincronizacion(
+            estado.ruta_raiz
+        )
+
+        if not resultado_remoto.exitoso:
+            return self._crear_resultado_error(
+                resultado_remoto.error
+            )
+
+        remoto = resultado_remoto.salida
+
+        # La información remota debe ser actualizada
+        # inmediatamente antes del Push.
+        resultado_fetch = self.ejecutar_fetch(
+            estado.ruta_raiz,
+            remoto
+        )
+
+        if not resultado_fetch.exitoso:
+            detalle = (
+                resultado_fetch.error
+                if resultado_fetch.error
+                else resultado_fetch.salida
+            )
+
+            return self._crear_resultado_error(
+                (
+                    "No se realizará Push porque el Fetch previo "
+                    "no pudo completarse.\n\n"
+                    f"{detalle}"
+                )
+            )
+
+        estado_sincronizacion = (
+            self.obtener_estado_sincronizacion(
+                estado.ruta_raiz
+            )
+        )
+
+        if not estado_sincronizacion.exitoso:
+            return self._crear_resultado_error(
+                estado_sincronizacion.error
+            )
+
+        if estado_sincronizacion.divergente:
+            return self._crear_resultado_error(
+                (
+                    "No se realizará Push porque la rama local "
+                    "y la rama remota han divergido.\n\n"
+                    f"Commits locales por enviar: "
+                    f"{estado_sincronizacion.commits_por_subir}\n"
+                    f"Commits remotos por descargar: "
+                    f"{estado_sincronizacion.commits_por_bajar}"
+                )
+            )
+
+        if estado_sincronizacion.commits_por_bajar > 0:
+            return self._crear_resultado_error(
+                (
+                    "No se realizará Push porque existen commits "
+                    "remotos que primero deben descargarse.\n\n"
+                    f"Commits por descargar: "
+                    f"{estado_sincronizacion.commits_por_bajar}"
+                )
+            )
+
+        if (
+            estado_sincronizacion.commits_por_subir == 0
+            and estado_sincronizacion.upstream_configurado
+        ):
+            return self._crear_resultado_error(
+                "No hay commits locales pendientes de enviar."
+            )
+
+        rama_local = estado_sincronizacion.rama_local
+
+        if not estado_sincronizacion.upstream_configurado:
+            # Primer Push de esta rama.
+            #
+            # La rama remota tendrá el mismo nombre
+            # que la rama local y quedará configurada
+            # automáticamente como upstream.
+            argumentos_push = [
+                "push",
+                "--porcelain",
+                "--set-upstream",
+                remoto,
+                (
+                    f"{rama_local}:"
+                    f"refs/heads/{rama_local}"
+                )
+            ]
+
+        else:
+            rama_remota = (
+                estado_sincronizacion.rama_remota
+            )
+
+            prefijo_remoto = (
+                f"{remoto}/"
+            )
+
+            if not rama_remota.startswith(
+                prefijo_remoto
+            ):
+                return self._crear_resultado_error(
+                    (
+                        "No fue posible determinar de forma segura "
+                        "la rama remota de destino."
+                    )
+                )
+
+            nombre_rama_remota = rama_remota[
+                len(prefijo_remoto):
+            ]
+
+            if not nombre_rama_remota:
+                return self._crear_resultado_error(
+                    (
+                        "No fue posible determinar la rama "
+                        "remota de destino."
+                    )
+                )
+
+            argumentos_push = [
+                "push",
+                "--porcelain",
+                remoto,
+                (
+                    f"{rama_local}:"
+                    f"refs/heads/{nombre_rama_remota}"
+                )
+            ]
+
+        # No existe ninguna variante --force en este comando.
+        return self.ejecutar_git(
+            argumentos=argumentos_push,
+            ruta_repositorio=estado.ruta_raiz,
+            tiempo_maximo=180
+        )
+
     def _calcular_con_upstream(
         self,
         ruta_repositorio,
@@ -310,17 +527,12 @@ class ServicioRemotoGit(ServicioGit):
                 rama_remota=rama_remota,
                 upstream_configurado=True,
                 error=(
-                    "La rama tiene upstream configurado, pero la referencia "
-                    "remota no está disponible localmente. Ejecute Fetch."
+                    "La rama tiene upstream configurado, pero "
+                    "la referencia remota no está disponible "
+                    "localmente. Ejecute Fetch."
                 )
             )
 
-        # HEAD...@{upstream}
-        #
-        # Con --left-right --count:
-        #
-        # primera cifra  = commits solamente locales
-        # segunda cifra  = commits solamente remotos
         resultado_conteo = self.ejecutar_git(
             argumentos=[
                 "rev-list",
@@ -340,7 +552,10 @@ class ServicioRemotoGit(ServicioGit):
                 upstream_configurado=True,
                 error=(
                     resultado_conteo.error
-                    or "No fue posible comparar la rama con su upstream."
+                    or (
+                        "No fue posible comparar la rama "
+                        "con su upstream."
+                    )
                 )
             )
 
@@ -399,8 +614,6 @@ class ServicioRemotoGit(ServicioGit):
         Calcula el estado cuando todavía no existe upstream.
         """
 
-        # Mientras no exista upstream, utilizamos como candidato
-        # la rama del mismo nombre en el único remoto disponible.
         rama_remota = (
             f"{remoto}/{rama_local}"
         )
@@ -430,7 +643,10 @@ class ServicioRemotoGit(ServicioGit):
                     "rev-list",
                     "--left-right",
                     "--count",
-                    f"HEAD...{referencia_remota}"
+                    (
+                        f"HEAD..."
+                        f"{referencia_remota}"
+                    )
                 ],
                 ruta_repositorio=ruta_repositorio
             )
@@ -471,9 +687,6 @@ class ServicioRemotoGit(ServicioGit):
                 )
 
         else:
-            # Si la rama remota todavía no existe,
-            # todos los commits locales serían candidatos
-            # para el primer Push.
             commits_por_bajar = 0
 
             if tiene_commits:
@@ -552,9 +765,7 @@ class ServicioRemotoGit(ServicioGit):
         salida
     ):
         """
-        Interpreta la salida de:
-
-            git rev-list --left-right --count
+        Interpreta la salida de rev-list --left-right --count.
         """
 
         partes = salida.split()
@@ -630,4 +841,21 @@ class ServicioRemotoGit(ServicioGit):
         return (
             f"Hay {commits_por_bajar} commit(s) remoto(s) "
             "por descargar."
+        )
+
+    @staticmethod
+    def _crear_resultado_error(
+        mensaje
+    ):
+        """
+        Facilita la construcción de resultados bloqueados
+        antes de ejecutar un comando Git.
+        """
+
+        return ResultadoComando(
+            exitoso=False,
+            codigo_salida=-1,
+            salida="",
+            error=mensaje,
+            comando=""
         )
