@@ -1,0 +1,26 @@
+# Entorno virtual de Python
+.venv/
+
+# Archivos temporales generados por Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Archivos de pruebas y cobertura
+.coverage
+htmlcov/
+
+# Logs generados por nuestra aplicación
+logs/
+*.log
+
+# Configuración local de la aplicación
+config.json
+
+# Configuraciones de editores
+.vscode/
+.idea/
+
+# Archivos temporales de Windows
+Thumbs.db
+Desktop.ini
