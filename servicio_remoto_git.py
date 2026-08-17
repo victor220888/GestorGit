@@ -10,6 +10,7 @@ class ServicioRemotoGit(ServicioGit):
     a las operaciones locales.
 
     Nunca utilizamos Push forzado.
+    El Pull solamente permite actualizaciones fast-forward.
     """
 
     def obtener_remoto_sincronizacion(self, ruta_repositorio):
@@ -138,8 +139,6 @@ class ServicioRemotoGit(ServicioGit):
                 "No se indicó el remoto que debe consultarse."
             )
 
-        # Rechazamos nombres que podrían interpretarse
-        # accidentalmente como opciones de línea de comandos.
         if nombre_remoto.startswith("-"):
             return self._crear_resultado_error(
                 "El nombre del remoto no es válido."
@@ -297,7 +296,6 @@ class ServicioRemotoGit(ServicioGit):
                 operacion_en_curso
             )
 
-        # Nunca eliminamos index.lock automáticamente.
         ruta_bloqueo = self._obtener_ruta_git_interna(
             estado.ruta_raiz,
             "index.lock"
@@ -346,8 +344,6 @@ class ServicioRemotoGit(ServicioGit):
                 )
             )
 
-        # Aunque Git técnicamente permite Push con cambios
-        # pendientes, nuestra aplicación será más conservadora.
         if resultado_cambios.cambios:
             return self._crear_resultado_error(
                 (
@@ -369,8 +365,6 @@ class ServicioRemotoGit(ServicioGit):
 
         remoto = resultado_remoto.salida
 
-        # La información remota debe ser actualizada
-        # inmediatamente antes del Push.
         resultado_fetch = self.ejecutar_fetch(
             estado.ruta_raiz,
             remoto
@@ -435,11 +429,6 @@ class ServicioRemotoGit(ServicioGit):
         rama_local = estado_sincronizacion.rama_local
 
         if not estado_sincronizacion.upstream_configurado:
-            # Primer Push de esta rama.
-            #
-            # La rama remota tendrá el mismo nombre
-            # que la rama local y quedará configurada
-            # automáticamente como upstream.
             argumentos_push = [
                 "push",
                 "--porcelain",
@@ -492,9 +481,246 @@ class ServicioRemotoGit(ServicioGit):
                 )
             ]
 
-        # No existe ninguna variante --force en este comando.
         return self.ejecutar_git(
             argumentos=argumentos_push,
+            ruta_repositorio=estado.ruta_raiz,
+            tiempo_maximo=180
+        )
+
+    def ejecutar_pull_seguro(
+        self,
+        ruta_repositorio
+    ):
+        """
+        Descarga cambios remotos mediante Pull fast-forward.
+
+        Política conservadora:
+
+        1. El repositorio debe ser válido.
+        2. HEAD debe pertenecer a una rama.
+        3. Debe existir al menos un commit.
+        4. No puede existir otra operación Git en curso.
+        5. No puede existir index.lock.
+        6. El área de trabajo debe estar completamente limpia.
+        7. Se ejecuta Fetch antes de decidir.
+        8. La rama debe tener upstream configurado.
+        9. No puede haber divergencia.
+        10. No puede haber commits locales pendientes de Push.
+        11. Deben existir commits remotos por descargar.
+        12. El Pull utiliza exclusivamente --ff-only.
+        """
+
+        estado = self.analizar_repositorio(
+            ruta_repositorio
+        )
+
+        if not estado.es_repositorio:
+            return self._crear_resultado_error(
+                estado.mensaje
+            )
+
+        if not estado.rama_actual:
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Pull porque HEAD "
+                    "no está asociado a una rama."
+                )
+            )
+
+        if not estado.tiene_commits:
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Pull porque "
+                    "el repositorio todavía no tiene commits."
+                )
+            )
+
+        operacion_en_curso = self.detectar_operacion_en_curso(
+            estado.ruta_raiz
+        )
+
+        if operacion_en_curso:
+            return self._crear_resultado_error(
+                operacion_en_curso
+            )
+
+        ruta_bloqueo = self._obtener_ruta_git_interna(
+            estado.ruta_raiz,
+            "index.lock"
+        )
+
+        if (
+            ruta_bloqueo is not None
+            and ruta_bloqueo.exists()
+        ):
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Pull porque existe "
+                    "un archivo index.lock.\n\n"
+                    "Compruebe que no haya otro proceso Git "
+                    "trabajando sobre el repositorio.\n\n"
+                    "La aplicación no eliminará el bloqueo "
+                    "automáticamente."
+                )
+            )
+
+        resultado_cambios = self.obtener_cambios(
+            estado.ruta_raiz
+        )
+
+        if not resultado_cambios.exitoso:
+            return self._crear_resultado_error(
+                resultado_cambios.error
+            )
+
+        archivos_conflicto = [
+            cambio.ruta
+            for cambio in resultado_cambios.cambios
+            if cambio.descripcion == "Conflicto"
+        ]
+
+        if archivos_conflicto:
+            lista_archivos = "\n".join(
+                archivos_conflicto
+            )
+
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Pull porque existen "
+                    "archivos con conflictos:\n\n"
+                    f"{lista_archivos}"
+                )
+            )
+
+        if resultado_cambios.cambios:
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Pull porque existen "
+                    "cambios sin commit en el repositorio.\n\n"
+                    "La aplicación exige un área de trabajo "
+                    "completamente limpia antes de descargar."
+                )
+            )
+
+        resultado_remoto = self.obtener_remoto_sincronizacion(
+            estado.ruta_raiz
+        )
+
+        if not resultado_remoto.exitoso:
+            return self._crear_resultado_error(
+                resultado_remoto.error
+            )
+
+        remoto = resultado_remoto.salida
+
+        # Actualizamos primero las referencias remotas.
+        resultado_fetch = self.ejecutar_fetch(
+            estado.ruta_raiz,
+            remoto
+        )
+
+        if not resultado_fetch.exitoso:
+            detalle = (
+                resultado_fetch.error
+                if resultado_fetch.error
+                else resultado_fetch.salida
+            )
+
+            return self._crear_resultado_error(
+                (
+                    "No se realizará Pull porque el Fetch previo "
+                    "no pudo completarse.\n\n"
+                    f"{detalle}"
+                )
+            )
+
+        estado_sincronizacion = (
+            self.obtener_estado_sincronizacion(
+                estado.ruta_raiz
+            )
+        )
+
+        if not estado_sincronizacion.exitoso:
+            return self._crear_resultado_error(
+                estado_sincronizacion.error
+            )
+
+        if not estado_sincronizacion.upstream_configurado:
+            return self._crear_resultado_error(
+                (
+                    "No se puede realizar Pull porque la rama "
+                    "actual no tiene upstream configurado."
+                )
+            )
+
+        if estado_sincronizacion.divergente:
+            return self._crear_resultado_error(
+                (
+                    "No se realizará Pull porque la rama local "
+                    "y la rama remota han divergido.\n\n"
+                    f"Commits locales por enviar: "
+                    f"{estado_sincronizacion.commits_por_subir}\n"
+                    f"Commits remotos por descargar: "
+                    f"{estado_sincronizacion.commits_por_bajar}\n\n"
+                    "La aplicación no realizará Merge ni Rebase "
+                    "automáticamente."
+                )
+            )
+
+        if estado_sincronizacion.commits_por_subir > 0:
+            return self._crear_resultado_error(
+                (
+                    "No se realizará Pull porque existen commits "
+                    "locales pendientes de enviar.\n\n"
+                    f"Commits por enviar: "
+                    f"{estado_sincronizacion.commits_por_subir}"
+                )
+            )
+
+        if estado_sincronizacion.commits_por_bajar <= 0:
+            return self._crear_resultado_error(
+                "No hay commits remotos pendientes de descargar."
+            )
+
+        rama_remota = (
+            estado_sincronizacion.rama_remota
+        )
+
+        prefijo_remoto = (
+            f"{remoto}/"
+        )
+
+        if not rama_remota.startswith(
+            prefijo_remoto
+        ):
+            return self._crear_resultado_error(
+                (
+                    "No fue posible determinar de forma segura "
+                    "la rama remota que debe descargarse."
+                )
+            )
+
+        nombre_rama_remota = rama_remota[
+            len(prefijo_remoto):
+        ]
+
+        if not nombre_rama_remota:
+            return self._crear_resultado_error(
+                (
+                    "No fue posible determinar la rama remota "
+                    "que debe descargarse."
+                )
+            )
+
+        # La opción --ff-only impide que Git cree
+        # automáticamente un commit de Merge.
+        return self.ejecutar_git(
+            argumentos=[
+                "pull",
+                "--ff-only",
+                remoto,
+                nombre_rama_remota
+            ],
             ruta_repositorio=estado.ruta_raiz,
             tiempo_maximo=180
         )
