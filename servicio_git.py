@@ -68,7 +68,8 @@ class ServicioGit:
                 comando=""
             )
 
-        # Construimos siempre el comando utilizando una lista.
+        # Construimos siempre el comando como una lista.
+        #
         # Nunca utilizamos shell=True.
         comando = [self.ruta_git] + argumentos
 
@@ -108,7 +109,7 @@ class ServicioGit:
             )
 
             # No utilizamos strip() porque algunos espacios
-            # iniciales tienen significado para Git.
+            # iniciales tienen significado en la salida de Git.
             salida = resultado.stdout.rstrip("\r\n")
             error = resultado.stderr.rstrip("\r\n")
 
@@ -221,6 +222,7 @@ class ServicioGit:
                 mensaje="La carpeta no corresponde a un repositorio Git."
             )
 
+        # Obtenemos la raíz verdadera del repositorio.
         resultado_raiz = self.ejecutar_git(
             argumentos=[
                 "rev-parse",
@@ -234,6 +236,7 @@ class ServicioGit:
         else:
             ruta_raiz = str(carpeta.resolve())
 
+        # Obtenemos la rama actual.
         resultado_rama = self.ejecutar_git(
             argumentos=[
                 "symbolic-ref",
@@ -247,8 +250,10 @@ class ServicioGit:
         if resultado_rama.exitoso:
             rama_actual = resultado_rama.salida
         else:
+            # Esto puede ocurrir cuando HEAD está separado.
             rama_actual = ""
 
+        # Comprobamos si existe al menos un commit.
         resultado_head = self.ejecutar_git(
             argumentos=[
                 "rev-parse",
@@ -260,6 +265,7 @@ class ServicioGit:
 
         tiene_commits = resultado_head.exitoso
 
+        # Obtenemos los remotos configurados.
         resultado_remotos = self.ejecutar_git(
             argumentos=["remote"],
             ruta_repositorio=ruta_raiz
@@ -314,6 +320,7 @@ class ServicioGit:
 
         cambios = []
 
+        # Git separa los registros mediante NUL cuando usamos -z.
         registros = resultado.salida.split("\0")
 
         indice = 0
@@ -340,6 +347,7 @@ class ServicioGit:
 
             ruta_anterior = ""
 
+            # Los renombrados y copiados utilizan una segunda ruta.
             if (
                 estado_indice in ("R", "C")
                 or estado_trabajo in ("R", "C")
@@ -449,16 +457,6 @@ class ServicioGit:
 
         IMPORTANTE:
             Esta operación NO elimina los archivos del disco.
-
-        Si el repositorio ya tiene commits utilizamos:
-
-            git restore --staged
-
-        Si todavía no existe ningún commit utilizamos:
-
-            git rm --cached
-
-        porque todavía no existe HEAD contra el cual restaurar.
         """
 
         estado_repositorio = self.analizar_repositorio(
@@ -490,9 +488,7 @@ class ServicioGit:
             )
 
         if estado_repositorio.tiene_commits:
-            # El repositorio ya tiene HEAD.
-            #
-            # restore --staged modifica solamente el índice.
+            # Ya existe HEAD.
             argumentos = [
                 "--literal-pathspecs",
                 "restore",
@@ -501,10 +497,10 @@ class ServicioGit:
             ]
 
         else:
-            # En un repositorio sin commits todavía no existe HEAD.
+            # En el primer commit todavía no existe HEAD.
             #
-            # rm --cached quita el archivo del índice pero conserva
-            # el archivo físicamente en el disco.
+            # rm --cached quita el archivo del índice,
+            # pero conserva el archivo físico.
             argumentos = [
                 "--literal-pathspecs",
                 "rm",
@@ -521,12 +517,387 @@ class ServicioGit:
             ruta_repositorio=estado_repositorio.ruta_raiz
         )
 
+    def crear_commit(
+        self,
+        ruta_repositorio,
+        mensaje_commit
+    ):
+        """
+        Crea un commit utilizando todos los archivos
+        que actualmente están preparados.
+
+        La función realiza varias validaciones antes
+        de permitir el commit.
+        """
+
+        estado_repositorio = self.analizar_repositorio(
+            ruta_repositorio
+        )
+
+        if not estado_repositorio.es_repositorio:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=estado_repositorio.mensaje,
+                comando=""
+            )
+
+        # No permitimos commits cuando HEAD está separado.
+        if not estado_repositorio.rama_actual:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    "No se puede crear el commit porque HEAD "
+                    "no está asociado a una rama."
+                ),
+                comando=""
+            )
+
+        # Validamos el mensaje.
+        if mensaje_commit is None:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error="El mensaje del commit es obligatorio.",
+                comando=""
+            )
+
+        mensaje = str(
+            mensaje_commit
+        ).strip()
+
+        if not mensaje:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error="El mensaje del commit es obligatorio.",
+                comando=""
+            )
+
+        # Un argumento de proceso no puede contener NUL.
+        if "\x00" in mensaje:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error="El mensaje del commit contiene un carácter inválido.",
+                comando=""
+            )
+
+        # Comprobamos si Git está realizando otra operación.
+        operacion_en_curso = self.detectar_operacion_en_curso(
+            estado_repositorio.ruta_raiz
+        )
+
+        if operacion_en_curso:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=operacion_en_curso,
+                comando=""
+            )
+
+        # Nunca eliminamos index.lock automáticamente.
+        ruta_bloqueo = self._obtener_ruta_git_interna(
+            estado_repositorio.ruta_raiz,
+            "index.lock"
+        )
+
+        if (
+            ruta_bloqueo is not None
+            and ruta_bloqueo.exists()
+        ):
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    "Git informa que el índice está bloqueado "
+                    "mediante index.lock.\n\n"
+                    "Compruebe que no exista otro proceso Git "
+                    "trabajando sobre este repositorio.\n\n"
+                    "La aplicación no eliminará el bloqueo "
+                    "automáticamente."
+                ),
+                comando=""
+            )
+
+        # Comprobamos identidad de Git.
+        mensaje_identidad = self._validar_identidad_git(
+            estado_repositorio.ruta_raiz
+        )
+
+        if mensaje_identidad:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=mensaje_identidad,
+                comando=""
+            )
+
+        # Consultamos nuevamente el estado real antes del commit.
+        resultado_cambios = self.obtener_cambios(
+            estado_repositorio.ruta_raiz
+        )
+
+        if not resultado_cambios.exitoso:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=resultado_cambios.error,
+                comando=""
+            )
+
+        # No permitimos commits mientras existan conflictos.
+        archivos_conflicto = [
+            cambio.ruta
+            for cambio in resultado_cambios.cambios
+            if cambio.descripcion == "Conflicto"
+        ]
+
+        if archivos_conflicto:
+            lista = "\n".join(
+                archivos_conflicto
+            )
+
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    "No se puede crear el commit porque existen "
+                    "archivos con conflictos:\n\n"
+                    f"{lista}"
+                ),
+                comando=""
+            )
+
+        archivos_preparados = [
+            cambio
+            for cambio in resultado_cambios.cambios
+            if cambio.preparado
+        ]
+
+        if not archivos_preparados:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    "No hay archivos preparados para crear "
+                    "el commit."
+                ),
+                comando=""
+            )
+
+        # Si un archivo fue preparado y luego volvió a cambiar,
+        # el commit incluiría una versión distinta de la que el
+        # usuario está viendo actualmente.
+        #
+        # Para evitar confusión bloqueamos el commit.
+        archivos_modificados_despues = [
+            cambio.ruta
+            for cambio in archivos_preparados
+            if cambio.estado_trabajo not in (
+                " ",
+                "?",
+                "!"
+            )
+        ]
+
+        if archivos_modificados_despues:
+            lista = "\n".join(
+                archivos_modificados_despues
+            )
+
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    "No se puede crear el commit porque algunos "
+                    "archivos fueron modificados después de "
+                    "haber sido preparados:\n\n"
+                    f"{lista}\n\n"
+                    "Prepare nuevamente esos archivos o quite "
+                    "los cambios del área preparada."
+                ),
+                comando=""
+            )
+
+        # Ejecutamos finalmente el commit.
+        #
+        # No utilizamos --no-verify porque respetamos cualquier
+        # hook configurado en el repositorio.
+        return self.ejecutar_git(
+            argumentos=[
+                "commit",
+                "-m",
+                mensaje
+            ],
+            ruta_repositorio=estado_repositorio.ruta_raiz,
+            tiempo_maximo=60
+        )
+
+    def obtener_hash_actual(self, ruta_repositorio):
+        """
+        Devuelve el identificador corto del commit actual.
+        """
+
+        return self.ejecutar_git(
+            argumentos=[
+                "rev-parse",
+                "--short",
+                "HEAD"
+            ],
+            ruta_repositorio=ruta_repositorio
+        )
+
+    def detectar_operacion_en_curso(self, ruta_repositorio):
+        """
+        Detecta operaciones Git que requieren intervención
+        especial antes de permitir un commit normal.
+
+        Devuelve una cadena vacía si no existe ninguna.
+        """
+
+        comprobaciones = [
+            (
+                "MERGE_HEAD",
+                "Hay una operación merge en curso."
+            ),
+            (
+                "CHERRY_PICK_HEAD",
+                "Hay una operación cherry-pick en curso."
+            ),
+            (
+                "REVERT_HEAD",
+                "Hay una operación revert en curso."
+            ),
+            (
+                "rebase-merge",
+                "Hay una operación rebase en curso."
+            ),
+            (
+                "rebase-apply",
+                "Hay una operación rebase en curso."
+            ),
+            (
+                "sequencer",
+                "Hay una secuencia de operaciones Git en curso."
+            ),
+        ]
+
+        for nombre_git, mensaje in comprobaciones:
+            ruta = self._obtener_ruta_git_interna(
+                ruta_repositorio,
+                nombre_git
+            )
+
+            if ruta is not None and ruta.exists():
+                return (
+                    f"{mensaje}\n\n"
+                    "La aplicación no realizará un commit "
+                    "normal hasta que esa operación termine."
+                )
+
+        return ""
+
+    def _validar_identidad_git(self, ruta_repositorio):
+        """
+        Comprueba que Git tenga nombre y correo configurados.
+
+        Devuelve una cadena vacía cuando todo está correcto.
+        """
+
+        resultado_nombre = self.ejecutar_git(
+            argumentos=[
+                "config",
+                "--get",
+                "user.name"
+            ],
+            ruta_repositorio=ruta_repositorio
+        )
+
+        if (
+            not resultado_nombre.exitoso
+            or not resultado_nombre.salida.strip()
+        ):
+            return (
+                "Git no tiene configurado user.name.\n\n"
+                "Debe configurar el nombre del autor "
+                "antes de crear commits."
+            )
+
+        resultado_correo = self.ejecutar_git(
+            argumentos=[
+                "config",
+                "--get",
+                "user.email"
+            ],
+            ruta_repositorio=ruta_repositorio
+        )
+
+        if (
+            not resultado_correo.exitoso
+            or not resultado_correo.salida.strip()
+        ):
+            return (
+                "Git no tiene configurado user.email.\n\n"
+                "Debe configurar el correo del autor "
+                "antes de crear commits."
+            )
+
+        return ""
+
+    def _obtener_ruta_git_interna(
+        self,
+        ruta_repositorio,
+        nombre
+    ):
+        """
+        Obtiene una ruta interna del repositorio Git.
+
+        Este método funciona también en repositorios
+        que utilizan worktrees.
+        """
+
+        resultado = self.ejecutar_git(
+            argumentos=[
+                "rev-parse",
+                "--git-path",
+                nombre
+            ],
+            ruta_repositorio=ruta_repositorio
+        )
+
+        if not resultado.exitoso:
+            return None
+
+        ruta = Path(
+            resultado.salida
+        )
+
+        if not ruta.is_absolute():
+            ruta = (
+                Path(ruta_repositorio)
+                / ruta
+            )
+
+        return ruta
+
     @staticmethod
     def _validar_rutas_relativas(rutas_archivos):
         """
         Valida una colección de rutas recibidas desde la interfaz.
-
-        Las rutas deben ser relativas al repositorio.
 
         Devuelve:
             rutas_validas
@@ -563,7 +934,6 @@ class ServicioGit:
                 ruta_texto
             )
 
-            # Nunca permitimos rutas absolutas.
             if ruta_objeto.is_absolute():
                 return (
                     None,
@@ -573,7 +943,6 @@ class ServicioGit:
                     )
                 )
 
-            # Evitamos salir del repositorio mediante ..
             if ".." in ruta_objeto.parts:
                 return (
                     None,
@@ -583,7 +952,6 @@ class ServicioGit:
                     )
                 )
 
-            # Eliminamos duplicados conservando el orden.
             if ruta_texto not in rutas_validas:
                 rutas_validas.append(
                     ruta_texto

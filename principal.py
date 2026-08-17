@@ -40,12 +40,12 @@ class AplicacionGit:
         )
 
         self.ventana_principal.geometry(
-            "1100x700"
+            "1100x760"
         )
 
         self.ventana_principal.minsize(
             850,
-            550
+            620
         )
 
     def crear_interfaz(self):
@@ -72,6 +72,7 @@ class AplicacionGit:
             weight=1
         )
 
+        # La tabla ocupa el espacio vertical sobrante.
         marco_principal.rowconfigure(
             4,
             weight=1
@@ -158,7 +159,7 @@ class AplicacionGit:
         )
 
         # ---------------------------------------------------------
-        # Información
+        # Información del repositorio
         # ---------------------------------------------------------
 
         marco_informacion = ttk.LabelFrame(
@@ -368,7 +369,7 @@ class AplicacionGit:
         )
 
         # ---------------------------------------------------------
-        # Acciones
+        # Acciones sobre archivos
         # ---------------------------------------------------------
 
         marco_acciones = ttk.Frame(
@@ -418,6 +419,78 @@ class AplicacionGit:
         )
 
         # ---------------------------------------------------------
+        # Crear commit
+        # ---------------------------------------------------------
+
+        marco_commit = ttk.LabelFrame(
+            marco_principal,
+            text="Crear commit",
+            padding=10
+        )
+
+        marco_commit.grid(
+            row=6,
+            column=0,
+            sticky="ew",
+            pady=(10, 0)
+        )
+
+        marco_commit.columnconfigure(
+            1,
+            weight=1
+        )
+
+        ttk.Label(
+            marco_commit,
+            text="Mensaje:"
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(0, 10)
+        )
+
+        self.variable_mensaje_commit = tk.StringVar()
+
+        self.entrada_mensaje_commit = ttk.Entry(
+            marco_commit,
+            textvariable=self.variable_mensaje_commit
+        )
+
+        self.entrada_mensaje_commit.grid(
+            row=0,
+            column=1,
+            sticky="ew",
+            padx=(0, 10)
+        )
+
+        self.boton_crear_commit = ttk.Button(
+            marco_commit,
+            text="Crear commit",
+            command=self.crear_commit_desde_interfaz,
+            state=tk.DISABLED
+        )
+
+        self.boton_crear_commit.grid(
+            row=0,
+            column=2
+        )
+
+        ttk.Label(
+            marco_commit,
+            text=(
+                "El commit se guardará solamente en el repositorio local. "
+                "Todavía no se enviará a GitHub."
+            )
+        ).grid(
+            row=1,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(8, 0)
+        )
+
+        # ---------------------------------------------------------
         # Barra de estado
         # ---------------------------------------------------------
 
@@ -434,7 +507,7 @@ class AplicacionGit:
         )
 
         etiqueta_estado.grid(
-            row=6,
+            row=7,
             column=0,
             sticky="ew",
             pady=(10, 0)
@@ -637,8 +710,17 @@ class AplicacionGit:
             self.boton_quitar_preparados.config(
                 state=tk.NORMAL
             )
+
+            self.boton_crear_commit.config(
+                state=tk.NORMAL
+            )
+
         else:
             self.boton_quitar_preparados.config(
+                state=tk.DISABLED
+            )
+
+            self.boton_crear_commit.config(
                 state=tk.DISABLED
             )
 
@@ -730,28 +812,14 @@ class AplicacionGit:
 
             return
 
-        cantidad = len(
-            rutas_archivos
+        mensaje = self._crear_mensaje_confirmacion_archivos(
+            rutas_archivos,
+            singular="Se preparará 1 archivo para el próximo commit.",
+            plural=(
+                "Se prepararán {cantidad} archivos "
+                "para el próximo commit."
+            )
         )
-
-        if cantidad == 1:
-            mensaje = (
-                "Se preparará 1 archivo para el próximo commit.\n\n"
-                f"{rutas_archivos[0]}\n\n"
-                "¿Desea continuar?"
-            )
-
-        else:
-            lista_archivos = "\n".join(
-                rutas_archivos
-            )
-
-            mensaje = (
-                f"Se prepararán {cantidad} archivos "
-                "para el próximo commit.\n\n"
-                f"{lista_archivos}\n\n"
-                "¿Desea continuar?"
-            )
 
         confirmado = messagebox.askyesno(
             "Preparar archivos",
@@ -835,30 +903,18 @@ class AplicacionGit:
 
             return
 
-        cantidad = len(
-            rutas_archivos
-        )
-
-        if cantidad == 1:
-            mensaje = (
-                "Se quitará 1 archivo del próximo commit.\n\n"
-                f"{rutas_archivos[0]}\n\n"
-                "El archivo NO será eliminado del disco.\n\n"
-                "¿Desea continuar?"
-            )
-
-        else:
-            lista_archivos = "\n".join(
-                rutas_archivos
-            )
-
-            mensaje = (
-                f"Se quitarán {cantidad} archivos "
-                "del próximo commit.\n\n"
-                f"{lista_archivos}\n\n"
+        mensaje = self._crear_mensaje_confirmacion_archivos(
+            rutas_archivos,
+            singular="Se quitará 1 archivo del próximo commit.",
+            plural=(
+                "Se quitarán {cantidad} archivos "
+                "del próximo commit."
+            ),
+            texto_final=(
                 "Los archivos NO serán eliminados del disco.\n\n"
                 "¿Desea continuar?"
             )
+        )
 
         confirmado = messagebox.askyesno(
             "Quitar de preparados",
@@ -895,6 +951,140 @@ class AplicacionGit:
 
         self.cargar_cambios()
 
+    def crear_commit_desde_interfaz(self):
+        """
+        Crea un commit local con todos los archivos preparados.
+        """
+
+        if not self.ruta_repositorio:
+            return
+
+        mensaje_commit = self.variable_mensaje_commit.get().strip()
+
+        if not mensaje_commit:
+            messagebox.showinfo(
+                "Mensaje obligatorio",
+                "Escriba un mensaje para el commit."
+            )
+
+            self.entrada_mensaje_commit.focus_set()
+
+            return
+
+        # Consultamos nuevamente el estado para no confiar
+        # solamente en la información visual de la tabla.
+        resultado_cambios = self.servicio_git.obtener_cambios(
+            self.ruta_repositorio
+        )
+
+        if not resultado_cambios.exitoso:
+            messagebox.showerror(
+                "Error al consultar Git",
+                resultado_cambios.error
+            )
+
+            return
+
+        rutas_preparadas = [
+            cambio.ruta
+            for cambio in resultado_cambios.cambios
+            if cambio.preparado
+        ]
+
+        if not rutas_preparadas:
+            messagebox.showinfo(
+                "Sin archivos preparados",
+                "No hay archivos preparados para crear el commit."
+            )
+
+            self.cargar_cambios()
+
+            return
+
+        resumen_archivos = self._crear_resumen_rutas(
+            rutas_preparadas
+        )
+
+        mensaje_confirmacion = (
+            "Se creará un commit LOCAL.\n\n"
+            f"Mensaje:\n{mensaje_commit}\n\n"
+            "Archivos que entrarán en el commit:\n"
+            f"{resumen_archivos}\n\n"
+            "Este paso todavía NO enviará nada a GitHub.\n\n"
+            "¿Desea continuar?"
+        )
+
+        confirmado = messagebox.askyesno(
+            "Crear commit",
+            mensaje_confirmacion
+        )
+
+        if not confirmado:
+            return
+
+        self.variable_estado.set(
+            "Creando commit..."
+        )
+
+        self.ventana_principal.update_idletasks()
+
+        resultado = self.servicio_git.crear_commit(
+            self.ruta_repositorio,
+            mensaje_commit
+        )
+
+        if not resultado.exitoso:
+            self.variable_estado.set(
+                "No fue posible crear el commit."
+            )
+
+            detalle_error = (
+                resultado.error
+                if resultado.error
+                else resultado.salida
+            )
+
+            messagebox.showerror(
+                "No fue posible crear el commit",
+                detalle_error
+            )
+
+            # Volvemos a leer el estado por si Git realizó
+            # alguna modificación parcial antes de fallar.
+            self.cargar_cambios()
+
+            return
+
+        # Obtenemos el hash del commit recién creado.
+        resultado_hash = self.servicio_git.obtener_hash_actual(
+            self.ruta_repositorio
+        )
+
+        if resultado_hash.exitoso:
+            hash_commit = resultado_hash.salida
+        else:
+            hash_commit = "No disponible"
+
+        # Limpiamos el mensaje después de un commit exitoso.
+        self.variable_mensaje_commit.set(
+            ""
+        )
+
+        # Actualizamos toda la información del repositorio.
+        self.cargar_repositorio(
+            self.ruta_repositorio
+        )
+
+        messagebox.showinfo(
+            "Commit creado",
+            (
+                "El commit fue creado correctamente.\n\n"
+                f"Hash: {hash_commit}\n\n"
+                "El commit existe solamente en el repositorio local.\n"
+                "Todavía NO fue enviado al repositorio remoto."
+            )
+        )
+
     def limpiar_tabla(self):
         """
         Limpia la tabla.
@@ -924,6 +1114,10 @@ class AplicacionGit:
             state=tk.DISABLED
         )
 
+        self.boton_crear_commit.config(
+            state=tk.DISABLED
+        )
+
     def limpiar_repositorio(self):
         """
         Restablece la información visual.
@@ -939,6 +1133,10 @@ class AplicacionGit:
         self.variable_remoto.set("-")
         self.variable_commits.set("-")
 
+        self.variable_mensaje_commit.set(
+            ""
+        )
+
         self.boton_actualizar.config(
             state=tk.DISABLED
         )
@@ -946,6 +1144,70 @@ class AplicacionGit:
         self.deshabilitar_botones_de_archivos()
 
         self.limpiar_tabla()
+
+    @staticmethod
+    def _crear_resumen_rutas(rutas):
+        """
+        Crea un resumen de rutas para mostrar en una confirmación.
+
+        Limitamos la cantidad mostrada para evitar diálogos enormes.
+        """
+
+        limite = 15
+
+        rutas_visibles = rutas[
+            :limite
+        ]
+
+        texto = "\n".join(
+            f"- {ruta}"
+            for ruta in rutas_visibles
+        )
+
+        cantidad_restante = (
+            len(rutas)
+            - len(rutas_visibles)
+        )
+
+        if cantidad_restante > 0:
+            texto += (
+                f"\n- ... y {cantidad_restante} archivo(s) más"
+            )
+
+        return texto
+
+    def _crear_mensaje_confirmacion_archivos(
+        self,
+        rutas,
+        singular,
+        plural,
+        texto_final="¿Desea continuar?"
+    ):
+        """
+        Construye el mensaje utilizado para confirmar
+        operaciones sobre uno o varios archivos.
+        """
+
+        cantidad = len(
+            rutas
+        )
+
+        if cantidad == 1:
+            encabezado = singular
+        else:
+            encabezado = plural.format(
+                cantidad=cantidad
+            )
+
+        resumen = self._crear_resumen_rutas(
+            rutas
+        )
+
+        return (
+            f"{encabezado}\n\n"
+            f"{resumen}\n\n"
+            f"{texto_final}"
+        )
 
 
 def iniciar_aplicacion():
