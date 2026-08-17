@@ -1,34 +1,53 @@
+import queue
+import threading
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import ttk
 
-from servicio_git import ServicioGit
+from servicio_remoto_git import ServicioRemotoGit
 
 
 class AplicacionGit:
     """
     Ventana principal de la aplicación Gestor Git.
 
-    Toda comunicación con Git se realiza mediante ServicioGit.
+    Las operaciones locales y remotas pasan por ServicioRemotoGit.
+
+    Las operaciones de red se ejecutan en un hilo secundario
+    para no bloquear la interfaz de Tkinter.
     """
 
     def __init__(self, ventana_principal):
-        # Guardamos la ventana principal.
         self.ventana_principal = ventana_principal
 
-        # Servicio encargado de comunicarse con Git.
-        self.servicio_git = ServicioGit()
+        # Servicio que incluye las operaciones locales anteriores
+        # y las nuevas operaciones remotas.
+        self.servicio_git = ServicioRemotoGit()
 
-        # Ruta del repositorio actualmente seleccionado.
         self.ruta_repositorio = ""
+        self.remotos_repositorio = []
 
-        # Relaciona las filas de la tabla con CambioArchivo.
         self.cambios_por_elemento = {}
+
+        # Los hilos secundarios nunca modificarán directamente
+        # los controles de Tkinter.
+        #
+        # Utilizarán esta cola para devolver sus resultados.
+        self.cola_resultados = queue.Queue()
+
+        self.operacion_remota_en_curso = False
 
         self.configurar_ventana()
         self.crear_interfaz()
         self.verificar_git()
+
+        # Tkinter comprobará periódicamente si existe
+        # algún resultado enviado por los hilos.
+        self.ventana_principal.after(
+            100,
+            self.procesar_cola_resultados
+        )
 
     def configurar_ventana(self):
         """
@@ -40,22 +59,18 @@ class AplicacionGit:
         )
 
         self.ventana_principal.geometry(
-            "1100x760"
+            "1180x880"
         )
 
         self.ventana_principal.minsize(
-            850,
-            620
+            950,
+            700
         )
 
     def crear_interfaz(self):
         """
         Crea todos los controles visibles.
         """
-
-        # ---------------------------------------------------------
-        # Marco principal
-        # ---------------------------------------------------------
 
         marco_principal = ttk.Frame(
             self.ventana_principal,
@@ -72,9 +87,9 @@ class AplicacionGit:
             weight=1
         )
 
-        # La tabla ocupa el espacio vertical sobrante.
+        # La tabla ocupará el espacio vertical restante.
         marco_principal.rowconfigure(
-            4,
+            5,
             weight=1
         )
 
@@ -159,12 +174,12 @@ class AplicacionGit:
         )
 
         # ---------------------------------------------------------
-        # Información del repositorio
+        # Información local
         # ---------------------------------------------------------
 
         marco_informacion = ttk.LabelFrame(
             marco_principal,
-            text="Información",
+            text="Información local",
             padding=10
         )
 
@@ -209,7 +224,7 @@ class AplicacionGit:
 
         ttk.Label(
             marco_informacion,
-            text="Remoto:"
+            text="Remoto(s):"
         ).grid(
             row=0,
             column=2,
@@ -247,6 +262,179 @@ class AplicacionGit:
         )
 
         # ---------------------------------------------------------
+        # Sincronización remota
+        # ---------------------------------------------------------
+
+        marco_sincronizacion = ttk.LabelFrame(
+            marco_principal,
+            text="Sincronización remota",
+            padding=10
+        )
+
+        marco_sincronizacion.grid(
+            row=3,
+            column=0,
+            sticky="ew",
+            pady=(0, 10)
+        )
+
+        marco_sincronizacion.columnconfigure(
+            7,
+            weight=1
+        )
+
+        self.variable_upstream = tk.StringVar(
+            value="-"
+        )
+
+        self.variable_rama_remota = tk.StringVar(
+            value="-"
+        )
+
+        self.variable_por_subir = tk.StringVar(
+            value="-"
+        )
+
+        self.variable_por_bajar = tk.StringVar(
+            value="-"
+        )
+
+        self.variable_estado_sincronizacion = tk.StringVar(
+            value="Seleccione un repositorio."
+        )
+
+        self.variable_ultima_consulta = tk.StringVar(
+            value="Todavía no se ejecutó Fetch en esta sesión."
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            text="Upstream:"
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(0, 5)
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            textvariable=self.variable_upstream
+        ).grid(
+            row=0,
+            column=1,
+            sticky="w",
+            padx=(0, 25)
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            text="Rama remota:"
+        ).grid(
+            row=0,
+            column=2,
+            sticky="w",
+            padx=(0, 5)
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            textvariable=self.variable_rama_remota
+        ).grid(
+            row=0,
+            column=3,
+            sticky="w",
+            padx=(0, 25)
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            text="Por enviar:"
+        ).grid(
+            row=0,
+            column=4,
+            sticky="w",
+            padx=(0, 5)
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            textvariable=self.variable_por_subir
+        ).grid(
+            row=0,
+            column=5,
+            sticky="w",
+            padx=(0, 25)
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            text="Por descargar:"
+        ).grid(
+            row=0,
+            column=6,
+            sticky="w",
+            padx=(0, 5)
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            textvariable=self.variable_por_bajar
+        ).grid(
+            row=0,
+            column=7,
+            sticky="w"
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            text="Estado:"
+        ).grid(
+            row=1,
+            column=0,
+            sticky="nw",
+            padx=(0, 5),
+            pady=(8, 0)
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            textvariable=self.variable_estado_sincronizacion,
+            wraplength=760
+        ).grid(
+            row=1,
+            column=1,
+            columnspan=6,
+            sticky="w",
+            pady=(8, 0)
+        )
+
+        self.boton_fetch = ttk.Button(
+            marco_sincronizacion,
+            text="Fetch",
+            command=self.iniciar_fetch,
+            state=tk.DISABLED
+        )
+
+        self.boton_fetch.grid(
+            row=1,
+            column=7,
+            sticky="e",
+            pady=(8, 0)
+        )
+
+        ttk.Label(
+            marco_sincronizacion,
+            textvariable=self.variable_ultima_consulta
+        ).grid(
+            row=2,
+            column=0,
+            columnspan=8,
+            sticky="w",
+            pady=(8, 0)
+        )
+
+        # ---------------------------------------------------------
         # Archivos con cambios
         # ---------------------------------------------------------
 
@@ -257,7 +445,7 @@ class AplicacionGit:
         )
 
         etiqueta_cambios.grid(
-            row=3,
+            row=4,
             column=0,
             sticky="w",
             pady=(5, 5)
@@ -268,7 +456,7 @@ class AplicacionGit:
         )
 
         marco_tabla.grid(
-            row=4,
+            row=5,
             column=0,
             sticky="nsew"
         )
@@ -326,7 +514,7 @@ class AplicacionGit:
 
         self.tabla_cambios.column(
             "archivo",
-            width=600,
+            width=650,
             minwidth=250
         )
 
@@ -377,7 +565,7 @@ class AplicacionGit:
         )
 
         marco_acciones.grid(
-            row=5,
+            row=6,
             column=0,
             sticky="ew",
             pady=(10, 0)
@@ -429,7 +617,7 @@ class AplicacionGit:
         )
 
         marco_commit.grid(
-            row=6,
+            row=7,
             column=0,
             sticky="ew",
             pady=(10, 0)
@@ -480,7 +668,7 @@ class AplicacionGit:
             marco_commit,
             text=(
                 "El commit se guardará solamente en el repositorio local. "
-                "Todavía no se enviará a GitHub."
+                "Todavía no se enviará al remoto."
             )
         ).grid(
             row=1,
@@ -507,7 +695,7 @@ class AplicacionGit:
         )
 
         etiqueta_estado.grid(
-            row=7,
+            row=8,
             column=0,
             sticky="ew",
             pady=(10, 0)
@@ -554,6 +742,9 @@ class AplicacionGit:
         Permite seleccionar un repositorio.
         """
 
+        if self.operacion_remota_en_curso:
+            return
+
         ruta_seleccionada = filedialog.askdirectory(
             title="Seleccionar repositorio Git"
         )
@@ -565,7 +756,10 @@ class AplicacionGit:
             ruta_seleccionada
         )
 
-    def cargar_repositorio(self, ruta_repositorio):
+    def cargar_repositorio(
+        self,
+        ruta_repositorio
+    ):
         """
         Valida y carga un repositorio.
         """
@@ -596,6 +790,10 @@ class AplicacionGit:
 
         self.ruta_repositorio = estado.ruta_raiz
 
+        self.remotos_repositorio = list(
+            estado.remotos
+        )
+
         self.variable_ruta.set(
             estado.ruta_raiz
         )
@@ -622,7 +820,23 @@ class AplicacionGit:
             state=tk.NORMAL
         )
 
+        if estado.remotos:
+            self.boton_fetch.config(
+                state=tk.NORMAL
+            )
+        else:
+            self.boton_fetch.config(
+                state=tk.DISABLED
+            )
+
+        self.variable_ultima_consulta.set(
+            "Información local. Pulse Fetch para consultar el remoto."
+        )
+
         self.cargar_cambios()
+
+        # Esta consulta no accede a Internet.
+        self.cargar_estado_sincronizacion_local()
 
     def cargar_cambios(self):
         """
@@ -688,41 +902,37 @@ class AplicacionGit:
             for cambio in resultado.cambios
         )
 
-        if cantidad > 0:
-            self.boton_seleccionar_todo.config(
-                state=tk.NORMAL
+        self.boton_seleccionar_todo.config(
+            state=(
+                tk.NORMAL
+                if cantidad > 0
+                else tk.DISABLED
             )
-        else:
-            self.boton_seleccionar_todo.config(
-                state=tk.DISABLED
-            )
+        )
 
-        if hay_no_preparados:
-            self.boton_preparar.config(
-                state=tk.NORMAL
+        self.boton_preparar.config(
+            state=(
+                tk.NORMAL
+                if hay_no_preparados
+                else tk.DISABLED
             )
-        else:
-            self.boton_preparar.config(
-                state=tk.DISABLED
-            )
+        )
 
-        if hay_preparados:
-            self.boton_quitar_preparados.config(
-                state=tk.NORMAL
+        self.boton_quitar_preparados.config(
+            state=(
+                tk.NORMAL
+                if hay_preparados
+                else tk.DISABLED
             )
+        )
 
-            self.boton_crear_commit.config(
-                state=tk.NORMAL
+        self.boton_crear_commit.config(
+            state=(
+                tk.NORMAL
+                if hay_preparados
+                else tk.DISABLED
             )
-
-        else:
-            self.boton_quitar_preparados.config(
-                state=tk.DISABLED
-            )
-
-            self.boton_crear_commit.config(
-                state=tk.DISABLED
-            )
+        )
 
         if cantidad == 0:
             self.variable_estado.set(
@@ -739,16 +949,330 @@ class AplicacionGit:
                 f"{cantidad} archivos con cambios pendientes."
             )
 
+    def cargar_estado_sincronizacion_local(self):
+        """
+        Muestra el estado basado en las referencias
+        disponibles localmente.
+
+        Este método NO realiza conexión de red.
+        """
+
+        if not self.ruta_repositorio:
+            self.limpiar_estado_sincronizacion()
+            return
+
+        estado = self.servicio_git.obtener_estado_sincronizacion(
+            self.ruta_repositorio
+        )
+
+        self.aplicar_estado_sincronizacion(
+            estado
+        )
+
+    def aplicar_estado_sincronizacion(
+        self,
+        estado
+    ):
+        """
+        Copia EstadoSincronizacion a la interfaz.
+        """
+
+        if not estado.exitoso:
+            self.variable_upstream.set("-")
+            self.variable_rama_remota.set("-")
+            self.variable_por_subir.set("-")
+            self.variable_por_bajar.set("-")
+
+            self.variable_estado_sincronizacion.set(
+                estado.error
+            )
+
+            return
+
+        self.variable_upstream.set(
+            "Configurado"
+            if estado.upstream_configurado
+            else "No configurado"
+        )
+
+        texto_rama_remota = (
+            estado.rama_remota
+        )
+
+        if not estado.rama_remota_existe:
+            texto_rama_remota += (
+                " (no existe)"
+            )
+
+        self.variable_rama_remota.set(
+            texto_rama_remota
+        )
+
+        self.variable_por_subir.set(
+            str(
+                estado.commits_por_subir
+            )
+        )
+
+        self.variable_por_bajar.set(
+            str(
+                estado.commits_por_bajar
+            )
+        )
+
+        self.variable_estado_sincronizacion.set(
+            estado.mensaje
+        )
+
     def actualizar_repositorio(self):
         """
         Vuelve a consultar el repositorio seleccionado.
         """
+
+        if self.operacion_remota_en_curso:
+            return
 
         if not self.ruta_repositorio:
             return
 
         self.cargar_repositorio(
             self.ruta_repositorio
+        )
+
+    def iniciar_fetch(self):
+        """
+        Inicia Fetch en un hilo secundario.
+
+        Tkinter continúa funcionando mientras Git
+        espera la respuesta del remoto.
+        """
+
+        if self.operacion_remota_en_curso:
+            return
+
+        if not self.ruta_repositorio:
+            return
+
+        resultado_remoto = (
+            self.servicio_git.obtener_remoto_sincronizacion(
+                self.ruta_repositorio
+            )
+        )
+
+        if not resultado_remoto.exitoso:
+            messagebox.showerror(
+                "No se puede ejecutar Fetch",
+                resultado_remoto.error
+            )
+
+            return
+
+        remoto = resultado_remoto.salida
+
+        ruta_repositorio = (
+            self.ruta_repositorio
+        )
+
+        self.operacion_remota_en_curso = True
+
+        self.actualizar_controles_operacion_remota()
+
+        self.variable_estado.set(
+            f"Consultando remoto '{remoto}' mediante Fetch..."
+        )
+
+        self.variable_ultima_consulta.set(
+            "Fetch en curso..."
+        )
+
+        hilo_fetch = threading.Thread(
+            target=self.trabajo_fetch,
+            args=(
+                ruta_repositorio,
+                remoto
+            ),
+            daemon=True
+        )
+
+        hilo_fetch.start()
+
+    def trabajo_fetch(
+        self,
+        ruta_repositorio,
+        remoto
+    ):
+        """
+        Trabajo que se ejecuta fuera del hilo principal.
+
+        MUY IMPORTANTE:
+
+        Este método nunca modifica controles Tkinter.
+        """
+
+        resultado_fetch = (
+            self.servicio_git.ejecutar_fetch(
+                ruta_repositorio,
+                remoto
+            )
+        )
+
+        estado_sincronizacion = None
+
+        if resultado_fetch.exitoso:
+            estado_sincronizacion = (
+                self.servicio_git.obtener_estado_sincronizacion(
+                    ruta_repositorio
+                )
+            )
+
+        # El hilo secundario deposita el resultado en la cola.
+        self.cola_resultados.put(
+            (
+                "fetch",
+                ruta_repositorio,
+                remoto,
+                resultado_fetch,
+                estado_sincronizacion
+            )
+        )
+
+    def procesar_cola_resultados(self):
+        """
+        Procesa resultados de los hilos secundarios
+        desde el hilo principal de Tkinter.
+        """
+
+        try:
+            while True:
+
+                elemento = (
+                    self.cola_resultados.get_nowait()
+                )
+
+                if elemento[0] == "fetch":
+                    self.procesar_resultado_fetch(
+                        *elemento[1:]
+                    )
+
+        except queue.Empty:
+            pass
+
+        # Volvemos a consultar la cola dentro de 100 ms.
+        self.ventana_principal.after(
+            100,
+            self.procesar_cola_resultados
+        )
+
+    def procesar_resultado_fetch(
+        self,
+        ruta_repositorio,
+        remoto,
+        resultado_fetch,
+        estado_sincronizacion
+    ):
+        """
+        Actualiza la interfaz cuando Fetch termina.
+        """
+
+        self.operacion_remota_en_curso = False
+
+        self.actualizar_controles_operacion_remota()
+
+        # Protección adicional por si el repositorio
+        # actual cambió mientras terminaba el hilo.
+        if ruta_repositorio != self.ruta_repositorio:
+            return
+
+        if not resultado_fetch.exitoso:
+
+            self.variable_estado.set(
+                "Fetch falló."
+            )
+
+            self.variable_ultima_consulta.set(
+                "El último Fetch no pudo completarse."
+            )
+
+            detalle = (
+                resultado_fetch.error
+                if resultado_fetch.error
+                else resultado_fetch.salida
+            )
+
+            messagebox.showerror(
+                "Error durante Fetch",
+                detalle
+            )
+
+            return
+
+        if estado_sincronizacion is None:
+            self.variable_estado.set(
+                "Fetch completado, pero no se pudo calcular el estado."
+            )
+
+            return
+
+        self.aplicar_estado_sincronizacion(
+            estado_sincronizacion
+        )
+
+        self.variable_ultima_consulta.set(
+            f"Fetch completado correctamente desde '{remoto}'."
+        )
+
+        if estado_sincronizacion.exitoso:
+            self.variable_estado.set(
+                "Fetch completado. Estado remoto actualizado."
+            )
+        else:
+            self.variable_estado.set(
+                "Fetch completado, pero el estado no pudo calcularse."
+            )
+
+    def actualizar_controles_operacion_remota(self):
+        """
+        Evita iniciar otras operaciones incompatibles
+        mientras Fetch está activo.
+        """
+
+        if self.operacion_remota_en_curso:
+
+            self.boton_seleccionar.config(
+                state=tk.DISABLED
+            )
+
+            self.boton_actualizar.config(
+                state=tk.DISABLED
+            )
+
+            self.boton_fetch.config(
+                state=tk.DISABLED
+            )
+
+            return
+
+        self.boton_seleccionar.config(
+            state=tk.NORMAL
+        )
+
+        self.boton_actualizar.config(
+            state=(
+                tk.NORMAL
+                if self.ruta_repositorio
+                else tk.DISABLED
+            )
+        )
+
+        self.boton_fetch.config(
+            state=(
+                tk.NORMAL
+                if (
+                    self.ruta_repositorio
+                    and self.remotos_repositorio
+                )
+                else tk.DISABLED
+            )
         )
 
     def seleccionar_todos_los_cambios(self):
@@ -814,7 +1338,9 @@ class AplicacionGit:
 
         mensaje = self._crear_mensaje_confirmacion_archivos(
             rutas_archivos,
-            singular="Se preparará 1 archivo para el próximo commit.",
+            singular=(
+                "Se preparará 1 archivo para el próximo commit."
+            ),
             plural=(
                 "Se prepararán {cantidad} archivos "
                 "para el próximo commit."
@@ -905,7 +1431,9 @@ class AplicacionGit:
 
         mensaje = self._crear_mensaje_confirmacion_archivos(
             rutas_archivos,
-            singular="Se quitará 1 archivo del próximo commit.",
+            singular=(
+                "Se quitará 1 archivo del próximo commit."
+            ),
             plural=(
                 "Se quitarán {cantidad} archivos "
                 "del próximo commit."
@@ -959,7 +1487,9 @@ class AplicacionGit:
         if not self.ruta_repositorio:
             return
 
-        mensaje_commit = self.variable_mensaje_commit.get().strip()
+        mensaje_commit = (
+            self.variable_mensaje_commit.get().strip()
+        )
 
         if not mensaje_commit:
             messagebox.showinfo(
@@ -971,8 +1501,6 @@ class AplicacionGit:
 
             return
 
-        # Consultamos nuevamente el estado para no confiar
-        # solamente en la información visual de la tabla.
         resultado_cambios = self.servicio_git.obtener_cambios(
             self.ruta_repositorio
         )
@@ -1010,7 +1538,7 @@ class AplicacionGit:
             f"Mensaje:\n{mensaje_commit}\n\n"
             "Archivos que entrarán en el commit:\n"
             f"{resumen_archivos}\n\n"
-            "Este paso todavía NO enviará nada a GitHub.\n\n"
+            "Este paso todavía NO enviará nada al remoto.\n\n"
             "¿Desea continuar?"
         )
 
@@ -1034,6 +1562,7 @@ class AplicacionGit:
         )
 
         if not resultado.exitoso:
+
             self.variable_estado.set(
                 "No fue posible crear el commit."
             )
@@ -1049,28 +1578,24 @@ class AplicacionGit:
                 detalle_error
             )
 
-            # Volvemos a leer el estado por si Git realizó
-            # alguna modificación parcial antes de fallar.
             self.cargar_cambios()
 
             return
 
-        # Obtenemos el hash del commit recién creado.
         resultado_hash = self.servicio_git.obtener_hash_actual(
             self.ruta_repositorio
         )
 
-        if resultado_hash.exitoso:
-            hash_commit = resultado_hash.salida
-        else:
-            hash_commit = "No disponible"
+        hash_commit = (
+            resultado_hash.salida
+            if resultado_hash.exitoso
+            else "No disponible"
+        )
 
-        # Limpiamos el mensaje después de un commit exitoso.
         self.variable_mensaje_commit.set(
             ""
         )
 
-        # Actualizamos toda la información del repositorio.
         self.cargar_repositorio(
             self.ruta_repositorio
         )
@@ -1087,10 +1612,11 @@ class AplicacionGit:
 
     def limpiar_tabla(self):
         """
-        Limpia la tabla.
+        Limpia la tabla de cambios.
         """
 
         for elemento in self.tabla_cambios.get_children():
+
             self.tabla_cambios.delete(
                 elemento
             )
@@ -1118,12 +1644,43 @@ class AplicacionGit:
             state=tk.DISABLED
         )
 
+    def limpiar_estado_sincronizacion(self):
+        """
+        Restablece la información de sincronización.
+        """
+
+        self.variable_upstream.set(
+            "-"
+        )
+
+        self.variable_rama_remota.set(
+            "-"
+        )
+
+        self.variable_por_subir.set(
+            "-"
+        )
+
+        self.variable_por_bajar.set(
+            "-"
+        )
+
+        self.variable_estado_sincronizacion.set(
+            "Seleccione un repositorio."
+        )
+
+        self.variable_ultima_consulta.set(
+            "Todavía no se ejecutó Fetch en esta sesión."
+        )
+
     def limpiar_repositorio(self):
         """
         Restablece la información visual.
         """
 
         self.ruta_repositorio = ""
+
+        self.remotos_repositorio = []
 
         self.variable_ruta.set(
             "Ningún repositorio seleccionado"
@@ -1141,16 +1698,21 @@ class AplicacionGit:
             state=tk.DISABLED
         )
 
+        self.boton_fetch.config(
+            state=tk.DISABLED
+        )
+
         self.deshabilitar_botones_de_archivos()
 
         self.limpiar_tabla()
 
+        self.limpiar_estado_sincronizacion()
+
     @staticmethod
     def _crear_resumen_rutas(rutas):
         """
-        Crea un resumen de rutas para mostrar en una confirmación.
-
-        Limitamos la cantidad mostrada para evitar diálogos enormes.
+        Crea un resumen de rutas para mostrar
+        en una confirmación.
         """
 
         limite = 15
@@ -1184,8 +1746,7 @@ class AplicacionGit:
         texto_final="¿Desea continuar?"
     ):
         """
-        Construye el mensaje utilizado para confirmar
-        operaciones sobre uno o varios archivos.
+        Construye mensajes de confirmación para archivos.
         """
 
         cantidad = len(
