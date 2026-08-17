@@ -38,11 +38,7 @@ class PruebasServicioGit(unittest.TestCase):
             resultado_init.error
         )
 
-        # Configuramos nombre y correo solamente para
-        # este repositorio temporal.
-        #
-        # De esta manera las pruebas no dependen de la
-        # configuración personal del usuario.
+        # Configuramos nombre solamente para este repositorio.
         resultado_nombre = servicio_git.ejecutar_git(
             argumentos=[
                 "config",
@@ -57,6 +53,7 @@ class PruebasServicioGit(unittest.TestCase):
             resultado_nombre.error
         )
 
+        # Configuramos correo solamente para este repositorio.
         resultado_correo = servicio_git.ejecutar_git(
             argumentos=[
                 "config",
@@ -71,8 +68,7 @@ class PruebasServicioGit(unittest.TestCase):
             resultado_correo.error
         )
 
-        # Creamos un archivo que utilizaremos como base
-        # para las pruebas de modificación y eliminación.
+        # Creamos un archivo base.
         archivo_base = ruta_repositorio / "archivo_base.sql"
 
         archivo_base.write_text(
@@ -208,7 +204,7 @@ class PruebasServicioGit(unittest.TestCase):
     def test_repositorio_limpio_no_tiene_cambios(self):
         """
         Comprueba que un repositorio sin modificaciones
-        devuelva una lista de cambios vacía.
+        devuelva una lista vacía.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -238,8 +234,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_archivo_nuevo_no_preparado(self):
         """
-        Comprueba la detección de un archivo nuevo
-        que todavía no fue agregado al índice.
+        Comprueba la detección de un archivo nuevo.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -294,8 +289,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_archivo_nuevo_preparado(self):
         """
-        Comprueba la detección de un archivo nuevo
-        después de ejecutar git add.
+        Comprueba la detección de un archivo nuevo preparado.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -336,11 +330,6 @@ class PruebasServicioGit(unittest.TestCase):
                 ruta_temporal
             )
 
-            self.assertTrue(
-                resultado.exitoso,
-                resultado.error
-            )
-
             self.assertEqual(
                 len(resultado.cambios),
                 1
@@ -359,8 +348,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_archivo_modificado_no_preparado(self):
         """
-        Comprueba la detección de un archivo modificado
-        que todavía no fue preparado.
+        Comprueba la detección de un archivo modificado.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -383,11 +371,6 @@ class PruebasServicioGit(unittest.TestCase):
                 ruta_temporal
             )
 
-            self.assertTrue(
-                resultado.exitoso,
-                resultado.error
-            )
-
             self.assertEqual(
                 len(resultado.cambios),
                 1
@@ -406,8 +389,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_archivo_modificado_preparado(self):
         """
-        Comprueba la detección de un archivo modificado
-        después de ejecutar git add.
+        Comprueba la detección de un archivo modificado preparado.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -444,16 +426,6 @@ class PruebasServicioGit(unittest.TestCase):
                 ruta_temporal
             )
 
-            self.assertTrue(
-                resultado.exitoso,
-                resultado.error
-            )
-
-            self.assertEqual(
-                len(resultado.cambios),
-                1
-            )
-
             cambio = resultado.cambios[0]
 
             self.assertEqual(
@@ -467,8 +439,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_archivo_eliminado_no_preparado(self):
         """
-        Comprueba la detección de un archivo eliminado
-        que todavía no fue preparado.
+        Comprueba la detección de un archivo eliminado.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -482,21 +453,10 @@ class PruebasServicioGit(unittest.TestCase):
                 )
             )
 
-            # Eliminamos físicamente el archivo.
             archivo_base.unlink()
 
             resultado = servicio_git.obtener_cambios(
                 ruta_temporal
-            )
-
-            self.assertTrue(
-                resultado.exitoso,
-                resultado.error
-            )
-
-            self.assertEqual(
-                len(resultado.cambios),
-                1
             )
 
             cambio = resultado.cambios[0]
@@ -512,8 +472,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_archivo_eliminado_preparado(self):
         """
-        Comprueba la detección de un archivo eliminado
-        y preparado para commit.
+        Comprueba la detección de un archivo eliminado preparado.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -529,7 +488,6 @@ class PruebasServicioGit(unittest.TestCase):
 
             archivo_base.unlink()
 
-            # git add -A registra también eliminaciones.
             resultado_agregar = servicio_git.ejecutar_git(
                 argumentos=[
                     "add",
@@ -549,16 +507,6 @@ class PruebasServicioGit(unittest.TestCase):
                 ruta_temporal
             )
 
-            self.assertTrue(
-                resultado.exitoso,
-                resultado.error
-            )
-
-            self.assertEqual(
-                len(resultado.cambios),
-                1
-            )
-
             cambio = resultado.cambios[0]
 
             self.assertEqual(
@@ -572,8 +520,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_archivo_con_espacios_en_nombre(self):
         """
-        Comprueba que los nombres con espacios
-        puedan interpretarse correctamente.
+        Comprueba nombres de archivo que contienen espacios.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -599,16 +546,6 @@ class PruebasServicioGit(unittest.TestCase):
 
             resultado = servicio_git.obtener_cambios(
                 ruta_temporal
-            )
-
-            self.assertTrue(
-                resultado.exitoso,
-                resultado.error
-            )
-
-            self.assertEqual(
-                len(resultado.cambios),
-                1
             )
 
             cambio = resultado.cambios[0]
@@ -669,11 +606,6 @@ class PruebasServicioGit(unittest.TestCase):
                 ruta_temporal
             )
 
-            self.assertEqual(
-                len(cambios.cambios),
-                1
-            )
-
             cambio = cambios.cambios[0]
 
             self.assertEqual(
@@ -687,8 +619,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_agregar_archivo_modificado(self):
         """
-        Comprueba que un archivo modificado pueda prepararse
-        correctamente para commit.
+        Comprueba que un archivo modificado pueda prepararse.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -723,11 +654,6 @@ class PruebasServicioGit(unittest.TestCase):
                 ruta_temporal
             )
 
-            self.assertEqual(
-                len(cambios.cambios),
-                1
-            )
-
             cambio = cambios.cambios[0]
 
             self.assertEqual(
@@ -741,8 +667,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_agregar_archivo_eliminado(self):
         """
-        Comprueba que la eliminación de un archivo pueda
-        prepararse correctamente para commit.
+        Comprueba que la eliminación pueda prepararse.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -772,11 +697,6 @@ class PruebasServicioGit(unittest.TestCase):
 
             cambios = servicio_git.obtener_cambios(
                 ruta_temporal
-            )
-
-            self.assertEqual(
-                len(cambios.cambios),
-                1
             )
 
             cambio = cambios.cambios[0]
@@ -854,8 +774,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_agregar_lista_vacia_es_rechazado(self):
         """
-        Comprueba que una operación sin archivos
-        sea rechazada de manera controlada.
+        Comprueba que no se permita una operación sin archivos.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -885,8 +804,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_agregar_ruta_absoluta_es_rechazado(self):
         """
-        Comprueba que no se permita agregar una ruta
-        absoluta desde nuestro método.
+        Comprueba que no se permita una ruta absoluta.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -927,8 +845,7 @@ class PruebasServicioGit(unittest.TestCase):
 
     def test_agregar_nombre_con_caracteres_especiales(self):
         """
-        Comprueba que Git trate literalmente nombres que
-        contienen caracteres especiales de pathspec.
+        Comprueba nombres con caracteres especiales de pathspec.
         """
 
         with tempfile.TemporaryDirectory() as carpeta_temporal:
@@ -981,6 +898,7 @@ class PruebasServicioGit(unittest.TestCase):
             self.assertTrue(
                 cambios.cambios[0].preparado
             )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,29 +43,29 @@ class CambioArchivo:
     """
     Representa un archivo que tiene algún cambio dentro de Git.
 
-    Git maneja dos estados para cada archivo:
+    Git maneja dos estados principales:
 
     estado_indice:
         Estado del archivo preparado para el próximo commit.
 
     estado_trabajo:
         Estado del archivo que todavía permanece en la carpeta
-        de trabajo y no ha sido preparado.
+        de trabajo y no fue preparado.
     """
 
     # Ruta relativa del archivo dentro del repositorio.
     ruta: str
 
-    # Estado que Git informa para el área preparada.
+    # Estado informado por Git para el área preparada.
     estado_indice: str
 
-    # Estado que Git informa para el área de trabajo.
+    # Estado informado por Git para el área de trabajo.
     estado_trabajo: str
 
     # Descripción comprensible para el usuario.
     descripcion: str
 
-    # True si existe algún cambio preparado para commit.
+    # True si el archivo tiene algún cambio preparado para commit.
     preparado: bool
 
     # Se utiliza principalmente cuando un archivo fue renombrado.

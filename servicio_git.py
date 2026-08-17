@@ -49,12 +49,6 @@ class ServicioGit:
             argumentos:
                 Lista con los argumentos que recibirá Git.
 
-                Ejemplo:
-                    ["--version"]
-
-                Otro ejemplo:
-                    ["status", "--short"]
-
             ruta_repositorio:
                 Carpeta desde donde debe ejecutarse Git.
 
@@ -77,8 +71,7 @@ class ServicioGit:
 
         # Construimos el comando utilizando una lista.
         #
-        # Nunca construiremos comandos concatenando texto
-        # para ejecutarlos mediante shell=True.
+        # Nunca utilizamos shell=True.
         comando = [self.ruta_git] + argumentos
 
         carpeta_trabajo = None
@@ -122,19 +115,8 @@ class ServicioGit:
             # No utilizamos strip() porque eliminaría espacios
             # al principio de la salida.
             #
-            # En algunos comandos de Git esos espacios tienen
-            # un significado especial.
-            #
-            # Por ejemplo:
-            #
-            # " M archivo.sql"
-            #
-            # no significa lo mismo que:
-            #
-            # "M  archivo.sql"
-            #
-            # Por eso quitamos únicamente los saltos de línea
-            # que puedan existir al final.
+            # En algunos comandos de Git los espacios iniciales
+            # tienen significado.
             salida = resultado.stdout.rstrip("\r\n")
             error = resultado.stderr.rstrip("\r\n")
 
@@ -205,7 +187,6 @@ class ServicioGit:
         No modifica el repositorio.
         """
 
-        # Primero comprobamos que se haya recibido una ruta.
         if ruta_repositorio is None:
             return EstadoRepositorio(
                 es_repositorio=False,
@@ -222,14 +203,12 @@ class ServicioGit:
 
         carpeta = Path(ruta_texto)
 
-        # Comprobamos que la carpeta exista.
         if not carpeta.exists():
             return EstadoRepositorio(
                 es_repositorio=False,
                 mensaje="La carpeta indicada no existe."
             )
 
-        # Comprobamos que realmente sea una carpeta.
         if not carpeta.is_dir():
             return EstadoRepositorio(
                 es_repositorio=False,
@@ -269,9 +248,6 @@ class ServicioGit:
             ruta_raiz = str(carpeta.resolve())
 
         # Obtenemos la rama actual.
-        #
-        # symbolic-ref también permite conocer la rama
-        # cuando todavía no existe ningún commit.
         resultado_rama = self.ejecutar_git(
             argumentos=[
                 "symbolic-ref",
@@ -285,14 +261,9 @@ class ServicioGit:
         if resultado_rama.exitoso:
             rama_actual = resultado_rama.salida
         else:
-            # Más adelante diferenciaremos este caso
-            # de un HEAD separado.
             rama_actual = ""
 
         # Comprobamos si HEAD ya apunta a un commit.
-        #
-        # En un repositorio nuevo este comando puede fallar,
-        # pero eso no significa que el repositorio esté dañado.
         resultado_head = self.ejecutar_git(
             argumentos=[
                 "rev-parse",
@@ -304,7 +275,7 @@ class ServicioGit:
 
         tiene_commits = resultado_head.exitoso
 
-        # Obtenemos la lista de remotos configurados.
+        # Obtenemos los remotos configurados.
         resultado_remotos = self.ejecutar_git(
             argumentos=[
                 "remote"
@@ -332,21 +303,10 @@ class ServicioGit:
 
     def obtener_cambios(self, ruta_repositorio):
         """
-        Obtiene todos los archivos que tienen cambios dentro
-        del repositorio.
+        Obtiene todos los archivos que tienen cambios.
 
-        Esta operación es únicamente de lectura.
-
-        Utilizamos:
-
-            git status --porcelain=v1 -z --untracked-files=all
-
-        porque el formato porcelain está pensado para ser
-        interpretado por programas.
-
-        La opción -z separa los nombres mediante el carácter NUL.
-        Esto nos permite manejar correctamente archivos cuyos
-        nombres contienen espacios u otros caracteres especiales.
+        Esta operación solamente consulta información.
+        No modifica el repositorio.
         """
 
         resultado = self.ejecutar_git(
@@ -359,16 +319,13 @@ class ServicioGit:
             ruta_repositorio=ruta_repositorio
         )
 
-        # Si Git devuelve un error, no intentamos interpretar
-        # ninguna información.
         if not resultado.exitoso:
             return ResultadoCambios(
                 exitoso=False,
                 error=resultado.error
             )
 
-        # Si Git no devolvió ningún registro significa que
-        # el repositorio está limpio.
+        # Si Git no devuelve información, el repositorio está limpio.
         if not resultado.salida:
             return ResultadoCambios(
                 exitoso=True,
@@ -377,8 +334,7 @@ class ServicioGit:
 
         cambios = []
 
-        # Cuando utilizamos -z, Git separa cada registro mediante
-        # el carácter NUL.
+        # Con -z los registros son separados mediante NUL.
         registros = resultado.salida.split("\0")
 
         indice = 0
@@ -386,23 +342,13 @@ class ServicioGit:
         while indice < len(registros):
             registro = registros[indice]
 
-            # Debido al NUL final puede existir un registro vacío.
             if not registro:
                 indice += 1
                 continue
 
-            # Un registro normal tiene esta estructura:
+            # La estructura normal es:
             #
             # XY archivo
-            #
-            # Ejemplo:
-            #
-            # ?? Paquetes/FINI004.pkb
-            #
-            # Posición 0 = estado del índice
-            # Posición 1 = estado del área de trabajo
-            # Posición 2 = espacio separador
-            # Posición 3 en adelante = ruta del archivo
             if len(registro) < 4:
                 return ResultadoCambios(
                     exitoso=False,
@@ -415,17 +361,13 @@ class ServicioGit:
             estado_indice = registro[0]
             estado_trabajo = registro[1]
 
+            # Saltamos los dos estados y el espacio separador.
             ruta_archivo = registro[3:]
 
             ruta_anterior = ""
 
-            # Cuando un archivo fue renombrado o copiado,
-            # Git devuelve una segunda ruta.
-            #
-            # Con el formato -z:
-            #
-            # primer registro  -> nueva ruta
-            # segundo registro -> ruta anterior
+            # Los archivos renombrados o copiados utilizan
+            # una segunda ruta dentro del formato -z.
             if (
                 estado_indice in ("R", "C")
                 or estado_trabajo in ("R", "C")
@@ -441,8 +383,6 @@ class ServicioGit:
 
                 ruta_anterior = registros[indice + 1]
 
-                # Como hemos consumido también la segunda ruta,
-                # avanzamos una posición adicional.
                 indice += 1
 
             descripcion = self._traducir_estado_archivo(
@@ -450,10 +390,7 @@ class ServicioGit:
                 estado_trabajo
             )
 
-            # El primer carácter representa el estado del índice.
-            #
-            # Si no es un espacio, ? o ! significa que existe
-            # algún cambio preparado para commit.
+            # El primer carácter indica el estado del índice.
             preparado = estado_indice not in (
                 " ",
                 "?",
@@ -469,7 +406,9 @@ class ServicioGit:
                 ruta_anterior=ruta_anterior
             )
 
-            cambios.append(cambio)
+            cambios.append(
+                cambio
+            )
 
             indice += 1
 
@@ -488,26 +427,11 @@ class ServicioGit:
 
         Esta operación equivale a ejecutar git add.
 
-        Parámetros:
-            ruta_repositorio:
-                Carpeta del repositorio Git.
-
-            rutas_archivos:
-                Lista de rutas relativas de archivos.
-
-                Ejemplo:
-
-                    [
-                        "Paquetes/FINI004.pls",
-                        "Paquetes/FINI005.pls"
-                    ]
-
-        Devuelve:
-            Un objeto ResultadoComando.
+        Los archivos deben recibirse utilizando rutas relativas
+        al repositorio.
         """
 
-        # Primero comprobamos que la carpeta corresponda
-        # realmente a un repositorio Git válido.
+        # Comprobamos primero que el repositorio sea válido.
         estado_repositorio = self.analizar_repositorio(
             ruta_repositorio
         )
@@ -521,7 +445,6 @@ class ServicioGit:
                 comando=""
             )
 
-        # Comprobamos que se haya recibido una lista de archivos.
         if rutas_archivos is None:
             return ResultadoComando(
                 exitoso=False,
@@ -535,7 +458,6 @@ class ServicioGit:
 
         for ruta_archivo in rutas_archivos:
 
-            # No aceptamos valores None.
             if ruta_archivo is None:
                 return ResultadoComando(
                     exitoso=False,
@@ -549,7 +471,6 @@ class ServicioGit:
                 ruta_archivo
             )
 
-            # No aceptamos nombres vacíos.
             if not ruta_texto or ruta_texto.isspace():
                 return ResultadoComando(
                     exitoso=False,
@@ -563,16 +484,7 @@ class ServicioGit:
                 ruta_texto
             )
 
-            # Los archivos deben indicarse siempre mediante
-            # rutas relativas al repositorio.
-            #
-            # Ejemplo permitido:
-            #
-            # Paquetes/FINI004.pls
-            #
-            # Ejemplo rechazado:
-            #
-            # D:\\Documentos\\archivo.sql
+            # Solamente aceptamos rutas relativas.
             if ruta_objeto.is_absolute():
                 return ResultadoComando(
                     exitoso=False,
@@ -585,11 +497,7 @@ class ServicioGit:
                     comando=""
                 )
 
-            # No permitimos salir del repositorio mediante "..".
-            #
-            # Por ejemplo:
-            #
-            # ../otro_archivo.sql
+            # Evitamos rutas que intenten salir del repositorio.
             if ".." in ruta_objeto.parts:
                 return ResultadoComando(
                     exitoso=False,
@@ -602,14 +510,12 @@ class ServicioGit:
                     comando=""
                 )
 
-            # Evitamos agregar dos veces exactamente
-            # la misma ruta.
+            # Evitamos agregar dos veces la misma ruta.
             if ruta_texto not in rutas_validas:
                 rutas_validas.append(
                     ruta_texto
                 )
 
-        # Después de validar, la lista todavía podría estar vacía.
         if not rutas_validas:
             return ResultadoComando(
                 exitoso=False,
@@ -619,21 +525,11 @@ class ServicioGit:
                 comando=""
             )
 
-        # Utilizamos --literal-pathspecs para indicarle a Git
-        # que trate los nombres recibidos literalmente.
+        # --literal-pathspecs evita que caracteres como *, ?, [ o ]
+        # sean interpretados como patrones por Git.
         #
-        # De esta manera caracteres especiales como:
-        #
-        # *
-        # ?
-        # [
-        # ]
-        #
-        # no serán interpretados como patrones de búsqueda.
-        #
-        # También utilizamos "--" antes de las rutas para evitar
-        # que un archivo cuyo nombre empiece por "-" pueda ser
-        # interpretado como una opción de Git.
+        # -- indica que a partir de ese punto todo corresponde
+        # a nombres de archivos y no a opciones del comando.
         argumentos = [
             "--literal-pathspecs",
             "add",
@@ -655,24 +551,19 @@ class ServicioGit:
         estado_trabajo
     ):
         """
-        Convierte los códigos internos utilizados por Git
-        en una descripción sencilla para el usuario.
+        Convierte los códigos utilizados por Git
+        en una descripción comprensible.
         """
 
         codigo = estado_indice + estado_trabajo
 
-        # Archivo nuevo que todavía no está siendo controlado por Git.
         if codigo == "??":
             return "Nuevo"
 
-        # Archivo ignorado.
-        #
-        # Normalmente no aparecerá porque no estamos utilizando
-        # --ignored, pero contemplamos el caso.
         if codigo == "!!":
             return "Ignorado"
 
-        # Estados que Git utiliza para representar conflictos.
+        # Estados de conflicto informados por Git.
         codigos_conflicto = {
             "DD",
             "AU",
@@ -686,15 +577,12 @@ class ServicioGit:
         if codigo in codigos_conflicto:
             return "Conflicto"
 
-        # Archivo renombrado.
         if "R" in codigo:
             return "Renombrado"
 
-        # Archivo copiado.
         if "C" in codigo:
             return "Copiado"
 
-        # Archivo nuevo agregado al área preparada.
         if estado_indice == "A":
             if estado_trabajo == "M":
                 return "Agregado y modificado después"
@@ -704,37 +592,30 @@ class ServicioGit:
 
             return "Agregado y preparado"
 
-        # Archivo eliminado.
         if estado_indice == "D":
             return "Eliminado y preparado"
 
         if estado_trabajo == "D":
             return "Eliminado"
 
-        # Archivo modificado tanto antes como después de prepararlo.
         if (
             estado_indice == "M"
             and estado_trabajo == "M"
         ):
             return "Modificado, preparado y vuelto a modificar"
 
-        # Archivo modificado y preparado para commit.
         if estado_indice == "M":
             return "Modificado y preparado"
 
-        # Archivo modificado pero todavía no preparado.
         if estado_trabajo == "M":
             return "Modificado"
 
-        # Git puede indicar cambios en el tipo de archivo.
         if estado_indice == "T":
             return "Tipo de archivo modificado y preparado"
 
         if estado_trabajo == "T":
             return "Tipo de archivo modificado"
 
-        # Si aparece un estado que todavía no contemplamos,
-        # no fallamos. Lo informamos como un cambio genérico.
         return "Cambio detectado"
 
     @staticmethod
