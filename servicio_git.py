@@ -2,7 +2,12 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from modelos import EstadoRepositorio, ResultadoComando
+from modelos import (
+    CambioArchivo,
+    EstadoRepositorio,
+    ResultadoCambios,
+    ResultadoComando,
+)
 
 
 class ServicioGit:
@@ -112,8 +117,26 @@ class ServicioGit:
                 shell=False
             )
 
-            salida = resultado.stdout.strip()
-            error = resultado.stderr.strip()
+            # IMPORTANTE:
+            #
+            # No utilizamos strip() porque eliminaría espacios
+            # al principio de la salida.
+            #
+            # En algunos comandos de Git esos espacios tienen
+            # un significado especial.
+            #
+            # Por ejemplo:
+            #
+            # " M archivo.sql"
+            #
+            # no significa lo mismo que:
+            #
+            # "M  archivo.sql"
+            #
+            # Por eso quitamos únicamente los saltos de línea
+            # que puedan existir al final.
+            salida = resultado.stdout.rstrip("\r\n")
+            error = resultado.stderr.rstrip("\r\n")
 
             return ResultadoComando(
                 exitoso=resultado.returncode == 0,
@@ -247,8 +270,8 @@ class ServicioGit:
 
         # Obtenemos la rama actual.
         #
-        # Usamos symbolic-ref porque también funciona cuando
-        # el repositorio todavía no tiene ningún commit.
+        # symbolic-ref también permite conocer la rama
+        # cuando todavía no existe ningún commit.
         resultado_rama = self.ejecutar_git(
             argumentos=[
                 "symbolic-ref",
@@ -262,12 +285,13 @@ class ServicioGit:
         if resultado_rama.exitoso:
             rama_actual = resultado_rama.salida
         else:
-            # Más adelante diferenciaremos este caso de un HEAD separado.
+            # Más adelante diferenciaremos este caso
+            # de un HEAD separado.
             rama_actual = ""
 
         # Comprobamos si HEAD ya apunta a un commit.
         #
-        # En un repositorio nuevo este comando fallará,
+        # En un repositorio nuevo este comando puede fallar,
         # pero eso no significa que el repositorio esté dañado.
         resultado_head = self.ejecutar_git(
             argumentos=[
@@ -305,6 +329,242 @@ class ServicioGit:
             remotos=remotos,
             mensaje="Repositorio Git válido."
         )
+
+    def obtener_cambios(self, ruta_repositorio):
+        """
+        Obtiene todos los archivos que tienen cambios dentro
+        del repositorio.
+
+        Esta operación es únicamente de lectura.
+
+        Utilizamos:
+
+            git status --porcelain=v1 -z --untracked-files=all
+
+        porque el formato porcelain está pensado para ser
+        interpretado por programas.
+
+        La opción -z separa los nombres mediante el carácter NUL.
+        Esto nos permite manejar correctamente archivos cuyos
+        nombres contienen espacios u otros caracteres especiales.
+        """
+
+        resultado = self.ejecutar_git(
+            argumentos=[
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all"
+            ],
+            ruta_repositorio=ruta_repositorio
+        )
+
+        # Si Git devuelve un error, no intentamos interpretar
+        # ninguna información.
+        if not resultado.exitoso:
+            return ResultadoCambios(
+                exitoso=False,
+                error=resultado.error
+            )
+
+        # Si Git no devolvió ningún registro significa que
+        # el repositorio está limpio.
+        if not resultado.salida:
+            return ResultadoCambios(
+                exitoso=True,
+                cambios=[]
+            )
+
+        cambios = []
+
+        # Cuando utilizamos -z, Git separa cada registro mediante
+        # el carácter NUL.
+        registros = resultado.salida.split("\0")
+
+        indice = 0
+
+        while indice < len(registros):
+            registro = registros[indice]
+
+            # Debido al NUL final puede existir un registro vacío.
+            if not registro:
+                indice += 1
+                continue
+
+            # Un registro normal tiene esta estructura:
+            #
+            # XY archivo
+            #
+            # Ejemplo:
+            #
+            # ?? Paquetes/FINI004.pkb
+            #
+            # Posición 0 = estado del índice
+            # Posición 1 = estado del área de trabajo
+            # Posición 2 = espacio separador
+            # Posición 3 en adelante = ruta del archivo
+            if len(registro) < 4:
+                return ResultadoCambios(
+                    exitoso=False,
+                    error=(
+                        "Git devolvió un estado de archivo "
+                        "con un formato inesperado."
+                    )
+                )
+
+            estado_indice = registro[0]
+            estado_trabajo = registro[1]
+
+            ruta_archivo = registro[3:]
+
+            ruta_anterior = ""
+
+            # Cuando un archivo fue renombrado o copiado,
+            # Git devuelve una segunda ruta.
+            #
+            # Con el formato -z:
+            #
+            # primer registro  -> nueva ruta
+            # segundo registro -> ruta anterior
+            if (
+                estado_indice in ("R", "C")
+                or estado_trabajo in ("R", "C")
+            ):
+                if indice + 1 >= len(registros):
+                    return ResultadoCambios(
+                        exitoso=False,
+                        error=(
+                            "Git informó un archivo renombrado "
+                            "o copiado sin indicar su ruta anterior."
+                        )
+                    )
+
+                ruta_anterior = registros[indice + 1]
+
+                # Como hemos consumido también la segunda ruta,
+                # avanzamos una posición adicional.
+                indice += 1
+
+            descripcion = self._traducir_estado_archivo(
+                estado_indice,
+                estado_trabajo
+            )
+
+            # El primer carácter representa el estado del índice.
+            #
+            # Si no es un espacio, ? o ! significa que existe
+            # algún cambio preparado para commit.
+            preparado = estado_indice not in (
+                " ",
+                "?",
+                "!"
+            )
+
+            cambio = CambioArchivo(
+                ruta=ruta_archivo,
+                estado_indice=estado_indice,
+                estado_trabajo=estado_trabajo,
+                descripcion=descripcion,
+                preparado=preparado,
+                ruta_anterior=ruta_anterior
+            )
+
+            cambios.append(cambio)
+
+            indice += 1
+
+        return ResultadoCambios(
+            exitoso=True,
+            cambios=cambios
+        )
+
+    @staticmethod
+    def _traducir_estado_archivo(
+        estado_indice,
+        estado_trabajo
+    ):
+        """
+        Convierte los códigos internos utilizados por Git
+        en una descripción sencilla para el usuario.
+        """
+
+        codigo = estado_indice + estado_trabajo
+
+        # Archivo nuevo que todavía no está siendo controlado por Git.
+        if codigo == "??":
+            return "Nuevo"
+
+        # Archivo ignorado.
+        #
+        # Normalmente no aparecerá porque no estamos utilizando
+        # --ignored, pero contemplamos el caso.
+        if codigo == "!!":
+            return "Ignorado"
+
+        # Estados que Git utiliza para representar conflictos.
+        codigos_conflicto = {
+            "DD",
+            "AU",
+            "UD",
+            "UA",
+            "DU",
+            "AA",
+            "UU",
+        }
+
+        if codigo in codigos_conflicto:
+            return "Conflicto"
+
+        # Archivo renombrado.
+        if "R" in codigo:
+            return "Renombrado"
+
+        # Archivo copiado.
+        if "C" in codigo:
+            return "Copiado"
+
+        # Archivo nuevo agregado al área preparada.
+        if estado_indice == "A":
+            if estado_trabajo == "M":
+                return "Agregado y modificado después"
+
+            if estado_trabajo == "D":
+                return "Agregado y eliminado después"
+
+            return "Agregado y preparado"
+
+        # Archivo eliminado.
+        if estado_indice == "D":
+            return "Eliminado y preparado"
+
+        if estado_trabajo == "D":
+            return "Eliminado"
+
+        # Archivo modificado tanto antes como después de prepararlo.
+        if (
+            estado_indice == "M"
+            and estado_trabajo == "M"
+        ):
+            return "Modificado, preparado y vuelto a modificar"
+
+        # Archivo modificado y preparado para commit.
+        if estado_indice == "M":
+            return "Modificado y preparado"
+
+        # Archivo modificado pero todavía no preparado.
+        if estado_trabajo == "M":
+            return "Modificado"
+
+        # Git puede indicar cambios en el tipo de archivo.
+        if estado_indice == "T":
+            return "Tipo de archivo modificado y preparado"
+
+        if estado_trabajo == "T":
+            return "Tipo de archivo modificado"
+
+        # Si aparece un estado que todavía no contemplamos,
+        # no fallamos. Lo informamos como un cambio genérico.
+        return "Cambio detectado"
 
     @staticmethod
     def _convertir_comando_a_texto(comando):

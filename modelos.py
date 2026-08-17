@@ -18,9 +18,6 @@ class ResultadoComando:
 class EstadoRepositorio:
     """
     Representa la información general de un repositorio Git.
-
-    Esta clase solamente contiene información.
-    No ejecuta ningún comando ni modifica archivos.
     """
 
     es_repositorio: bool
@@ -34,8 +31,57 @@ class EstadoRepositorio:
     # Indica si el repositorio ya tiene al menos un commit.
     tiene_commits: bool = False
 
-    # Lista de remotos configurados, por ejemplo: origin.
+    # Lista de remotos configurados.
     remotos: list[str] = field(default_factory=list)
 
     # Mensaje sencillo para mostrar al usuario.
     mensaje: str = ""
+
+
+@dataclass
+class CambioArchivo:
+    """
+    Representa un archivo que tiene algún cambio dentro de Git.
+
+    Git maneja dos estados para cada archivo:
+
+    estado_indice:
+        Estado del archivo preparado para el próximo commit.
+
+    estado_trabajo:
+        Estado del archivo que todavía permanece en la carpeta
+        de trabajo y no ha sido preparado.
+    """
+
+    # Ruta relativa del archivo dentro del repositorio.
+    ruta: str
+
+    # Estado que Git informa para el área preparada.
+    estado_indice: str
+
+    # Estado que Git informa para el área de trabajo.
+    estado_trabajo: str
+
+    # Descripción comprensible para el usuario.
+    descripcion: str
+
+    # True si existe algún cambio preparado para commit.
+    preparado: bool
+
+    # Se utiliza principalmente cuando un archivo fue renombrado.
+    ruta_anterior: str = ""
+
+
+@dataclass
+class ResultadoCambios:
+    """
+    Representa el resultado de consultar los archivos modificados.
+    """
+
+    exitoso: bool
+
+    # Lista de archivos encontrados.
+    cambios: list[CambioArchivo] = field(default_factory=list)
+
+    # Mensaje de error, si ocurrió alguno.
+    error: str = ""
