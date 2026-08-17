@@ -627,6 +627,360 @@ class PruebasServicioGit(unittest.TestCase):
                 cambio.preparado
             )
 
+    def test_agregar_archivo_nuevo(self):
+        """
+        Comprueba que un archivo nuevo pueda prepararse
+        correctamente para commit.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(
+                carpeta_temporal
+            )
+
+            servicio_git, _ = (
+                self.preparar_repositorio_con_commit(
+                    ruta_temporal
+                )
+            )
+
+            archivo_nuevo = (
+                ruta_temporal / "nuevo.sql"
+            )
+
+            archivo_nuevo.write_text(
+                "SELECT 500;\n",
+                encoding="utf-8"
+            )
+
+            resultado = servicio_git.agregar_archivos(
+                ruta_temporal,
+                [
+                    "nuevo.sql"
+                ]
+            )
+
+            self.assertTrue(
+                resultado.exitoso,
+                resultado.error
+            )
+
+            cambios = servicio_git.obtener_cambios(
+                ruta_temporal
+            )
+
+            self.assertEqual(
+                len(cambios.cambios),
+                1
+            )
+
+            cambio = cambios.cambios[0]
+
+            self.assertEqual(
+                cambio.descripcion,
+                "Agregado y preparado"
+            )
+
+            self.assertTrue(
+                cambio.preparado
+            )
+
+    def test_agregar_archivo_modificado(self):
+        """
+        Comprueba que un archivo modificado pueda prepararse
+        correctamente para commit.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(
+                carpeta_temporal
+            )
+
+            servicio_git, archivo_base = (
+                self.preparar_repositorio_con_commit(
+                    ruta_temporal
+                )
+            )
+
+            archivo_base.write_text(
+                "SELECT 600;\n",
+                encoding="utf-8"
+            )
+
+            resultado = servicio_git.agregar_archivos(
+                ruta_temporal,
+                [
+                    "archivo_base.sql"
+                ]
+            )
+
+            self.assertTrue(
+                resultado.exitoso,
+                resultado.error
+            )
+
+            cambios = servicio_git.obtener_cambios(
+                ruta_temporal
+            )
+
+            self.assertEqual(
+                len(cambios.cambios),
+                1
+            )
+
+            cambio = cambios.cambios[0]
+
+            self.assertEqual(
+                cambio.descripcion,
+                "Modificado y preparado"
+            )
+
+            self.assertTrue(
+                cambio.preparado
+            )
+
+    def test_agregar_archivo_eliminado(self):
+        """
+        Comprueba que la eliminación de un archivo pueda
+        prepararse correctamente para commit.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(
+                carpeta_temporal
+            )
+
+            servicio_git, archivo_base = (
+                self.preparar_repositorio_con_commit(
+                    ruta_temporal
+                )
+            )
+
+            archivo_base.unlink()
+
+            resultado = servicio_git.agregar_archivos(
+                ruta_temporal,
+                [
+                    "archivo_base.sql"
+                ]
+            )
+
+            self.assertTrue(
+                resultado.exitoso,
+                resultado.error
+            )
+
+            cambios = servicio_git.obtener_cambios(
+                ruta_temporal
+            )
+
+            self.assertEqual(
+                len(cambios.cambios),
+                1
+            )
+
+            cambio = cambios.cambios[0]
+
+            self.assertEqual(
+                cambio.descripcion,
+                "Eliminado y preparado"
+            )
+
+            self.assertTrue(
+                cambio.preparado
+            )
+
+    def test_agregar_varios_archivos(self):
+        """
+        Comprueba que varios archivos puedan prepararse
+        en una única operación.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(
+                carpeta_temporal
+            )
+
+            servicio_git, _ = (
+                self.preparar_repositorio_con_commit(
+                    ruta_temporal
+                )
+            )
+
+            archivo_uno = (
+                ruta_temporal / "uno.sql"
+            )
+
+            archivo_dos = (
+                ruta_temporal / "dos.sql"
+            )
+
+            archivo_uno.write_text(
+                "SELECT 1;\n",
+                encoding="utf-8"
+            )
+
+            archivo_dos.write_text(
+                "SELECT 2;\n",
+                encoding="utf-8"
+            )
+
+            resultado = servicio_git.agregar_archivos(
+                ruta_temporal,
+                [
+                    "uno.sql",
+                    "dos.sql"
+                ]
+            )
+
+            self.assertTrue(
+                resultado.exitoso,
+                resultado.error
+            )
+
+            cambios = servicio_git.obtener_cambios(
+                ruta_temporal
+            )
+
+            self.assertEqual(
+                len(cambios.cambios),
+                2
+            )
+
+            for cambio in cambios.cambios:
+                self.assertTrue(
+                    cambio.preparado
+                )
+
+    def test_agregar_lista_vacia_es_rechazado(self):
+        """
+        Comprueba que una operación sin archivos
+        sea rechazada de manera controlada.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(
+                carpeta_temporal
+            )
+
+            servicio_git, _ = (
+                self.preparar_repositorio_con_commit(
+                    ruta_temporal
+                )
+            )
+
+            resultado = servicio_git.agregar_archivos(
+                ruta_temporal,
+                []
+            )
+
+            self.assertFalse(
+                resultado.exitoso
+            )
+
+            self.assertIn(
+                "ningún archivo",
+                resultado.error.lower()
+            )
+
+    def test_agregar_ruta_absoluta_es_rechazado(self):
+        """
+        Comprueba que no se permita agregar una ruta
+        absoluta desde nuestro método.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(
+                carpeta_temporal
+            )
+
+            servicio_git, _ = (
+                self.preparar_repositorio_con_commit(
+                    ruta_temporal
+                )
+            )
+
+            archivo_externo = (
+                ruta_temporal / "externo.sql"
+            )
+
+            archivo_externo.write_text(
+                "SELECT 700;\n",
+                encoding="utf-8"
+            )
+
+            resultado = servicio_git.agregar_archivos(
+                ruta_temporal,
+                [
+                    str(archivo_externo.resolve())
+                ]
+            )
+
+            self.assertFalse(
+                resultado.exitoso
+            )
+
+            self.assertIn(
+                "rutas relativas",
+                resultado.error.lower()
+            )
+
+    def test_agregar_nombre_con_caracteres_especiales(self):
+        """
+        Comprueba que Git trate literalmente nombres que
+        contienen caracteres especiales de pathspec.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_temporal = Path(
+                carpeta_temporal
+            )
+
+            servicio_git, _ = (
+                self.preparar_repositorio_con_commit(
+                    ruta_temporal
+                )
+            )
+
+            archivo_especial = (
+                ruta_temporal
+                / "paquete[1].sql"
+            )
+
+            archivo_especial.write_text(
+                "SELECT 800;\n",
+                encoding="utf-8"
+            )
+
+            resultado = servicio_git.agregar_archivos(
+                ruta_temporal,
+                [
+                    "paquete[1].sql"
+                ]
+            )
+
+            self.assertTrue(
+                resultado.exitoso,
+                resultado.error
+            )
+
+            cambios = servicio_git.obtener_cambios(
+                ruta_temporal
+            )
+
+            self.assertEqual(
+                len(cambios.cambios),
+                1
+            )
+
+            self.assertEqual(
+                cambios.cambios[0].ruta,
+                "paquete[1].sql"
+            )
+
+            self.assertTrue(
+                cambios.cambios[0].preparado
+            )
 
 if __name__ == "__main__":
     unittest.main()

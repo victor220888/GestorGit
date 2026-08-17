@@ -478,6 +478,177 @@ class ServicioGit:
             cambios=cambios
         )
 
+    def agregar_archivos(
+        self,
+        ruta_repositorio,
+        rutas_archivos
+    ):
+        """
+        Prepara uno o varios archivos para el próximo commit.
+
+        Esta operación equivale a ejecutar git add.
+
+        Parámetros:
+            ruta_repositorio:
+                Carpeta del repositorio Git.
+
+            rutas_archivos:
+                Lista de rutas relativas de archivos.
+
+                Ejemplo:
+
+                    [
+                        "Paquetes/FINI004.pls",
+                        "Paquetes/FINI005.pls"
+                    ]
+
+        Devuelve:
+            Un objeto ResultadoComando.
+        """
+
+        # Primero comprobamos que la carpeta corresponda
+        # realmente a un repositorio Git válido.
+        estado_repositorio = self.analizar_repositorio(
+            ruta_repositorio
+        )
+
+        if not estado_repositorio.es_repositorio:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=estado_repositorio.mensaje,
+                comando=""
+            )
+
+        # Comprobamos que se haya recibido una lista de archivos.
+        if rutas_archivos is None:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error="No se indicó ningún archivo para agregar.",
+                comando=""
+            )
+
+        rutas_validas = []
+
+        for ruta_archivo in rutas_archivos:
+
+            # No aceptamos valores None.
+            if ruta_archivo is None:
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error="Se recibió una ruta de archivo inválida.",
+                    comando=""
+                )
+
+            ruta_texto = str(
+                ruta_archivo
+            )
+
+            # No aceptamos nombres vacíos.
+            if not ruta_texto or ruta_texto.isspace():
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error="Se recibió una ruta de archivo vacía.",
+                    comando=""
+                )
+
+            ruta_objeto = Path(
+                ruta_texto
+            )
+
+            # Los archivos deben indicarse siempre mediante
+            # rutas relativas al repositorio.
+            #
+            # Ejemplo permitido:
+            #
+            # Paquetes/FINI004.pls
+            #
+            # Ejemplo rechazado:
+            #
+            # D:\\Documentos\\archivo.sql
+            if ruta_objeto.is_absolute():
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error=(
+                        "Los archivos deben indicarse mediante "
+                        "rutas relativas al repositorio."
+                    ),
+                    comando=""
+                )
+
+            # No permitimos salir del repositorio mediante "..".
+            #
+            # Por ejemplo:
+            #
+            # ../otro_archivo.sql
+            if ".." in ruta_objeto.parts:
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error=(
+                        "La ruta del archivo intenta salir "
+                        "del repositorio."
+                    ),
+                    comando=""
+                )
+
+            # Evitamos agregar dos veces exactamente
+            # la misma ruta.
+            if ruta_texto not in rutas_validas:
+                rutas_validas.append(
+                    ruta_texto
+                )
+
+        # Después de validar, la lista todavía podría estar vacía.
+        if not rutas_validas:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error="No se indicó ningún archivo para agregar.",
+                comando=""
+            )
+
+        # Utilizamos --literal-pathspecs para indicarle a Git
+        # que trate los nombres recibidos literalmente.
+        #
+        # De esta manera caracteres especiales como:
+        #
+        # *
+        # ?
+        # [
+        # ]
+        #
+        # no serán interpretados como patrones de búsqueda.
+        #
+        # También utilizamos "--" antes de las rutas para evitar
+        # que un archivo cuyo nombre empiece por "-" pueda ser
+        # interpretado como una opción de Git.
+        argumentos = [
+            "--literal-pathspecs",
+            "add",
+            "--",
+        ]
+
+        argumentos.extend(
+            rutas_validas
+        )
+
+        return self.ejecutar_git(
+            argumentos=argumentos,
+            ruta_repositorio=estado_repositorio.ruta_raiz
+        )
+
     @staticmethod
     def _traducir_estado_archivo(
         estado_indice,
