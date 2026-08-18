@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## Orden obligatorio de lectura antes de trabajar
+
+1. AGENTS.md
+2. TRABAJO_ACTUAL.md
+3. CLAUDE.md cuando se necesite contexto histórico o técnico
+4. Ejecutar:
+   git status --short
+   git log -1 --oneline
+
+Nunca asumir que el HEAD indicado en la documentación sigue siendo actual.
+
 ## Propósito
 
 Este archivo resume el contexto técnico y las reglas del proyecto **Gestor Git** para que un agente continúe el trabajo sin depender del historial del chat. El documento de referencia completo es `CLAUDE.md`; mantener ambos actualizados.
@@ -18,6 +29,7 @@ Capacidades esperadas:
 - calcular commits por enviar y por descargar;
 - Push seguro;
 - Pull solo mediante fast-forward (`--ff-only`);
+- configurar el primer remoto GitHub (origin) cuando no existen remotos;
 - enseñar conceptos de Git con textos explicativos y tooltips;
 - evitar operaciones destructivas o ambiguas;
 - mantener la interfaz responsiva durante operaciones de red.
@@ -61,8 +73,10 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 65 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 73 tests ... OK`);
    - `git diff --check`;
+   - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
+     en líneas CRLF añadidas: causa conocida y documentada);
    - `git diff --stat`;
    - `git status --short`;
    - no hacer commit automáticamente salvo indicación del usuario.
@@ -92,7 +106,7 @@ El historial debe conservar estas características:
 
 - `modelos.py` — dataclasses: `ResultadoComando`, `EstadoRepositorio`, `CambioArchivo`, `ResultadoCambios`, `EstadoSincronizacion`.
 - `servicio_git.py` — operaciones Git locales: localizar Git, ejecutar comandos, validar repositorios, rama y remotos, `status --porcelain`, staging, identidad, operaciones en curso, commits, hash actual.
-- `servicio_remoto_git.py` — hereda de `ServicioGit`. Selección segura del remoto, Fetch, estado de sincronización, Push seguro, Pull con `--ff-only`.
+- `servicio_remoto_git.py` — hereda de `ServicioGit`. Selección segura del remoto, Fetch, estado de sincronización, Push seguro, Pull con `--ff-only`, configuración del primer remoto GitHub (`agregar_remoto_github`).
 - `modelos_historial.py` — modelos del historial: `CommitGit`, `ResultadoHistorial`, `ResultadoExportacion`.
 - `servicio_historial_git.py` — solo lectura: consultas locales de `git log` con separadores de control. No ejecuta operaciones remotas ni modifica el repositorio.
 - `servicio_exportacion_historial.py` — exporta el historial consultado a CSV (UTF-8 con BOM, `;` como separador, protección contra fórmulas Excel) o TXT con encabezado de repositorio y filtros. No ejecuta Git.
@@ -119,11 +133,42 @@ Prohibido sin confirmación explícita:
 - elegir remoto al azar;
 - guardar PAT/token.
 
-Push se bloquea si hay cambios sin commit, conflictos, operación Git en curso, `index.lock`, detached HEAD, remoto adelantado o divergencia.
+Push se bloquea si hay cambios sin commit, conflictos, operación Git en curso, `index.lock`, detached HEAD, remoto adelantado o divergencia. El primer Push (rama local sin upstream y sin existencia en el remoto) solamente se ejecuta cuando el remoto está vacío de ramas: tras el Fetch previo se consultan las referencias locales del remoto con `git for-each-ref refs/remotes/<remoto>/` y, si existen otras ramas conocidas (o no es posible verificarlo), el Push se bloquea indicando las ramas encontradas.
 
 Pull se bloquea si hay cambios sin commit, commits por enviar, divergencia, falta de upstream, operación Git en curso o `index.lock`. Usa `git pull --ff-only`.
 
 Ante incertidumbre: bloquear la operación y explicar el motivo.
+
+## Configuración inicial de GitHub
+
+`agregar_remoto_github()` configura el PRIMER remoto de un repositorio local:
+
+- permitido solamente cuando el repositorio NO tiene ningún remoto;
+- nombre del remoto: `origin`;
+- únicamente URLs HTTPS de `github.com` (`https://github.com/usuario/repositorio` o con `.git`);
+- nunca credenciales embebidas en la URL (usuario, contraseña o token);
+- nunca se modifica, sustituye ni elimina un remoto existente (sin `set-url`, `remove` ni `rename`);
+- no ejecuta Fetch, no se conecta a Internet durante `remote add` y no duplica lógica de Push;
+- sin API de GitHub, sin PAT/token, sin `gh` CLI.
+
+El flujo enseñado es:
+
+```text
+Configurar GitHub
+    ↓
+Fetch
+    ↓
+Pull si hiciera falta
+    ↓
+Push seguro (configura upstream en el primer Push)
+```
+
+En la interfaz, el botón `Configurar GitHub...` está habilitado únicamente
+cuando existe un repositorio válido sin remotos y no hay operación remota
+en curso. La ventana educativa abre `https://github.com/new` en el navegador
+(solo abre el navegador; no inicia sesión). Al confirmar `Agregar origin`,
+la aplicación recarga el repositorio, exige un Fetch nuevo y deja Pull/Push
+deshabilitados hasta que el Fetch sea exitoso.
 
 ## Hilos y Tkinter
 
@@ -155,7 +200,7 @@ Desde el historial se exportan los commits visibles a CSV o TXT mediante `Servic
 
 ## Pruebas
 
-65 pruebas automatizadas en `pruebas/`. Ejecutar:
+73 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -164,7 +209,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 65 tests in ...
+Ran 73 tests in ...
 OK
 ```
 
@@ -183,6 +228,7 @@ python -m py_compile .\principal.py
 python -m py_compile .\ayuda_interfaz.py
 python -m py_compile .\pruebas\test_historial_git.py
 python -m py_compile .\pruebas\test_exportacion_historial.py
+python -m py_compile .\pruebas\test_configuracion_remoto_git.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```

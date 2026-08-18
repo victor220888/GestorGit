@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from modelos import EstadoSincronizacion, ResultadoComando
 from servicio_git import ServicioGit
 
@@ -103,6 +105,257 @@ class ServicioRemotoGit(ServicioGit):
                 "La rama no tiene upstream y existen varios remotos. "
                 "La aplicación no elegirá uno automáticamente."
             )
+        )
+
+    def agregar_remoto_github(
+        self,
+        ruta_repositorio,
+        url_remoto
+    ):
+        """
+        Configura el primer remoto de un repositorio local.
+
+        Solamente se permite cuando el repositorio todavía no
+        tiene ningún remoto configurado. No modifica remotos
+        existentes y no ejecuta ninguna operación de red.
+
+        El remoto se crea con el nombre 'origin' y únicamente
+        acepta URLs HTTPS de github.com.
+
+        La aplicación nunca recibe ni almacena PAT, token
+        o contraseña dentro de la URL.
+        """
+
+        estado = self.analizar_repositorio(
+            ruta_repositorio
+        )
+
+        if not estado.es_repositorio:
+            return self._crear_resultado_error(
+                estado.mensaje
+            )
+
+        if estado.remotos:
+            return self._crear_resultado_error(
+                (
+                    "El repositorio ya tiene remoto(s) configurado(s): "
+                    f"{', '.join(estado.remotos)}.\n\n"
+                    "Esta operación solamente configura el primer "
+                    "remoto cuando no existe ninguno.\n\n"
+                    "La aplicación no modificará ni eliminará "
+                    "los remotos existentes."
+                )
+            )
+
+        url_limpia, mensaje_error = (
+            self._validar_url_remoto_github(
+                url_remoto
+            )
+        )
+
+        if mensaje_error:
+            return self._crear_resultado_error(
+                mensaje_error
+            )
+
+        # remote add solamente modifica .git/config.
+        # No se conecta a Internet y no ejecuta Fetch.
+        return self.ejecutar_git(
+            argumentos=[
+                "remote",
+                "add",
+                "origin",
+                url_limpia
+            ],
+            ruta_repositorio=estado.ruta_raiz
+        )
+
+    def _validar_url_remoto_github(
+        self,
+        url_remoto
+    ):
+        """
+        Valida una URL HTTPS de github.com.
+
+        Devuelve:
+            url_limpia
+            mensaje_error
+
+        Acepta únicamente:
+            https://github.com/usuario/repositorio
+            https://github.com/usuario/repositorio.git
+
+        Rechaza credenciales embebidas, otros esquemas,
+        otros hosts, query y fragmentos.
+        """
+
+        if url_remoto is None:
+            return (
+                "",
+                "Debe indicar la URL HTTPS del repositorio de GitHub."
+            )
+
+        if not isinstance(url_remoto, str):
+            return (
+                "",
+                "La URL del repositorio no es válida."
+            )
+
+        url_limpia = url_remoto.strip()
+
+        if not url_limpia:
+            return (
+                "",
+                "Debe indicar la URL HTTPS del repositorio de GitHub."
+            )
+
+        if "\x00" in url_limpia:
+            return (
+                "",
+                "La URL contiene un carácter inválido."
+            )
+
+        if (
+            "\n" in url_limpia
+            or "\r" in url_limpia
+        ):
+            return (
+                "",
+                "La URL no puede contener saltos de línea."
+            )
+
+        if url_limpia.startswith("-"):
+            return (
+                "",
+                "La URL no puede comenzar por '-'."
+            )
+
+        try:
+            url_parseada = urlparse(
+                url_limpia
+            )
+        except ValueError:
+            return (
+                "",
+                "La URL del repositorio no es válida."
+            )
+
+        if (
+            url_parseada.scheme != "https"
+            or url_parseada.username is not None
+            or url_parseada.password is not None
+            or url_parseada.query
+            or url_parseada.fragment
+        ):
+            return (
+                "",
+                (
+                    "La URL debe ser HTTPS de GitHub, sin usuario, "
+                    "sin contraseña, sin consulta (query) "
+                    "y sin fragmento.\n\n"
+                    "Ejemplo válido:\n"
+                    "https://github.com/usuario/repositorio\n\n"
+                    "La aplicación nunca recibe ni almacena "
+                    "PAT, token o contraseñas."
+                )
+            )
+
+        if url_parseada.hostname != "github.com":
+            return (
+                "",
+                (
+                    "La URL debe pertenecer exclusivamente "
+                    "al host github.com.\n\n"
+                    "En esta primera versión no se aceptan "
+                    "otros hosts, rutas locales ni SSH."
+                )
+            )
+
+        try:
+            if url_parseada.port is not None:
+                return (
+                    "",
+                    "La URL no puede incluir un puerto."
+                )
+        except ValueError:
+            return (
+                "",
+                "La URL no puede incluir un puerto."
+            )
+
+        ruta_texto = url_parseada.path
+
+        if (
+            not ruta_texto
+            or not ruta_texto.startswith("/")
+        ):
+            return (
+                "",
+                (
+                    "La URL debe indicar el propietario "
+                    "y el nombre del repositorio.\n\n"
+                    "Ejemplo válido:\n"
+                    "https://github.com/usuario/repositorio"
+                )
+            )
+
+        partes_ruta = ruta_texto[1:].split("/")
+
+        if len(partes_ruta) != 2:
+            return (
+                "",
+                (
+                    "La ruta de la URL debe representar "
+                    "propietario/repositorio.\n\n"
+                    "Ejemplo válido:\n"
+                    "https://github.com/usuario/repositorio"
+                )
+            )
+
+        propietario, repositorio = partes_ruta
+
+        if (
+            not propietario
+            or not repositorio
+        ):
+            return (
+                "",
+                (
+                    "La ruta de la URL debe representar "
+                    "propietario/repositorio.\n\n"
+                    "Ejemplo válido:\n"
+                    "https://github.com/usuario/repositorio"
+                )
+            )
+
+        if (
+            propietario.startswith("-")
+            or repositorio.startswith("-")
+        ):
+            return (
+                "",
+                "La URL no puede contener opciones que comiencen por '-'."
+            )
+
+        if repositorio.endswith(".git"):
+            repositorio_sin_extension = repositorio[:-4]
+        else:
+            repositorio_sin_extension = repositorio
+
+        if not repositorio_sin_extension:
+            return (
+                "",
+                (
+                    "La ruta de la URL debe representar "
+                    "propietario/repositorio.\n\n"
+                    "Ejemplo válido:\n"
+                    "https://github.com/usuario/repositorio"
+                )
+            )
+
+        return (
+            url_limpia,
+            ""
         )
 
     def ejecutar_fetch(
@@ -428,6 +681,46 @@ class ServicioRemotoGit(ServicioGit):
 
         rama_local = estado_sincronizacion.rama_local
 
+        if (
+            not estado_sincronizacion.upstream_configurado
+            and not estado_sincronizacion.rama_remota_existe
+        ):
+            otras_ramas = self._obtener_otras_ramas_remotas(
+                estado.ruta_raiz,
+                remoto,
+                rama_local
+            )
+
+            if otras_ramas is None:
+                return self._crear_resultado_error(
+                    (
+                        "No fue posible verificar si el "
+                        "remoto está vacío de ramas.\n\n"
+                        "No se realizará el primer Push.\n\n"
+                        "Revise el repositorio remoto antes "
+                        "de continuar."
+                    )
+                )
+
+            if otras_ramas:
+                lista_ramas = "\n".join(
+                    f"- {rama}"
+                    for rama in otras_ramas
+                )
+
+                return self._crear_resultado_error(
+                    (
+                        "El remoto no está vacío y contiene "
+                        "otras ramas.\n\n"
+                        "El flujo de primer Push de GestorGit "
+                        "solamente crea la rama remota cuando "
+                        "el repositorio remoto está vacío.\n\n"
+                        f"Ramas encontradas:\n{lista_ramas}\n\n"
+                        "Revise el repositorio remoto antes "
+                        "de continuar."
+                    )
+                )
+
         if not estado_sincronizacion.upstream_configurado:
             argumentos_push = [
                 "push",
@@ -486,6 +779,63 @@ class ServicioRemotoGit(ServicioGit):
             ruta_repositorio=estado.ruta_raiz,
             tiempo_maximo=180
         )
+
+    def _obtener_otras_ramas_remotas(
+        self,
+        ruta_repositorio,
+        remoto,
+        rama_local
+    ):
+        """
+        Devuelve las ramas conocidas del remoto distintas
+        de la rama local actual.
+
+        Utiliza las referencias actualizadas por el último
+        Fetch, sin conectarse a Internet.
+
+        Devuelve None si no fue posible consultar las ramas.
+        """
+
+        prefijo_remoto = (
+            f"refs/remotes/{remoto}/"
+        )
+
+        resultado = self.ejecutar_git(
+            argumentos=[
+                "for-each-ref",
+                "--format=%(refname)",
+                prefijo_remoto
+            ],
+            ruta_repositorio=ruta_repositorio
+        )
+
+        if not resultado.exitoso:
+            return None
+
+        otras_ramas = []
+
+        for linea in resultado.salida.splitlines():
+            nombre_ref = linea.strip()
+
+            if not nombre_ref.startswith(prefijo_remoto):
+                continue
+
+            nombre_rama = nombre_ref[len(prefijo_remoto):]
+
+            if not nombre_rama:
+                continue
+
+            if nombre_rama == "HEAD":
+                continue
+
+            if nombre_rama == rama_local:
+                continue
+
+            otras_ramas.append(
+                f"{remoto}/{nombre_rama}"
+            )
+
+        return otras_ramas
 
     def ejecutar_pull_seguro(
         self,

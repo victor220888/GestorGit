@@ -109,7 +109,8 @@ Implementa:
 - Fetch;
 - estado de sincronización;
 - Push seguro;
-- Pull seguro mediante `--ff-only`.
+- Pull seguro mediante `--ff-only`;
+- configuración del primer remoto GitHub (`agregar_remoto_github`).
 
 ### `principal.py`
 
@@ -123,6 +124,7 @@ Interfaz Tkinter con:
 - Fetch;
 - Pull;
 - Push;
+- botón `Configurar GitHub...` (primer remoto origin);
 - estado por enviar/por descargar;
 - `threading` + `queue.Queue` para operaciones de red.
 
@@ -250,10 +252,10 @@ La fuente de verdad es el working tree actual y su historial Git real.
 fe5e49e Agrega historial con filtros y exportacion
 ```
 
-Estado validado de esa línea base:
+Línea base funcional estable:
 
-- 65 pruebas automatizadas OK;
-- `git diff --check` OK;
+- `fe5e49e` validado con **65 pruebas OK** (49 base + 11 historial + 5 exportación);
+- `git diff --check` OK en esa línea base;
 - `principal.py` integra filtros del historial;
 - historial ordenado explícitamente por fecha de commit descendente;
 - interfaz con cabecera `Fecha ↓`;
@@ -263,13 +265,22 @@ Estado validado de esa línea base:
 - Push sigue siendo seguro y nunca forzado;
 - Pull continúa exclusivamente con `--ff-only`.
 
+Estado actual pendiente de commit (working tree):
+
+- **73 pruebas OK** (65 anteriores + 7 de configuración del remoto GitHub + 1 del primer Push con remoto no vacío);
+- configuración inicial de GitHub integrada (`Configurar GitHub...`);
+- primer Push endurecido: solamente crea la rama remota cuando el remoto está vacío de ramas;
+- todavía NO hay commit de esta etapa.
+
 ## Pruebas
 
-El proyecto tiene actualmente **65 pruebas automatizadas**:
+El proyecto tiene actualmente **73 pruebas automatizadas**:
 
 - 49 pruebas base de operaciones locales/remotas;
 - 11 pruebas del historial;
-- 5 pruebas de exportación.
+- 5 pruebas de exportación;
+- 7 pruebas de configuración inicial del remoto GitHub;
+- 1 prueba del primer Push con remoto no vacío.
 
 Archivos principales de pruebas:
 
@@ -281,12 +292,13 @@ pruebas/test_push_git.py
 pruebas/test_pull_git.py
 pruebas/test_historial_git.py
 pruebas/test_exportacion_historial.py
+pruebas/test_configuracion_remoto_git.py
 ```
 
 Resultado esperado:
 
 ```text
-Ran 65 tests in ...
+Ran 73 tests in ...
 OK
 ```
 
@@ -345,6 +357,45 @@ Pull usa:
 ```text
 git pull --ff-only
 ```
+
+## Configuración inicial de GitHub
+
+Cuando un repositorio local todavía no tiene remotos, la interfaz ofrece
+el botón `Configurar GitHub...` para conectar el primer remoto:
+
+```text
+repositorio local
+    ↓
+Configurar origin
+    ↓
+Fetch
+    ↓
+Push inicial seguro
+    ↓
+origin/master como upstream
+```
+
+Crear la cuenta y el repositorio vacío sigue ocurriendo en el navegador.
+La aplicación solamente abre GitHub (`https://github.com/new`) y configura
+la URL local. No inicia sesión, no recibe usuario/contraseña/PAT y no
+utiliza la API de GitHub ni `gh` CLI.
+
+`agregar_remoto_github()`:
+
+- se permite únicamente cuando el repositorio NO tiene ningún remoto;
+- crea el remoto `origin`;
+- acepta únicamente URLs HTTPS de `github.com`
+  (`https://github.com/usuario/repositorio` o con `.git`);
+- rechaza credenciales embebidas en la URL (usuario, contraseña o token);
+- nunca modifica, sustituye ni elimina un remoto existente
+  (sin `set-url`, `remove` ni `rename`);
+- ejecuta solamente `git remote add origin <url>` mediante `subprocess`
+  sin `shell=True`; no ejecuta Fetch y no se conecta a Internet;
+- no duplica la lógica de Push: el Push existente configura upstream
+  en el primer envío.
+
+Después de agregar origin la aplicación recarga el repositorio, exige un
+Fetch nuevo y deja Pull/Push deshabilitados hasta que el Fetch sea exitoso.
 
 ## Hilos y Tkinter
 
@@ -554,14 +605,18 @@ Ahora existen 11 pruebas específicas:
 
 Las 11 pruebas del historial fueron ejecutadas en aislamiento y pasaron correctamente.
 
-El conjunto anterior tenía 49 pruebas fuera del historial. A las 11 pruebas del historial se agregan 5 pruebas de exportación. El total esperado es:
+El conjunto anterior tenía 49 pruebas fuera del historial. A las 11 pruebas del historial se agregan 5 pruebas de exportación, 7 pruebas de configuración del remoto GitHub y 1 prueba del primer Push con remoto no vacío. El total esperado es:
 
 ```text
-65 pruebas
+73 pruebas
 OK
 ```
 
 Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritura y protección contra fórmulas CSV. Fueron ejecutadas en aislamiento y pasaron correctamente.
+
+Las 7 pruebas de configuración del remoto validan: creación de `origin`, URL vacía, HTTP, host distinto de GitHub, credenciales embebidas, repositorio con remoto existente y configuración sin contacto de red. Fueron ejecutadas en aislamiento y pasaron correctamente, sin tocar GitHub.
+
+La prueba del primer Push con remoto no vacío valida el escenario peligroso (remoto con rama `main`, rama local `master`): el Push se rechaza, el mensaje menciona `origin/main` y `refs/heads/master` NO se crea en el remoto. Fue ejecutada en aislamiento y pasó correctamente.
 
 ## Estado consolidado de la etapa actual
 
@@ -575,7 +630,9 @@ Filtro Hasta
 Orden Fecha ↓
 Exportar CSV
 Exportar TXT
-65 pruebas OK
+Configurar GitHub (primer remoto origin)
+Primer Push solo con remoto vacío de ramas
+73 pruebas OK
 ```
 
 El historial se ordena explícitamente por fecha de commit descendente
@@ -609,18 +666,22 @@ python -m py_compile .\principal.py
 python -m py_compile .\ayuda_interfaz.py
 python -m py_compile .\pruebas\test_historial_git.py
 python -m py_compile .\pruebas\test_exportacion_historial.py
+python -m py_compile .\pruebas\test_configuracion_remoto_git.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```
 
-Después de integrar filtros y exportación, esperar:
+Después de integrar filtros, exportación, configuración de remoto y endurecimiento del primer Push, esperar:
 
 ```text
-Ran 65 tests in ...
+Ran 73 tests in ...
 OK
 ```
 
-Si el total no es 65, revisar que estén presentes tanto `pruebas/test_historial_git.py` como `pruebas/test_exportacion_historial.py`.
+Si el total no es 73, revisar que estén presentes `pruebas/test_historial_git.py`,
+`pruebas/test_exportacion_historial.py`,
+`pruebas/test_configuracion_remoto_git.py` y
+`pruebas/test_push_git.py`.
 
 ## Notas del entorno
 
@@ -659,8 +720,9 @@ python -m unittest discover -s .\pruebas -v
 ```
 
 3. confirmar que cualquier cambio pendiente es conocido y esperado;
-4. confirmar que las 65 pruebas pasan;
-5. confirmar que tooltips/estética, historial, filtros, orden y exportación siguen presentes;
+4. confirmar que las 73 pruebas pasan;
+5. confirmar que tooltips/estética, historial, filtros, orden, exportación
+   y configuración inicial de GitHub siguen presentes;
 6. si la etapa actual está estable, continuar con persistencia del último repositorio seleccionado;
 7. mantener todas las reglas de seguridad y coordinación entre agentes.
 
@@ -689,8 +751,9 @@ Reglas obligatorias:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 65 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 73 tests ... OK`);
    - `git diff --check`;
+   - `git diff --cached --check`;
    - `git diff --stat`;
    - `git status --short`;
    - no hacer commit automáticamente salvo indicación del usuario.

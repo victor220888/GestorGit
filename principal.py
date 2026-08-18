@@ -1,8 +1,9 @@
 import queue
-from datetime import datetime
-from pathlib import Path
 import threading
 import tkinter as tk
+import webbrowser
+from datetime import datetime
+from pathlib import Path
 from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import ttk
@@ -57,6 +58,12 @@ class AplicacionGit:
         self.variable_fecha_hasta_historial = None
         self.boton_exportar_csv_historial = None
         self.boton_exportar_txt_historial = None
+
+        # La ventana de configuración de GitHub se crea únicamente
+        # cuando el usuario la solicita y se reutiliza mientras
+        # permanezca abierta.
+        self.ventana_configuracion_github = None
+        self.variable_url_github = None
 
         # Conserva exactamente los commits que se están mostrando.
         # Las exportaciones usan esta lista y no vuelven a ejecutar git log.
@@ -563,6 +570,19 @@ class AplicacionGit:
             padx=(10, 0)
         )
 
+        self.boton_configurar_github = ttk.Button(
+            marco_botones_remotos,
+            text="Configurar GitHub...",
+            command=self.abrir_configuracion_github,
+            state=tk.DISABLED,
+            style="Accion.TButton"
+        )
+
+        self.boton_configurar_github.pack(
+            side=tk.LEFT,
+            padx=(10, 0)
+        )
+
         ttk.Label(
             marco_sincronizacion,
             textvariable=self.variable_ultima_consulta
@@ -959,6 +979,22 @@ class AplicacionGit:
             ),
 
             AyudaEmergente(
+                self.boton_configurar_github,
+                (
+                    "Configurar GitHub\n\n"
+                    "Conecta este repositorio local con un repositorio "
+                    "vacío de GitHub configurando el remoto origin.\n\n"
+                    "Esta operación solamente modifica la configuración "
+                    "local de Git.\n\n"
+                    "No envía commits.\n"
+                    "No descarga commits.\n"
+                    "No almacena credenciales.\n\n"
+                    "Después debes ejecutar Fetch y posteriormente "
+                    "Push cuando sea seguro."
+                )
+            ),
+
+            AyudaEmergente(
                 self.boton_seleccionar_todo,
                 (
                     "Seleccionar todo\n\n"
@@ -1187,6 +1223,7 @@ class AplicacionGit:
             and ruta_anterior != estado.ruta_raiz
         ):
             self.cerrar_historial()
+            self.cerrar_configuracion_github()
 
         self.ruta_repositorio = estado.ruta_raiz
 
@@ -1234,6 +1271,14 @@ class AplicacionGit:
             state=(
                 tk.NORMAL
                 if estado.remotos
+                else tk.DISABLED
+            )
+        )
+
+        self.boton_configurar_github.config(
+            state=(
+                tk.NORMAL
+                if not estado.remotos
                 else tk.DISABLED
             )
         )
@@ -3322,6 +3367,10 @@ class AplicacionGit:
                 state=tk.DISABLED
             )
 
+            self.boton_configurar_github.config(
+                state=tk.DISABLED
+            )
+
             self.boton_pull.config(
                 state=tk.DISABLED
             )
@@ -3358,6 +3407,17 @@ class AplicacionGit:
                 if (
                     self.ruta_repositorio
                     and self.remotos_repositorio
+                )
+                else tk.DISABLED
+            )
+        )
+
+        self.boton_configurar_github.config(
+            state=(
+                tk.NORMAL
+                if (
+                    self.ruta_repositorio
+                    and not self.remotos_repositorio
                 )
                 else tk.DISABLED
             )
@@ -3429,6 +3489,337 @@ class AplicacionGit:
                 else tk.DISABLED
             )
         )
+
+    # =============================================================
+    # CONFIGURACIÓN INICIAL DE GITHUB
+    # =============================================================
+
+    def abrir_configuracion_github(self):
+        """
+        Abre la ventana educativa para configurar el primer remoto.
+
+        Solamente está disponible cuando el repositorio no tiene
+        ningún remoto configurado.
+        """
+
+        if self.operacion_remota_en_curso:
+            return
+
+        if not self.ruta_repositorio:
+            return
+
+        if self.remotos_repositorio:
+            messagebox.showinfo(
+                "Remoto ya configurado",
+                (
+                    "Este repositorio ya tiene remoto(s) "
+                    "configurado(s).\n\n"
+                    "La aplicación no modificará ni eliminará "
+                    "remotos existentes."
+                )
+            )
+
+            return
+
+        # Reutilizamos la ventana existente en lugar de crear otra.
+        if (
+            self.ventana_configuracion_github is not None
+            and self.ventana_configuracion_github.winfo_exists()
+        ):
+            self.ventana_configuracion_github.deiconify()
+            self.ventana_configuracion_github.lift()
+            self.ventana_configuracion_github.focus_force()
+            return
+
+        self.ventana_configuracion_github = tk.Toplevel(
+            self.ventana_principal
+        )
+
+        self.ventana_configuracion_github.title(
+            "Configurar GitHub - Gestor Git"
+        )
+
+        self.ventana_configuracion_github.geometry(
+            "760x520"
+        )
+
+        self.ventana_configuracion_github.minsize(
+            640,
+            440
+        )
+
+        self.ventana_configuracion_github.transient(
+            self.ventana_principal
+        )
+
+        marco_configuracion = ttk.Frame(
+            self.ventana_configuracion_github,
+            padding=15
+        )
+
+        marco_configuracion.pack(
+            fill=tk.BOTH,
+            expand=True
+        )
+
+        ttk.Label(
+            marco_configuracion,
+            text="Configurar GitHub",
+            style="Titulo.TLabel"
+        ).pack(
+            anchor="w"
+        )
+
+        ttk.Label(
+            marco_configuracion,
+            text=(
+                "Paso a paso para conectar este repositorio local "
+                "con un repositorio de GitHub:"
+            ),
+            style="AyudaVisible.TLabel",
+            wraplength=700
+        ).pack(
+            anchor="w",
+            pady=(8, 10)
+        )
+
+        pasos = (
+            "1. Primero crea un repositorio VACÍO en GitHub.",
+            "2. No agregues README, .gitignore ni licencia desde "
+            "GitHub para este caso, porque el proyecto local ya "
+            "tiene historial.",
+            "3. Copia la URL HTTPS del repositorio.",
+            "4. Pégala en GestorGit.",
+            "5. GestorGit configurará solamente el remoto origin.",
+            "6. Después será necesario ejecutar Fetch.",
+            "7. Finalmente Push podrá enviar los commits locales "
+            "si las validaciones existentes lo permiten.",
+        )
+
+        for paso in pasos:
+            ttk.Label(
+                marco_configuracion,
+                text=paso,
+                wraplength=700
+            ).pack(
+                anchor="w",
+                pady=(1, 0)
+            )
+
+        ttk.Label(
+            marco_configuracion,
+            text=(
+                "\nGestorGit NO inicia sesión, no recibe usuario, "
+                "contraseña ni PAT, y no utiliza la API de GitHub. "
+                "Solamente abre el navegador."
+            ),
+            style="AyudaVisible.TLabel",
+            wraplength=700
+        ).pack(
+            anchor="w",
+            pady=(8, 0)
+        )
+
+        self.boton_abrir_github = ttk.Button(
+            marco_configuracion,
+            text="Abrir GitHub para crear repositorio",
+            command=self.abrir_github_para_crear_repositorio,
+            style="Accion.TButton"
+        )
+
+        self.boton_abrir_github.pack(
+            anchor="w",
+            pady=(10, 0)
+        )
+
+        marco_url = ttk.Frame(
+            marco_configuracion
+        )
+
+        marco_url.pack(
+            fill=tk.X,
+            pady=(14, 0)
+        )
+
+        ttk.Label(
+            marco_url,
+            text="URL HTTPS de GitHub:"
+        ).pack(
+            side=tk.LEFT
+        )
+
+        self.variable_url_github = tk.StringVar()
+
+        entrada_url = ttk.Entry(
+            marco_url,
+            textvariable=self.variable_url_github,
+            width=52
+        )
+
+        entrada_url.pack(
+            side=tk.LEFT,
+            padx=(8, 0)
+        )
+
+        entrada_url.focus_set()
+
+        marco_botones = ttk.Frame(
+            marco_configuracion
+        )
+
+        marco_botones.pack(
+            anchor="e",
+            pady=(14, 0)
+        )
+
+        self.boton_agregar_origin = ttk.Button(
+            marco_botones,
+            text="Agregar origin",
+            command=self.agregar_origin_desde_ventana,
+            style="Commit.TButton"
+        )
+
+        self.boton_agregar_origin.pack(
+            side=tk.LEFT
+        )
+
+        self.boton_cancelar_configuracion = ttk.Button(
+            marco_botones,
+            text="Cancelar",
+            command=self.cerrar_configuracion_github,
+            style="Accion.TButton"
+        )
+
+        self.boton_cancelar_configuracion.pack(
+            side=tk.LEFT,
+            padx=(10, 0)
+        )
+
+        self.ventana_configuracion_github.protocol(
+            "WM_DELETE_WINDOW",
+            self.cerrar_configuracion_github
+        )
+
+    def abrir_github_para_crear_repositorio(self):
+        """
+        Abre el navegador en la página de creación de repositorios.
+
+        La aplicación no inicia sesión ni recibe credenciales.
+        """
+
+        navegador_abierto = False
+
+        try:
+            navegador_abierto = webbrowser.open(
+                "https://github.com/new"
+            )
+        except Exception:
+            navegador_abierto = False
+
+        if not navegador_abierto:
+            messagebox.showerror(
+                "No fue posible abrir el navegador",
+                (
+                    "No fue posible abrir el navegador.\n\n"
+                    "Puede ingresar manualmente a:\n"
+                    "https://github.com/new"
+                )
+            )
+
+    def agregar_origin_desde_ventana(self):
+        """
+        Configura el remoto origin con la URL indicada por el usuario.
+
+        Solamente modifica la configuración local de Git.
+        No ejecuta Fetch ni Push automáticamente.
+        """
+
+        if self.operacion_remota_en_curso:
+            messagebox.showinfo(
+                "Operación en curso",
+                (
+                    "Espere a que termine la operación remota "
+                    "en curso antes de configurar el remoto."
+                )
+            )
+
+            return
+
+        if not self.ruta_repositorio:
+            self.cerrar_configuracion_github()
+            return
+
+        url_remoto = (
+            self.variable_url_github.get()
+        )
+
+        self.variable_estado.set(
+            "Configurando el remoto origin..."
+        )
+
+        self.ventana_principal.update_idletasks()
+
+        resultado = self.servicio_git.agregar_remoto_github(
+            self.ruta_repositorio,
+            url_remoto
+        )
+
+        if not resultado.exitoso:
+            self.variable_estado.set(
+                "No fue posible configurar el remoto origin."
+            )
+
+            detalle = (
+                resultado.error
+                if resultado.error
+                else resultado.salida
+            )
+
+            messagebox.showerror(
+                "No fue posible configurar origin",
+                detalle
+            )
+
+            return
+
+        self.cerrar_configuracion_github()
+
+        # Volvemos a cargar el repositorio para actualizar remotos
+        # e información local, y exigimos un Fetch nuevo antes de
+        # habilitar Pull o Push.
+        self.cargar_repositorio(
+            self.ruta_repositorio,
+            reiniciar_fetch=True
+        )
+
+        messagebox.showinfo(
+            "Remoto origin configurado",
+            (
+                "El remoto origin fue configurado correctamente.\n\n"
+                "Ahora ejecute Fetch para consultar GitHub."
+            )
+        )
+
+    def cerrar_configuracion_github(self):
+        """
+        Cierra la ventana de configuración si está abierta.
+        """
+
+        if hasattr(
+            self,
+            "ventana_configuracion_github"
+        ):
+            ventana = self.ventana_configuracion_github
+
+            if ventana is not None:
+                try:
+                    if ventana.winfo_exists():
+                        ventana.destroy()
+                except tk.TclError:
+                    pass
+
+            self.ventana_configuracion_github = None
+            self.variable_url_github = None
 
     # =============================================================
     # ARCHIVOS
@@ -3880,6 +4271,10 @@ class AplicacionGit:
             state=tk.DISABLED
         )
 
+        self.boton_configurar_github.config(
+            state=tk.DISABLED
+        )
+
         self.boton_pull.config(
             state=tk.DISABLED
         )
@@ -3893,6 +4288,8 @@ class AplicacionGit:
         self.limpiar_tabla()
 
         self.limpiar_estado_sincronizacion()
+
+        self.cerrar_configuracion_github()
 
         self.cerrar_historial()
 

@@ -375,6 +375,134 @@ class PruebasPushGit(unittest.TestCase):
                 0
             )
 
+    def test_push_inicial_rechaza_remoto_con_otras_ramas(self):
+        """
+        El primer Push no debe crear la rama local cuando
+        el remoto ya contiene otras ramas.
+
+        Ejemplo peligroso: el remoto tiene la rama main,
+        la rama local es master y origin/master no existe.
+        """
+
+        with tempfile.TemporaryDirectory() as carpeta_temporal:
+            ruta_base = Path(
+                carpeta_temporal
+            )
+
+            servicio_git, ruta_local = (
+                self.crear_repositorio_local(
+                    ruta_base
+                )
+            )
+
+            ruta_remoto = self.crear_remoto_vacio(
+                servicio_git,
+                ruta_base
+            )
+
+            # Repositorio sembrador para crear
+            # la rama main dentro del remoto.
+            ruta_sembrador = (
+                ruta_base
+                / "sembrador"
+            )
+
+            resultado_clone = servicio_git.ejecutar_git(
+                argumentos=[
+                    "clone",
+                    str(ruta_remoto),
+                    str(ruta_sembrador)
+                ],
+                ruta_repositorio=ruta_base,
+                tiempo_maximo=60
+            )
+
+            self.assertTrue(
+                resultado_clone.exitoso,
+                resultado_clone.error
+            )
+
+            self.configurar_identidad(
+                servicio_git,
+                ruta_sembrador
+            )
+
+            resultado_checkout = servicio_git.ejecutar_git(
+                argumentos=[
+                    "checkout",
+                    "-b",
+                    "main"
+                ],
+                ruta_repositorio=ruta_sembrador
+            )
+
+            self.assertTrue(
+                resultado_checkout.exitoso,
+                resultado_checkout.error
+            )
+
+            self.crear_commit_adicional(
+                servicio_git,
+                ruta_sembrador,
+                "principal.sql",
+                "Commit inicial de main",
+                "SELECT 1;\n"
+            )
+
+            resultado_push_main = servicio_git.ejecutar_git(
+                argumentos=[
+                    "push",
+                    "origin",
+                    "main"
+                ],
+                ruta_repositorio=ruta_sembrador,
+                tiempo_maximo=60
+            )
+
+            self.assertTrue(
+                resultado_push_main.exitoso,
+                resultado_push_main.error
+            )
+
+            self.agregar_remoto(
+                servicio_git,
+                ruta_local,
+                ruta_remoto
+            )
+
+            resultado = servicio_git.ejecutar_push_seguro(
+                ruta_local
+            )
+
+            self.assertFalse(
+                resultado.exitoso
+            )
+
+            self.assertIn(
+                "no está vacío",
+                resultado.error.lower()
+            )
+
+            self.assertIn(
+                "origin/main",
+                resultado.error
+            )
+
+            # La rama master NO debe existir en el remoto.
+            resultado_verificacion = servicio_git.ejecutar_git(
+                argumentos=[
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    "refs/heads/master"
+                ],
+                ruta_repositorio=ruta_remoto
+            )
+
+            self.assertFalse(
+                resultado_verificacion.exitoso
+            )
+
     def test_push_envia_nuevo_commit_local(self):
         """
         Comprueba un Push normal después
