@@ -246,13 +246,13 @@ para decidir qué archivos reemplazar o qué cambios faltan.
 
 La fuente de verdad es el working tree actual y su historial Git real.
 
-Último estado estable confirmado:
+Línea base funcional histórica (65 pruebas OK):
 
 ```text
 fe5e49e Agrega historial con filtros y exportacion
 ```
 
-Línea base funcional estable:
+Características de esa línea base:
 
 - `fe5e49e` validado con **65 pruebas OK** (49 base + 11 historial + 5 exportación);
 - `git diff --check` OK en esa línea base;
@@ -265,12 +265,30 @@ Línea base funcional estable:
 - Push sigue siendo seguro y nunca forzado;
 - Pull continúa exclusivamente con `--ff-only`.
 
-Estado actual pendiente de commit (working tree):
+La nueva etapa quedó confirmada en el commit:
+
+```text
+d12df38 Agrega configuracion inicial segura de GitHub
+```
 
 - **73 pruebas OK** (65 anteriores + 7 de configuración del remoto GitHub + 1 del primer Push con remoto no vacío);
 - configuración inicial de GitHub integrada (`Configurar GitHub...`);
 - primer Push endurecido: solamente crea la rama remota cuando el remoto está vacío de ramas;
-- todavía NO hay commit de esta etapa.
+- working tree limpio.
+
+Prueba manual real en Windows (confirmada visualmente por el usuario):
+
+```text
+Configurar GitHub -> origin configurado
+Fetch -> exitoso
+origin/master -> todavía no existe
+Por enviar -> 16 commits
+Por descargar -> 0 commits
+Primer Push -> pendiente (todavía NO ejecutado)
+```
+
+Todavía NO se afirma que el primer Push de GestorGit haya sido
+exitoso: está pendiente de ejecución.
 
 ## Pruebas
 

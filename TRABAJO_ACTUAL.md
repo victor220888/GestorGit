@@ -10,17 +10,24 @@ No sustituye AGENTS.md ni CLAUDE.md.
 
 ## Estado del repositorio
 
-Último HEAD conocido al crear este documento:
+Último HEAD conocido:
 
-f92fe3c Actualiza documentacion para trabajo paralelo
+d12df38 Agrega configuracion inicial segura de GitHub
 
-Línea base funcional validada:
+Línea base funcional validada (histórica):
 
 fe5e49e Agrega historial con filtros y exportacion
 
 Validación funcional de esa línea base:
 
 65 pruebas OK
+
+Estado actual:
+
+- working tree limpio;
+- 73 pruebas OK;
+- origin configurado mediante GestorGit;
+- primer Push real pendiente.
 
 ## Funcionalidades estables
 
@@ -37,63 +44,45 @@ Validación funcional de esa línea base:
 - orden explícito por fecha descendente;
 - cabecera Fecha ↓;
 - exportación CSV;
-- exportación TXT.
+- exportación TXT;
+- configuración inicial de GitHub (primer remoto origin);
+- primer Push solo con remoto vacío de ramas.
 
 ## Trabajo actual
 
-Estado: TERMINADO - PENDIENTE DE REVISIÓN DEL USUARIO
+Estado: COMMIT REALIZADO - PENDIENTE DE PRIMER PUSH REAL
 
-Tarea: endurecer el primer Push (OpenCode).
+La etapa de configuración inicial segura de GitHub, el
+endurecimiento del primer Push (remoto vacío de ramas) y sus
+pruebas quedaron integrados en el commit:
 
-Descripción:
+d12df38 Agrega configuracion inicial segura de GitHub
 
-- el primer Push (rama local sin upstream y sin existencia
-  en el remoto) solamente se ejecuta cuando el remoto está
-  vacío de ramas;
-- tras el Fetch previo que ya realiza ejecutar_push_seguro(),
-  se consultan las referencias remotas locales
-  (git for-each-ref refs/remotes/<remoto>/);
-- si existen otras ramas conocidas del remoto, se bloquea el
-  Push indicando las ramas encontradas;
-- si no es posible consultar las ramas, el Push se bloquea
-  por incertidumbre;
-- se agregó la prueba test_push_inicial_rechaza_remoto_con_otras_ramas
-  (remoto con rama main, local en master, Push rechazado,
-  refs/heads/master NO creada).
+Prueba manual real en Windows (confirmada visualmente
+por el usuario):
+
+- origin fue configurado realmente mediante GestorGit
+  (botón Configurar GitHub...);
+- Fetch REAL contra GitHub fue exitoso;
+- rama local: master;
+- upstream: NO configurado;
+- origin/master: todavía no existe;
+- antes del último commit había 15 commits por enviar;
+- se creó desde GestorGit el commit d12df38;
+- después del commit:
+  - repositorio limpio;
+  - Por enviar: 16 commits;
+  - Por descargar: 0 commits;
+  - Push habilitado en la interfaz;
+- el primer Push real TODAVÍA NO se ha ejecutado.
 
 ChatGPT:
 - tarea: ninguna;
 - archivos reservados: ninguno.
 
 OpenCode:
-- tarea: endurecer primer Push (remoto debe estar vacío de ramas);
-- estado: TERMINADO - PENDIENTE DE REVISIÓN DEL USUARIO;
-- archivos modificados:
-
-  - servicio_remoto_git.py (validación de otras ramas remotas);
-  - pruebas/test_push_git.py (1 prueba nueva, total 73);
-  - AGENTS.md;
-  - CLAUDE.md;
-  - TRABAJO_ACTUAL.md (este documento).
-
-Resultados:
-
-- 73 pruebas OK (72 anteriores + 1 nueva);
-- primer Push real (origin GitHub, 15 commits por enviar)
-  TODAVÍA NO realizado: espera la revisión del usuario;
-- git diff --check (cambios no preparados) = limpio;
-- git diff --cached --check (cambios preparados) = muestra
-  avisos de trailing whitespace ÚNICAMENTE en líneas añadidas
-  de servicio_remoto_git.py (350) y pruebas/test_push_git.py
-  (128): causa conocida CR-at-EOL por los finales de línea
-  CRLF de ambos archivos (servicio_remoto_git.py 1436/1436
-  CRLF; test_push_git.py 865/865 CRLF), mantenidos por
-  convención; no hay otros avisos y no hay mezcla de finales
-  de línea;
-- el índice NO está limpio de avisos (ver punto anterior);
-- no hubo commit;
-- no hubo Push;
-- no se tocó ningún remoto real.
+- tarea: ninguna;
+- archivos reservados: ninguno.
 
 ## Próxima tarea propuesta
 
