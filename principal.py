@@ -59,6 +59,22 @@ class AplicacionGit:
         self.boton_exportar_csv_historial = None
         self.boton_exportar_txt_historial = None
 
+        # Relaciona las filas visibles del historial con su CommitGit.
+        # La ventana de detalle utiliza esta relación y no vuelve
+        # a consultar el historial.
+        self.commits_historial_por_elemento = {}
+
+        # Botón que muestra los cambios del commit seleccionado.
+        self.boton_ver_cambios_historial = None
+
+        # Ventana única con los cambios de un commit (solo lectura).
+        self.ventana_detalle_commit = None
+        self.texto_detalle_commit = None
+
+        # Límite visual del diff mostrado en la ventana de detalle.
+        # La truncación es solamente visual: no modifica el repositorio.
+        self.limite_caracteres_detalle = 500000
+
         # La ventana de configuración de GitHub se crea únicamente
         # cuando el usuario la solicita y se reutiliza mientras
         # permanezca abierta.
@@ -1224,6 +1240,7 @@ class AplicacionGit:
         ):
             self.cerrar_historial()
             self.cerrar_configuracion_github()
+            self.cerrar_detalle_commit()
 
         self.ruta_repositorio = estado.ruta_raiz
 
@@ -1940,6 +1957,16 @@ class AplicacionGit:
             xscrollcommand=barra_horizontal.set
         )
 
+        self.tabla_historial.bind(
+            "<<TreeviewSelect>>",
+            self.actualizar_estado_boton_ver_cambios
+        )
+
+        self.tabla_historial.bind(
+            "<Double-1>",
+            self.abrir_detalle_commit_seleccionado
+        )
+
         marco_inferior = ttk.Frame(
             marco_historial
         )
@@ -1969,6 +1996,21 @@ class AplicacionGit:
             sticky="w"
         )
 
+        self.boton_ver_cambios_historial = ttk.Button(
+            marco_inferior,
+            text="Ver cambios...",
+            command=self.abrir_detalle_commit_seleccionado,
+            state=tk.DISABLED,
+            style="Accion.TButton"
+        )
+
+        self.boton_ver_cambios_historial.grid(
+            row=0,
+            column=1,
+            sticky="e",
+            padx=(10, 0)
+        )
+
         self.boton_exportar_csv_historial = ttk.Button(
             marco_inferior,
             text="Exportar CSV",
@@ -1979,9 +2021,9 @@ class AplicacionGit:
 
         self.boton_exportar_csv_historial.grid(
             row=0,
-            column=1,
+            column=2,
             sticky="e",
-            padx=(10, 0)
+            padx=(8, 0)
         )
 
         self.boton_exportar_txt_historial = ttk.Button(
@@ -1994,7 +2036,7 @@ class AplicacionGit:
 
         self.boton_exportar_txt_historial.grid(
             row=0,
-            column=2,
+            column=3,
             sticky="e",
             padx=(8, 0)
         )
@@ -2008,9 +2050,20 @@ class AplicacionGit:
 
         self.boton_actualizar_historial.grid(
             row=0,
-            column=3,
+            column=4,
             sticky="e",
             padx=(8, 0)
+        )
+
+        self.ayuda_ver_cambios_historial = AyudaEmergente(
+            self.boton_ver_cambios_historial,
+            (
+                "Ver cambios...\n\n"
+                "Muestra los cambios de archivos introducidos "
+                "por el commit seleccionado.\n\n"
+                "Es una vista de solo lectura: no modifica archivos, "
+                "commits ni ramas, y no consulta el remoto."
+            )
         )
 
         self.ayuda_exportar_csv_historial = AyudaEmergente(
@@ -2121,6 +2174,12 @@ class AplicacionGit:
         self.commits_historial_actual = []
         self.actualizar_estado_botones_exportacion_historial()
 
+        # Al recargar, las filas anteriores dejan de existir:
+        # se libera la relación fila -> commit y se deshabilita
+        # el botón Ver cambios... hasta que haya una selección.
+        self.commits_historial_por_elemento.clear()
+        self.actualizar_estado_boton_ver_cambios()
+
         if self.variable_estado_historial is not None:
             self.variable_estado_historial.set(
                 "Consultando historial local..."
@@ -2169,7 +2228,7 @@ class AplicacionGit:
         self.actualizar_estado_botones_exportacion_historial()
 
         for commit in resultado.commits:
-            self.tabla_historial.insert(
+            identificador = self.tabla_historial.insert(
                 "",
                 tk.END,
                 values=(
@@ -2181,6 +2240,13 @@ class AplicacionGit:
                     commit.mensaje
                 )
             )
+
+            # Relaciona la fila visible con el CommitGit para que
+            # la ventana de detalle no tenga que volver a consultar
+            # el historial.
+            self.commits_historial_por_elemento[
+                identificador
+            ] = commit
 
         cantidad = len(
             resultado.commits
@@ -2497,12 +2563,18 @@ class AplicacionGit:
         self.variable_fecha_hasta_historial = None
         self.boton_exportar_csv_historial = None
         self.boton_exportar_txt_historial = None
+        self.boton_ver_cambios_historial = None
         self.commits_historial_actual = []
+        self.commits_historial_por_elemento = {}
         self.filtros_historial_aplicados = {
             "archivo": "",
             "desde": "",
             "hasta": ""
         }
+
+        # Si el historial se cierra, el detalle pierde su origen
+        # visible y también se cierra.
+        self.cerrar_detalle_commit()
 
     @staticmethod
     def _formatear_fecha_historial(fecha_iso):
@@ -2524,6 +2596,518 @@ class AplicacionGit:
 
         except ValueError:
             return fecha_iso
+
+    # =============================================================
+    # DETALLE DE CAMBIOS DE UN COMMIT
+    # =============================================================
+
+    def actualizar_estado_boton_ver_cambios(self, _evento=None):
+        """
+        Habilita Ver cambios... únicamente cuando existe un
+        commit seleccionado en la tabla del historial.
+        """
+
+        hay_seleccion = False
+
+        if self.tabla_historial is not None:
+            try:
+                hay_seleccion = bool(
+                    self.tabla_historial.selection()
+                )
+            except tk.TclError:
+                hay_seleccion = False
+
+        estado = (
+            tk.NORMAL
+            if hay_seleccion
+            else tk.DISABLED
+        )
+
+        if self.boton_ver_cambios_historial is not None:
+            try:
+                self.boton_ver_cambios_historial.config(
+                    state=estado
+                )
+            except tk.TclError:
+                pass
+
+    def abrir_detalle_commit_seleccionado(self, _evento=None):
+        """
+        Abre los cambios del commit seleccionado en el historial.
+
+        Utiliza la relación fila -> CommitGit almacenada al cargar
+        la tabla y no vuelve a consultar el historial.
+        """
+
+        if self.tabla_historial is None:
+            return
+
+        try:
+            seleccion = self.tabla_historial.selection()
+        except tk.TclError:
+            seleccion = ()
+
+        if not seleccion:
+            return
+
+        commit = self.commits_historial_por_elemento.get(
+            seleccion[0]
+        )
+
+        if commit is None:
+            return
+
+        self.abrir_detalle_commit(commit)
+
+    def abrir_detalle_commit(self, commit):
+        """
+        Abre la ventana única con los cambios del commit.
+
+        Si ya existe una ventana de detalle abierta, se destruye
+        y se recrea con el commit solicitado.
+        """
+
+        self.cerrar_detalle_commit()
+
+        self.crear_ventana_detalle_commit(commit)
+
+    def crear_ventana_detalle_commit(self, commit):
+        """
+        Construye la ventana de solo lectura con el parche del commit.
+        """
+
+        self.ventana_detalle_commit = tk.Toplevel(
+            self.ventana_principal
+        )
+
+        self.ventana_detalle_commit.title(
+            "Cambios del commit - Gestor Git"
+        )
+
+        self.ventana_detalle_commit.geometry(
+            "1100x700"
+        )
+
+        self.ventana_detalle_commit.minsize(
+            850,
+            500
+        )
+
+        self.ventana_detalle_commit.transient(
+            self.ventana_principal
+        )
+
+        self.ventana_detalle_commit.protocol(
+            "WM_DELETE_WINDOW",
+            self.cerrar_detalle_commit
+        )
+
+        marco_detalle = ttk.Frame(
+            self.ventana_detalle_commit,
+            padding=15
+        )
+
+        marco_detalle.pack(
+            fill=tk.BOTH,
+            expand=True
+        )
+
+        marco_detalle.columnconfigure(
+            0,
+            weight=1
+        )
+
+        marco_detalle.rowconfigure(
+            3,
+            weight=1
+        )
+
+        ttk.Label(
+            marco_detalle,
+            text="Cambios del commit",
+            style="Titulo.TLabel"
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w"
+        )
+
+        advertencia = tk.Label(
+            marco_detalle,
+            text=(
+                "Vista de solo lectura.\n"
+                "Esta pantalla no modifica archivos, commits ni ramas."
+            ),
+            justify=tk.LEFT,
+            anchor="w",
+            background="#FEF2E0",
+            foreground="#7C3A00",
+            padx=10,
+            pady=7,
+            wraplength=1040
+        )
+
+        advertencia.grid(
+            row=1,
+            column=0,
+            sticky="ew",
+            pady=(10, 8)
+        )
+
+        marco_datos = ttk.Frame(
+            marco_detalle
+        )
+
+        marco_datos.grid(
+            row=2,
+            column=0,
+            sticky="ew",
+            pady=(0, 10)
+        )
+
+        marco_datos.columnconfigure(
+            1,
+            weight=1
+        )
+
+        self._agregar_fila_dato(
+            marco_datos,
+            "Hash:",
+            commit.hash_completo,
+            0
+        )
+
+        self._agregar_fila_dato(
+            marco_datos,
+            "Fecha:",
+            self._formatear_fecha_historial(
+                commit.fecha_iso
+            ),
+            1
+        )
+
+        self._agregar_fila_dato(
+            marco_datos,
+            "Autor:",
+            commit.autor,
+            2
+        )
+
+        self._agregar_fila_dato(
+            marco_datos,
+            "Correo:",
+            commit.correo,
+            3
+        )
+
+        self._agregar_fila_dato(
+            marco_datos,
+            "Mensaje:",
+            commit.mensaje,
+            4
+        )
+
+        marco_diff = ttk.Frame(
+            marco_detalle
+        )
+
+        marco_diff.grid(
+            row=3,
+            column=0,
+            sticky="nsew"
+        )
+
+        marco_diff.columnconfigure(
+            0,
+            weight=1
+        )
+
+        marco_diff.rowconfigure(
+            1,
+            weight=1
+        )
+
+        ttk.Label(
+            marco_diff,
+            text="Cambios realizados",
+            font=("Segoe UI", 10, "bold")
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            pady=(0, 6)
+        )
+
+        self.texto_detalle_commit = tk.Text(
+            marco_diff,
+            wrap=tk.NONE,
+            font=("Consolas", 10),
+            relief=tk.SOLID,
+            borderwidth=1,
+            background="#FBFCFE",
+            foreground="#1F2937"
+        )
+
+        self.texto_detalle_commit.grid(
+            row=1,
+            column=0,
+            sticky="nsew"
+        )
+
+        barra_vertical_diff = ttk.Scrollbar(
+            marco_diff,
+            orient=tk.VERTICAL,
+            command=self.texto_detalle_commit.yview
+        )
+
+        barra_vertical_diff.grid(
+            row=1,
+            column=1,
+            sticky="ns"
+        )
+
+        barra_horizontal_diff = ttk.Scrollbar(
+            marco_diff,
+            orient=tk.HORIZONTAL,
+            command=self.texto_detalle_commit.xview
+        )
+
+        barra_horizontal_diff.grid(
+            row=2,
+            column=0,
+            sticky="ew"
+        )
+
+        self.texto_detalle_commit.configure(
+            yscrollcommand=barra_vertical_diff.set,
+            xscrollcommand=barra_horizontal_diff.set
+        )
+
+        self.texto_detalle_commit.tag_configure(
+            "agregado",
+            foreground="#1A7F37"
+        )
+
+        self.texto_detalle_commit.tag_configure(
+            "eliminado",
+            foreground="#CF222E"
+        )
+
+        self.texto_detalle_commit.tag_configure(
+            "bloque",
+            foreground="#0969DA",
+            font=("Consolas", 10, "bold")
+        )
+
+        self.texto_detalle_commit.tag_configure(
+            "tecnico",
+            foreground="#57606A"
+        )
+
+        resultado = self.servicio_historial.obtener_cambios_commit(
+            self.ruta_repositorio,
+            commit.hash_completo
+        )
+
+        if not resultado.exitoso:
+            self.texto_detalle_commit.insert(
+                tk.END,
+                (
+                    "No fue posible obtener los cambios del commit.\n\n"
+                    f"{resultado.error}"
+                )
+            )
+
+        elif not resultado.salida:
+            self.texto_detalle_commit.insert(
+                tk.END,
+                "Este commit no contiene cambios de archivos visibles."
+            )
+
+        else:
+            self._mostrar_diff_en_texto(
+                resultado.salida
+            )
+
+        self.texto_detalle_commit.config(
+            state=tk.DISABLED
+        )
+
+        marco_botones_detalle = ttk.Frame(
+            marco_detalle
+        )
+
+        marco_botones_detalle.grid(
+            row=4,
+            column=0,
+            sticky="e",
+            pady=(10, 0)
+        )
+
+        ttk.Button(
+            marco_botones_detalle,
+            text="Copiar diff",
+            command=self.copiar_diff_commit,
+            style="Accion.TButton"
+        ).grid(
+            row=0,
+            column=0,
+            sticky="e",
+            padx=(0, 8)
+        )
+
+        ttk.Button(
+            marco_botones_detalle,
+            text="Cerrar",
+            command=self.cerrar_detalle_commit,
+            style="Accion.TButton"
+        ).grid(
+            row=0,
+            column=1,
+            sticky="e"
+        )
+
+    def _agregar_fila_dato(self, marco, nombre, valor, fila):
+        """
+        Agrega una fila nombre/valor en la ventana de detalle.
+        """
+
+        ttk.Label(
+            marco,
+            text=nombre,
+            font=("Segoe UI", 9, "bold")
+        ).grid(
+            row=fila,
+            column=0,
+            sticky="nw",
+            padx=(0, 8)
+        )
+
+        ttk.Label(
+            marco,
+            text=valor if valor else "-",
+            wraplength=950
+        ).grid(
+            row=fila,
+            column=1,
+            sticky="w"
+        )
+
+    def _mostrar_diff_en_texto(self, salida):
+        """
+        Inserta el diff en el widget de texto con colores simples.
+
+        La visualización se limita a
+        self.limite_caracteres_detalle caracteres; la truncación
+        es solamente visual y no modifica el repositorio.
+        """
+
+        texto = salida
+
+        if len(texto) > self.limite_caracteres_detalle:
+            texto = texto[:self.limite_caracteres_detalle]
+
+        self.texto_detalle_commit.insert(
+            tk.END,
+            texto
+        )
+
+        lineas = texto.split("\n")
+
+        # Posición inicial de cada línea dentro del texto insertado.
+        posiciones = []
+        posicion = 0
+
+        for linea in lineas:
+            posiciones.append(posicion)
+            posicion += len(linea) + 1
+
+        for numero, linea in enumerate(lineas, start=1):
+            tag = self._tag_para_linea_diff(
+                linea
+            )
+
+            if tag is None:
+                continue
+
+            inicio = posiciones[numero - 1]
+
+            self.texto_detalle_commit.tag_add(
+                tag,
+                f"1.0+{inicio}c",
+                f"1.0+{inicio + len(linea)}c"
+            )
+
+        if len(salida) > self.limite_caracteres_detalle:
+            self.texto_detalle_commit.insert(
+                tk.END,
+                (
+                    "\n\n[Vista truncada: el commit contiene más "
+                    "cambios de los que se muestran en esta pantalla.]\n"
+                )
+            )
+
+    @staticmethod
+    def _tag_para_linea_diff(linea):
+        """
+        Devuelve el tag visual de una línea del diff o None.
+        """
+
+        if (
+            linea.startswith("diff --git")
+            or linea.startswith("---")
+            or linea.startswith("+++")
+        ):
+            return "tecnico"
+
+        if linea.startswith("@@"):
+            return "bloque"
+
+        if linea.startswith("+"):
+            return "agregado"
+
+        if linea.startswith("-"):
+            return "eliminado"
+
+        return None
+
+    def copiar_diff_commit(self):
+        """
+        Copia el diff visible de la ventana al portapapeles.
+        """
+
+        if self.texto_detalle_commit is None:
+            return
+
+        try:
+            # Solamente se copia el área del diff, no los metadatos
+            # del commit mostrados arriba.
+            contenido = self.texto_detalle_commit.get(
+                "1.0",
+                tk.END
+            )
+
+            self.ventana_detalle_commit.clipboard_clear()
+            self.ventana_detalle_commit.clipboard_append(
+                contenido.rstrip("\n")
+            )
+        except tk.TclError:
+            pass
+
+    def cerrar_detalle_commit(self):
+        """
+        Cierra la ventana de detalle si está abierta.
+        """
+
+        if self.ventana_detalle_commit is not None:
+            try:
+                if self.ventana_detalle_commit.winfo_exists():
+                    self.ventana_detalle_commit.destroy()
+            except tk.TclError:
+                pass
+
+        self.ventana_detalle_commit = None
+        self.texto_detalle_commit = None
 
     # =============================================================
     # FETCH
@@ -4292,6 +4876,8 @@ class AplicacionGit:
         self.cerrar_configuracion_github()
 
         self.cerrar_historial()
+
+        self.cerrar_detalle_commit()
 
     # =============================================================
     # MENSAJES DE CONFIRMACIÓN

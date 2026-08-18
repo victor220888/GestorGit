@@ -73,7 +73,7 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 73 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 79 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
      en líneas CRLF añadidas: causa conocida y documentada);
@@ -108,9 +108,9 @@ El historial debe conservar estas características:
 - `servicio_git.py` — operaciones Git locales: localizar Git, ejecutar comandos, validar repositorios, rama y remotos, `status --porcelain`, staging, identidad, operaciones en curso, commits, hash actual.
 - `servicio_remoto_git.py` — hereda de `ServicioGit`. Selección segura del remoto, Fetch, estado de sincronización, Push seguro, Pull con `--ff-only`, configuración del primer remoto GitHub (`agregar_remoto_github`).
 - `modelos_historial.py` — modelos del historial: `CommitGit`, `ResultadoHistorial`, `ResultadoExportacion`.
-- `servicio_historial_git.py` — solo lectura: consultas locales de `git log` con separadores de control. No ejecuta operaciones remotas ni modifica el repositorio.
+- `servicio_historial_git.py` — solo lectura: consultas locales de `git log` con separadores de control y parche de un commit (`obtener_cambios_commit`) con `git show`. No ejecuta operaciones remotas ni modifica el repositorio.
 - `servicio_exportacion_historial.py` — exporta el historial consultado a CSV (UTF-8 con BOM, `;` como separador, protección contra fórmulas Excel) o TXT con encabezado de repositorio y filtros. No ejecuta Git.
-- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging, commit, Fetch, Pull, Push, estado por enviar/por descargar, `threading` + `queue.Queue` para red.
+- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging, commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, `threading` + `queue.Queue` para red.
 - `ayuda_interfaz.py` — ayuda visual: `AyudaEmergente` y `configurar_estilos`. Sin lógica Git.
 
 ## Seguridad
@@ -194,13 +194,44 @@ Ventana independiente de solo lectura con columnas `Hash | Fecha ↓ | Autor | M
 
 Botones: `Aplicar filtros`, `Limpiar`, `Actualizar historial`. Sin acciones destructivas (no hay Checkout, Reset, Revert, Merge, Rebase ni borrado de commits).
 
+## Detalle de cambios de un commit
+
+Desde el historial, el botón `Ver cambios...` (habilitado solo con un
+commit seleccionado) abre la ventana única `Cambios del commit - Gestor Git`,
+exclusivamente de SOLO LECTURA. No permite Checkout, Reset, Revert, Merge,
+Rebase, restaurar/preparar archivos, crear commits ni ejecutar
+Push/Pull/Fetch.
+
+La consulta la realiza `ServicioHistorialGit.obtener_cambios_commit(ruta, hash)`:
+
+- acepta únicamente hashes hexadecimales completos de 40 o 64 caracteres
+  (verificados primero con `rev-parse --verify --quiet <hash>^{commit}`);
+- usa `git show --format= --no-color --no-ext-diff --no-textconv --unified=3 <hash> --`;
+- `--no-ext-diff` evita ejecutar programas de diff externos configurados
+  en Git;
+- `--no-textconv` evita ejecutar convertidores externos configurados
+  en atributos Git;
+- nunca utiliza `shell=True`;
+- nunca modifica el working tree;
+- nunca accede al remoto ni ejecuta Fetch;
+- un commit sin cambios devuelve un resultado exitoso con salida vacía.
+
+La ventana muestra datos del commit, advertencia de solo lectura y el diff
+coloreado (agregado, eliminado, bloque `@@`, encabezado técnico). Límite
+visual de 500000 caracteres; si el diff lo supera, se muestra solo el
+comienzo con el aviso `[Vista truncada: ...]`. La truncación es solamente
+visual y nunca modifica el repositorio. Botones: `Cerrar` y `Copiar diff`
+(portapapeles de Tkinter). Ventana única: si ya existe una abierta, se
+destruye y se recrea con el commit solicitado; al cambiar de repositorio
+o cerrar el historial, la ventana de detalle también se cierra.
+
 ## Exportación
 
 Desde el historial se exportan los commits visibles a CSV o TXT mediante `ServicioExportacionHistorial` (sin ejecutar Git). CSV y TXT conservan el mismo orden de los commits visibles (más reciente primero). El CSV es compatible con Excel en Windows español (BOM + `;`); celdas con `=`, `+`, `-`, `@`, tabulación o CR se anteponen `'` contra fórmulas maliciosas.
 
 ## Pruebas
 
-73 pruebas automatizadas en `pruebas/`. Ejecutar:
+79 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -209,7 +240,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 73 tests in ...
+Ran 79 tests in ...
 OK
 ```
 
@@ -229,6 +260,7 @@ python -m py_compile .\ayuda_interfaz.py
 python -m py_compile .\pruebas\test_historial_git.py
 python -m py_compile .\pruebas\test_exportacion_historial.py
 python -m py_compile .\pruebas\test_configuracion_remoto_git.py
+python -m py_compile .\pruebas\test_detalle_commit_git.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```
@@ -240,7 +272,7 @@ Nota: PowerShell puede mostrar mojibake (p. ej. `aplicaciÃ³n`); Tkinter muestr
 - recordar el último repositorio seleccionado;
 - persistir configuración en `config.json`;
 - nunca guardar credenciales;
-- eventualmente: detalles ampliados de un commit; selector/creación segura de ramas.
+- eventualmente: selector/creación segura de ramas.
 
 ## Filosofía
 

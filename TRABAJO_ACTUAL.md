@@ -12,7 +12,7 @@ No sustituye AGENTS.md ni CLAUDE.md.
 
 Último HEAD conocido:
 
-d12df38 Agrega configuracion inicial segura de GitHub
+235e261 Actualiza estado previo al primer Push de GestorGit
 
 Línea base funcional validada (histórica):
 
@@ -24,10 +24,13 @@ Validación funcional de esa línea base:
 
 Estado actual:
 
-- working tree limpio;
-- 73 pruebas OK;
-- origin configurado mediante GestorGit;
-- primer Push real pendiente.
+- etapa: VALIDADA - PENDIENTE DE COMMIT (visor de cambios de
+  commits y primer Push real de GestorGit);
+- primer Push real: exitoso, origin/master creado, upstream
+  configurado, Por enviar 0, Por descargar 0, sin Push forzado;
+- prueba manual del visor: EXITOSA en Windows;
+- 79 pruebas OK;
+- visor todavía sin commit (cambios preparados en el índice).
 
 ## Funcionalidades estables
 
@@ -46,47 +49,62 @@ Estado actual:
 - exportación CSV;
 - exportación TXT;
 - configuración inicial de GitHub (primer remoto origin);
-- primer Push solo con remoto vacío de ramas.
+- primer Push solo con remoto vacío de ramas;
+- detalle de cambios de un commit (solo lectura).
 
 ## Trabajo actual
 
-Estado: COMMIT REALIZADO - PENDIENTE DE PRIMER PUSH REAL
+Estado: ETAPA VALIDADA - PENDIENTE DE COMMIT
 
-La etapa de configuración inicial segura de GitHub, el
-endurecimiento del primer Push (remoto vacío de ramas) y sus
-pruebas quedaron integrados en el commit:
+Tarea: visor de cambios de un commit (OpenCode).
 
-d12df38 Agrega configuracion inicial segura de GitHub
+Descripción:
 
-Prueba manual real en Windows (confirmada visualmente
-por el usuario):
-
-- origin fue configurado realmente mediante GestorGit
-  (botón Configurar GitHub...);
-- Fetch REAL contra GitHub fue exitoso;
-- rama local: master;
-- upstream: NO configurado;
-- origin/master: todavía no existe;
-- antes del último commit había 15 commits por enviar;
-- se creó desde GestorGit el commit d12df38;
-- después del commit:
-  - repositorio limpio;
-  - Por enviar: 16 commits;
-  - Por descargar: 0 commits;
-  - Push habilitado en la interfaz;
-- el primer Push real TODAVÍA NO se ha ejecutado.
+- botón "Ver cambios..." en el historial, habilitado al
+  seleccionar un commit;
+- relación fila -> CommitGit sin volver a consultar el historial;
+- ventana única "Cambios del commit" de solo lectura con datos
+  del commit, advertencia y diff coloreado;
+- git show con --no-ext-diff, --no-textconv, --no-color y
+  verificación previa del hash (40 o 64 caracteres hexadecimales);
+- límite visual de 500000 caracteres con aviso de truncación;
+- botones Cerrar y Copiar diff;
+- 6 pruebas nuevas (total: 79).
 
 ChatGPT:
 - tarea: ninguna;
 - archivos reservados: ninguno.
 
 OpenCode:
-- tarea: ninguna;
-- archivos reservados: ninguno.
+- tarea: visor de cambios de un commit;
+- estado: ETAPA VALIDADA - PENDIENTE DE COMMIT;
+- archivos modificados:
+
+  - servicio_historial_git.py (obtener_cambios_commit + validación de hash);
+  - principal.py (botón Ver cambios..., ventana de detalle, relación fila -> commit);
+  - pruebas/test_detalle_commit_git.py (6 pruebas nuevas, archivo nuevo);
+  - AGENTS.md;
+  - CLAUDE.md;
+  - TRABAJO_ACTUAL.md (este documento).
+
+Resultados:
+
+- 79 pruebas OK (73 anteriores + 6 nuevas);
+- git diff --check (cambios no preparados) = limpio;
+- prueba manual del visor EXITOSA en Windows, confirmada por el
+  usuario: botón Ver cambios..., selección y doble clic, datos del
+  commit, diff, colores de agregado/eliminado/bloque/encabezado,
+  scroll vertical y horizontal, Copiar diff;
+- consultar commits no produjo cambios en el repositorio;
+- el primer Push real fue ejecutado y VALIDADO por el usuario;
+- la etapa del visor sigue sin commit (cambios preparados
+  en el índice);
+- esta tarea no ejecutó Push ni operaciones remotas;
+- no hubo operación destructiva.
 
 ## Próxima tarea propuesta
 
-Persistencia del último repositorio seleccionado mediante config.json.
+Persistencia segura del último repositorio seleccionado mediante config.json.
 
 Todavía NO iniciada.
 

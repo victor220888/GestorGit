@@ -271,34 +271,94 @@ La nueva etapa quedó confirmada en el commit:
 d12df38 Agrega configuracion inicial segura de GitHub
 ```
 
+y la documentación posterior quedó confirmada en:
+
+```text
+235e261 Actualiza estado previo al primer Push de GestorGit
+```
+
 - **73 pruebas OK** (65 anteriores + 7 de configuración del remoto GitHub + 1 del primer Push con remoto no vacío);
 - configuración inicial de GitHub integrada (`Configurar GitHub...`);
 - primer Push endurecido: solamente crea la rama remota cuando el remoto está vacío de ramas;
-- working tree limpio.
+- origin configurado mediante GestorGit; primer Push real VALIDADO.
 
-Prueba manual real en Windows (confirmada visualmente por el usuario):
+Prueba manual real en Windows (resultado final confirmado por el
+usuario; la prueba manual del visor de cambios también EXITOSA):
 
 ```text
-Configurar GitHub -> origin configurado
+Configurar GitHub -> exitoso
 Fetch -> exitoso
-origin/master -> todavía no existe
-Por enviar -> 16 commits
-Por descargar -> 0 commits
-Primer Push -> pendiente (todavía NO ejecutado)
+Primer Push seguro -> exitoso
+origin/master -> creado
+Upstream -> configurado
+Sincronización -> 0/0
+Visor de cambios -> validado manualmente en Windows
 ```
 
-Todavía NO se afirma que el primer Push de GestorGit haya sido
-exitoso: está pendiente de ejecución.
+El primer Push real de GestorGit ya fue ejecutado exitosamente:
+repositorio sincronizado, Push sin force y Fetch posterior exitoso.
+La etapa del visor de cambios de commits quedó VALIDADA en la
+prueba manual: botón `Ver cambios...`, selección y doble clic,
+datos del commit, diff, colores (agregado/eliminado/bloque/
+encabezado), scroll vertical y horizontal y `Copiar diff`;
+consultar commits no modifica el repositorio. Pendiente
+únicamente el commit de la etapa (cambios preparados en el
+índice).
+
+## Detalle de cambios de un commit
+
+Flujo:
+
+```text
+Historial
+    ↓
+Seleccionar commit
+    ↓
+Ver cambios...
+    ↓
+git show de solo lectura
+    ↓
+diff visual
+```
+
+`obtener_cambios_commit(ruta, hash)` en `ServicioHistorialGit`:
+
+- acepta únicamente hashes hexadecimales completos de 40 o 64
+  caracteres; todo otro texto se rechaza antes de ejecutar Git;
+- verifica el commit con `rev-parse --verify --quiet <hash>^{commit}`;
+- obtiene el parche con
+  `git show --format= --no-color --no-ext-diff --no-textconv --unified=3 <hash> --`;
+- `--no-ext-diff` evita programas de diff externos;
+- `--no-textconv` evita convertidores externos de atributos Git;
+- nunca usa `shell=True`; no modifica el working tree; no accede
+  al remoto; no ejecuta Fetch;
+- un commit sin cambios devuelve un resultado exitoso con salida
+  vacía (la GUI muestra "Este commit no contiene cambios de
+  archivos visibles.").
+
+Ventana única `Cambios del commit - Gestor Git` (1100x700,
+mínimo 850x500), de SOLO LECTURA: muestra advertencia, datos del
+commit (Hash/Fecha/Autor/Correo/Mensaje) y el diff en `tk.Text`
+monoespaciado (Consolas) con scroll vertical y horizontal y
+`wrap=tk.NONE`. Colores con tags: `+` agregado (verde), `-`
+eliminado (rojo), `@@` bloque (azul), `diff --git`/`---`/`+++`
+encabezado técnico (gris). Límite visual de 500000 caracteres con
+aviso `[Vista truncada: ...]`; la truncación es solo visual.
+Botones: `Cerrar` y `Copiar diff` (portapapeles de Tkinter;
+copia únicamente el diff visible, no los metadatos del commit).
+Si ya existe una ventana de detalle se destruye y se recrea; al
+cambiar de repositorio o cerrar el historial también se cierra.
 
 ## Pruebas
 
-El proyecto tiene actualmente **73 pruebas automatizadas**:
+El proyecto tiene actualmente **79 pruebas automatizadas**:
 
 - 49 pruebas base de operaciones locales/remotas;
 - 11 pruebas del historial;
 - 5 pruebas de exportación;
 - 7 pruebas de configuración inicial del remoto GitHub;
-- 1 prueba del primer Push con remoto no vacío.
+- 1 prueba del primer Push con remoto no vacío;
+- 6 pruebas del detalle de cambios de un commit.
 
 Archivos principales de pruebas:
 
@@ -311,12 +371,13 @@ pruebas/test_pull_git.py
 pruebas/test_historial_git.py
 pruebas/test_exportacion_historial.py
 pruebas/test_configuracion_remoto_git.py
+pruebas/test_detalle_commit_git.py
 ```
 
 Resultado esperado:
 
 ```text
-Ran 73 tests in ...
+Ran 79 tests in ...
 OK
 ```
 
@@ -623,10 +684,10 @@ Ahora existen 11 pruebas específicas:
 
 Las 11 pruebas del historial fueron ejecutadas en aislamiento y pasaron correctamente.
 
-El conjunto anterior tenía 49 pruebas fuera del historial. A las 11 pruebas del historial se agregan 5 pruebas de exportación, 7 pruebas de configuración del remoto GitHub y 1 prueba del primer Push con remoto no vacío. El total esperado es:
+El conjunto anterior tenía 49 pruebas fuera del historial. A las 11 pruebas del historial se agregan 5 pruebas de exportación, 7 pruebas de configuración del remoto GitHub, 1 prueba del primer Push con remoto no vacío y 6 pruebas del detalle de cambios de un commit. El total esperado es:
 
 ```text
-73 pruebas
+79 pruebas
 OK
 ```
 
@@ -635,6 +696,8 @@ Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritu
 Las 7 pruebas de configuración del remoto validan: creación de `origin`, URL vacía, HTTP, host distinto de GitHub, credenciales embebidas, repositorio con remoto existente y configuración sin contacto de red. Fueron ejecutadas en aislamiento y pasaron correctamente, sin tocar GitHub.
 
 La prueba del primer Push con remoto no vacío valida el escenario peligroso (remoto con rama `main`, rama local `master`): el Push se rechaza, el mensaje menciona `origin/main` y `refs/heads/master` NO se crea en el remoto. Fue ejecutada en aislamiento y pasó correctamente.
+
+Las 6 pruebas del detalle de un commit validan: archivo agregado visible en el parche, modificación con línea eliminada y agregada, repositorio sin cambios después de la consulta, rechazo de hashes inválidos sin ejecutar `git show`, rechazo de hash inexistente con error controlado y uso de `--no-ext-diff`/`--no-textconv`/`--no-color` sin comandos destructivos. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
 ## Estado consolidado de la etapa actual
 
@@ -650,7 +713,8 @@ Exportar CSV
 Exportar TXT
 Configurar GitHub (primer remoto origin)
 Primer Push solo con remoto vacío de ramas
-73 pruebas OK
+Detalle de cambios de un commit (solo lectura)
+79 pruebas OK
 ```
 
 El historial se ordena explícitamente por fecha de commit descendente
@@ -661,13 +725,12 @@ CSV y TXT exportan exactamente los commits visibles y conservan ese mismo orden.
 
 ## Funcionalidades posteriores
 
-Después de estabilizar el historial con filtros y exportación:
+Después de estabilizar el historial con filtros, exportación y detalle de un commit:
 
 1. recordar el último repositorio seleccionado;
 2. persistir configuración en `config.json`;
 3. nunca guardar credenciales;
-4. eventualmente mostrar detalles ampliados de un commit;
-5. eventualmente selector/creación segura de ramas.
+4. eventualmente selector/creación segura de ramas.
 
 ## Validación habitual
 
@@ -685,21 +748,23 @@ python -m py_compile .\ayuda_interfaz.py
 python -m py_compile .\pruebas\test_historial_git.py
 python -m py_compile .\pruebas\test_exportacion_historial.py
 python -m py_compile .\pruebas\test_configuracion_remoto_git.py
+python -m py_compile .\pruebas\test_detalle_commit_git.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```
 
-Después de integrar filtros, exportación, configuración de remoto y endurecimiento del primer Push, esperar:
+Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push y detalle de un commit, esperar:
 
 ```text
-Ran 73 tests in ...
+Ran 79 tests in ...
 OK
 ```
 
-Si el total no es 73, revisar que estén presentes `pruebas/test_historial_git.py`,
+Si el total no es 79, revisar que estén presentes `pruebas/test_historial_git.py`,
 `pruebas/test_exportacion_historial.py`,
-`pruebas/test_configuracion_remoto_git.py` y
-`pruebas/test_push_git.py`.
+`pruebas/test_configuracion_remoto_git.py`,
+`pruebas/test_push_git.py` y
+`pruebas/test_detalle_commit_git.py`.
 
 ## Notas del entorno
 
@@ -738,9 +803,10 @@ python -m unittest discover -s .\pruebas -v
 ```
 
 3. confirmar que cualquier cambio pendiente es conocido y esperado;
-4. confirmar que las 73 pruebas pasan;
-5. confirmar que tooltips/estética, historial, filtros, orden, exportación
-   y configuración inicial de GitHub siguen presentes;
+4. confirmar que las 79 pruebas pasan;
+5. confirmar que tooltips/estética, historial, filtros, orden, exportación,
+   configuración inicial de GitHub y detalle de cambios de un commit
+   siguen presentes;
 6. si la etapa actual está estable, continuar con persistencia del último repositorio seleccionado;
 7. mantener todas las reglas de seguridad y coordinación entre agentes.
 
@@ -769,7 +835,7 @@ Reglas obligatorias:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 73 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 79 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check`;
    - `git diff --stat`;
@@ -794,6 +860,7 @@ El historial debe conservar siempre:
 - orden explícito por fecha de commit descendente;
 - cabecera `Fecha ↓`;
 - exportación CSV y TXT de los commits visibles;
+- detalle de cambios de un commit (solo lectura);
 - ninguna operación destructiva desde la ventana de historial.
 
 ## Filosofía

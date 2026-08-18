@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 
+from modelos import ResultadoComando
 from modelos_historial import CommitGit, ResultadoHistorial
 from servicio_git import ServicioGit
 
@@ -162,6 +163,160 @@ class ServicioHistorialGit:
             )
 
         return resultado_historial
+
+    def obtener_cambios_commit(
+        self,
+        ruta_repositorio,
+        hash_commit
+    ):
+        """
+        Obtiene el parche de un commit mediante git show.
+
+        Esta operación es de solo lectura: no modifica el working
+        tree, no accede al remoto y no ejecuta Fetch.
+
+        Se evitan los diff externos y los convertidores de texto
+        configurados en Git (--no-ext-diff y --no-textconv).
+
+        Devuelve un ResultadoComando. Si el commit no genera parche,
+        el resultado es exitoso con salida vacía.
+        """
+
+        resultado_hash = self._validar_hash_commit(
+            hash_commit
+        )
+
+        if not resultado_hash.exitoso:
+            return resultado_hash
+
+        estado = self.servicio_git.analizar_repositorio(
+            ruta_repositorio
+        )
+
+        if not estado.es_repositorio:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    estado.mensaje
+                    if estado.mensaje
+                    else "La carpeta indicada no es un repositorio Git."
+                ),
+                comando=""
+            )
+
+        # Verifica que el hash corresponda realmente a un commit
+        # del repositorio antes de pedir el parche.
+        verificacion = self.servicio_git.ejecutar_git(
+            [
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                f"{hash_commit}^{{commit}}"
+            ],
+            ruta_repositorio
+        )
+
+        if not verificacion.exitoso:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    "El hash indicado no corresponde a un commit "
+                    "de este repositorio."
+                ),
+                comando=""
+            )
+
+        return self.servicio_git.ejecutar_git(
+            [
+                "show",
+                "--format=",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--unified=3",
+                hash_commit,
+                "--"
+            ],
+            ruta_repositorio
+        )
+
+    def _validar_hash_commit(self, hash_commit):
+        """
+        Valida que el hash sea una revisión Git completa y segura.
+
+        Solamente se aceptan hashes hexadecimales completos de
+        40 o 64 caracteres. No se acepta ningún otro texto como
+        revisión Git.
+        """
+
+        if not isinstance(hash_commit, str):
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error="El hash del commit debe ser texto.",
+                comando=""
+            )
+
+        if not hash_commit:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error="El hash del commit no puede estar vacío.",
+                comando=""
+            )
+
+        if "\x00" in hash_commit:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    "El hash del commit contiene caracteres "
+                    "no permitidos."
+                ),
+                comando=""
+            )
+
+        if len(hash_commit) not in (40, 64):
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    "El hash del commit debe tener 40 o 64 "
+                    "caracteres hexadecimales."
+                ),
+                comando=""
+            )
+
+        if not all(
+            caracter in "0123456789abcdefABCDEF"
+            for caracter in hash_commit
+        ):
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    "El hash del commit debe contener solamente "
+                    "caracteres hexadecimales."
+                ),
+                comando=""
+            )
+
+        return ResultadoComando(
+            exitoso=True,
+            codigo_salida=0,
+            salida="",
+            error="",
+            comando=""
+        )
 
     def _validar_limite(self, limite):
         """
