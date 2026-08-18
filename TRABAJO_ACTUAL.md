@@ -12,7 +12,7 @@ No sustituye AGENTS.md ni CLAUDE.md.
 
 Último HEAD conocido:
 
-235e261 Actualiza estado previo al primer Push de GestorGit
+0e3840e Agrega visor de cambios de commits
 
 Línea base funcional validada (histórica):
 
@@ -24,13 +24,24 @@ Validación funcional de esa línea base:
 
 Estado actual:
 
-- etapa: VALIDADA - PENDIENTE DE COMMIT (visor de cambios de
-  commits y primer Push real de GestorGit);
-- primer Push real: exitoso, origin/master creado, upstream
-  configurado, Por enviar 0, Por descargar 0, sin Push forzado;
-- prueba manual del visor: EXITOSA en Windows;
-- 79 pruebas OK;
-- visor todavía sin commit (cambios preparados en el índice).
+- etapa: ETAPA VALIDADA - PENDIENTE DE COMMIT;
+- persistencia del último repositorio: VALIDADA (prueba manual
+  en Windows EXITOSA con anterioridad);
+- actualización de archivos preparados: VALIDADA MANUALMENTE en
+  Windows con el caso real MM;
+- validación de rechazo de ruta con carácter NUL: PRUEBA
+  AUTOMATIZADA EXITOSA;
+- correcciones de portabilidad de pruebas (comparación
+  semántica de rutas mediante Path.resolve(), encoding UTF-8
+  en subprocess de diff): EXITOSAS;
+- 94 pruebas OK;
+- config.json ignorado y no versionado;
+- ambas funcionalidades (persistencia y actualización de
+  preparados) todavía forman parte del working tree actual y
+  todavía NO tienen commit;
+- no hubo Push;
+- .opencode/ sigue sin versionar y NO debe incluirse
+  automáticamente.
 
 ## Funcionalidades estables
 
@@ -50,65 +61,90 @@ Estado actual:
 - exportación TXT;
 - configuración inicial de GitHub (primer remoto origin);
 - primer Push solo con remoto vacío de ramas;
-- detalle de cambios de un commit (solo lectura).
+- detalle de cambios de un commit (solo lectura);
+- persistencia del último repositorio (config.json);
+- actualización de archivos preparados.
 
 ## Trabajo actual
 
 Estado: ETAPA VALIDADA - PENDIENTE DE COMMIT
 
-Tarea: visor de cambios de un commit (OpenCode).
+Tarea: botón "Actualizar preparados" (OpenCode).
+
+ADVERTENCIA ESPECIAL:
+
+Esta tarea comenzó deliberadamente con un working tree/índice
+NO limpio y AUTORIZADO por el usuario:
+
+- CLAUDE.md y TRABAJO_ACTUAL.md estaban en el estado real
+  "Modificado, preparado y vuelto a modificar" (MM);
+- el índice contiene además los archivos preparados de la
+  etapa de persistencia (aún NO commiteada);
+- .opencode/ está sin versionar.
+
+NO se ejecutó ni se ejecutará durante el desarrollo:
+
+git reset / git restore / git checkout / git add / git commit / git push
+
+El índice NO se modifica durante el desarrollo.
 
 Descripción:
 
-- botón "Ver cambios..." en el historial, habilitado al
-  seleccionar un commit;
-- relación fila -> CommitGit sin volver a consultar el historial;
-- ventana única "Cambios del commit" de solo lectura con datos
-  del commit, advertencia y diff coloreado;
-- git show con --no-ext-diff, --no-textconv, --no-color y
-  verificación previa del hash (40 o 64 caracteres hexadecimales);
-- límite visual de 500000 caracteres con aviso de truncación;
-- botones Cerrar y Copiar diff;
-- 6 pruebas nuevas (total: 79).
+- detectar "preparado y vuelto a modificar" desde el estado
+  estructurado de git status --porcelain;
+- botón "Actualizar preparados" entre Preparar y Quitar;
+- columna Preparado con "Sí (hay cambios nuevos)";
+- equivale a volver a ejecutar git add sobre rutas explícitas;
+- no deshace cambios; no crea commits.
 
 ChatGPT:
 - tarea: ninguna;
 - archivos reservados: ninguno.
 
 OpenCode:
-- tarea: visor de cambios de un commit;
+- tarea: botón "Actualizar preparados";
 - estado: ETAPA VALIDADA - PENDIENTE DE COMMIT;
-- archivos modificados:
+- archivos que modificó:
 
-  - servicio_historial_git.py (obtener_cambios_commit + validación de hash);
-  - principal.py (botón Ver cambios..., ventana de detalle, relación fila -> commit);
-  - pruebas/test_detalle_commit_git.py (6 pruebas nuevas, archivo nuevo);
+  - modelos.py (campo requiere_actualizar_preparado);
+  - servicio_git.py (detección + actualizar_archivos_preparados
+    + mensaje educativo del commit);
+  - principal.py (botón, columna, tooltip, confirmación);
+  - pruebas/test_actualizacion_preparados.py (7 pruebas nuevas,
+    archivo nuevo);
   - AGENTS.md;
   - CLAUDE.md;
   - TRABAJO_ACTUAL.md (este documento).
 
 Resultados:
 
-- 79 pruebas OK (73 anteriores + 6 nuevas);
-- git diff --check (cambios no preparados) = limpio;
-- prueba manual del visor EXITOSA en Windows, confirmada por el
-  usuario: botón Ver cambios..., selección y doble clic, datos del
-  commit, diff, colores de agregado/eliminado/bloque/encabezado,
-  scroll vertical y horizontal, Copiar diff;
-- consultar commits no produjo cambios en el repositorio;
-- el primer Push real fue ejecutado y VALIDADO por el usuario;
-- la etapa del visor sigue sin commit (cambios preparados
-  en el índice);
-- esta tarea no ejecutó Push ni operaciones remotas;
-- no hubo operación destructiva.
+- HEAD inicial observado: 0e3840e;
+- git status --short inicial (autorizado, sin limpiar):
+  M AGENTS.md; MM CLAUDE.md; MM TRABAJO_ACTUAL.md;
+  A modelos_configuracion.py; M principal.py;
+  A pruebas/test_configuracion.py; A servicio_configuracion.py;
+  ?? .opencode/
+- 94 pruebas OK (python3 -m unittest discover -s ./pruebas);
+- no se hizo commit ni push.
 
-## Próxima tarea propuesta
+PRUEBA MANUAL EN WINDOWS: EXITOSA
 
-Persistencia segura del último repositorio seleccionado mediante config.json.
+Hechos confirmados visualmente con el repositorio de GestorGit:
 
-Todavía NO iniciada.
-
-No guardar tokens, contraseñas ni credenciales.
+- AGENTS.md, CLAUDE.md, TRABAJO_ACTUAL.md y principal.py fueron
+  detectados como "Modificado, preparado y vuelto a modificar";
+- la columna Preparado mostró "Sí (hay cambios nuevos)";
+- al seleccionar esos archivos, "Actualizar preparados" se
+  habilitó;
+- la confirmación enumeró únicamente los 4 archivos que
+  realmente necesitaban actualización, aunque hubiera una
+  selección más amplia;
+- después de aceptar: dejaron de mostrar "vuelto a modificar",
+  continuaron preparados y la columna volvió a mostrar "Sí";
+- cuando ninguno de los seleccionados requería actualización,
+  "Actualizar preparados" quedó deshabilitado;
+- no se creó ningún commit durante la prueba;
+- 94 pruebas automatizadas OK.
 
 ## Regla para reservar archivos
 

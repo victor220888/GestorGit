@@ -375,6 +375,23 @@ class ServicioGit:
                 "!"
             )
 
+            # El área preparada quedó desactualizada cuando el
+            # archivo está preparado y además existe un cambio
+            # posterior en el working tree. Los conflictos no
+            # son actualizables mediante git add.
+            requiere_actualizar_preparado = (
+                preparado
+                and estado_trabajo not in (
+                    " ",
+                    "?",
+                    "!"
+                )
+                and not self._es_estado_conflicto(
+                    estado_indice,
+                    estado_trabajo
+                )
+            )
+
             cambios.append(
                 CambioArchivo(
                     ruta=ruta_archivo,
@@ -382,7 +399,10 @@ class ServicioGit:
                     estado_trabajo=estado_trabajo,
                     descripcion=descripcion,
                     preparado=preparado,
-                    ruta_anterior=ruta_anterior
+                    ruta_anterior=ruta_anterior,
+                    requiere_actualizar_preparado=(
+                        requiere_actualizar_preparado
+                    )
                 )
             )
 
@@ -510,6 +530,161 @@ class ServicioGit:
 
         argumentos.extend(
             rutas_validas
+        )
+
+        return self.ejecutar_git(
+            argumentos=argumentos,
+            ruta_repositorio=estado_repositorio.ruta_raiz
+        )
+
+    def actualizar_archivos_preparados(
+        self,
+        ruta_repositorio,
+        rutas_archivos
+    ):
+        """
+        Actualiza el área preparada con la versión actual completa
+        de los archivos indicados.
+
+        Equivale a volver a ejecutar git add sobre cada ruta
+        explícita.
+
+        No modifica el working tree y no crea commits.
+        No quita los archivos del staging antes de actualizar.
+        """
+
+        estado_repositorio = self.analizar_repositorio(
+            ruta_repositorio
+        )
+
+        if not estado_repositorio.es_repositorio:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=estado_repositorio.mensaje,
+                comando=""
+            )
+
+        rutas_validas, mensaje_error = (
+            self._validar_rutas_relativas(
+                rutas_archivos
+            )
+        )
+
+        if mensaje_error:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=mensaje_error,
+                comando=""
+            )
+
+        if not rutas_validas:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=(
+                    "No se indicó ningún archivo "
+                    "para actualizar."
+                ),
+                comando=""
+            )
+
+        # Consultamos nuevamente el estado antes de ejecutar Git:
+        # cada archivo debe seguir preparado, con cambios nuevos
+        # fuera del índice y sin conflictos.
+        resultado_cambios = self.obtener_cambios(
+            estado_repositorio.ruta_raiz
+        )
+
+        if not resultado_cambios.exitoso:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=resultado_cambios.error,
+                comando=""
+            )
+
+        cambios_por_ruta = {
+            cambio.ruta: cambio
+            for cambio in resultado_cambios.cambios
+        }
+
+        rutas_actualizar = []
+
+        for ruta_archivo in rutas_validas:
+            cambio = cambios_por_ruta.get(
+                ruta_archivo
+            )
+
+            if cambio is None:
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error=(
+                        f"El archivo '{ruta_archivo}' ya no "
+                        "presenta cambios pendientes."
+                    ),
+                    comando=""
+                )
+
+            if not cambio.preparado:
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error=(
+                        f"El archivo '{ruta_archivo}' ya no "
+                        "está preparado."
+                    ),
+                    comando=""
+                )
+
+            if self._es_estado_conflicto(
+                cambio.estado_indice,
+                cambio.estado_trabajo
+            ):
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error=(
+                        f"El archivo '{ruta_archivo}' está en "
+                        "conflicto y no se actualizará."
+                    ),
+                    comando=""
+                )
+
+            if not cambio.requiere_actualizar_preparado:
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error=(
+                        f"El archivo '{ruta_archivo}' ya no "
+                        "requiere actualización de los cambios "
+                        "preparados."
+                    ),
+                    comando=""
+                )
+
+            rutas_actualizar.append(
+                ruta_archivo
+            )
+
+        argumentos = [
+            "--literal-pathspecs",
+            "add",
+            "--",
+        ]
+
+        argumentos.extend(
+            rutas_actualizar
         )
 
         return self.ejecutar_git(
@@ -727,8 +902,11 @@ class ServicioGit:
                     "archivos fueron modificados después de "
                     "haber sido preparados:\n\n"
                     f"{lista}\n\n"
-                    "Prepare nuevamente esos archivos o quite "
-                    "los cambios del área preparada."
+                    "Use 'Actualizar preparados' para incluir su "
+                    "versión actual completa en el próximo commit.\n\n"
+                    "También puede usar 'Quitar de preparados' "
+                    "si no desea incluir la versión actualmente "
+                    "preparada."
                 ),
                 comando=""
             )
@@ -924,6 +1102,12 @@ class ServicioGit:
                 ruta_archivo
             )
 
+            if "\x00" in ruta_texto:
+                return (
+                    None,
+                    "La ruta del archivo contiene un carácter inválido."
+                )
+
             if not ruta_texto or ruta_texto.isspace():
                 return (
                     None,
@@ -986,17 +1170,12 @@ class ServicioGit:
         if codigo == "!!":
             return "Ignorado"
 
-        codigos_conflicto = {
-            "DD",
-            "AU",
-            "UD",
-            "UA",
-            "DU",
-            "AA",
-            "UU",
-        }
+        codigos_conflicto = ServicioGit._es_estado_conflicto(
+            estado_indice,
+            estado_trabajo
+        )
 
-        if codigo in codigos_conflicto:
+        if codigos_conflicto:
             return "Conflicto"
 
         if "R" in codigo:
@@ -1039,6 +1218,23 @@ class ServicioGit:
             return "Tipo de archivo modificado"
 
         return "Cambio detectado"
+
+    @staticmethod
+    def _es_estado_conflicto(estado_indice, estado_trabajo):
+        """
+        Determina si el par de códigos de git status
+        corresponde a un conflicto de merge.
+        """
+
+        return (estado_indice + estado_trabajo) in {
+            "DD",
+            "AU",
+            "UD",
+            "UA",
+            "DU",
+            "AA",
+            "UU",
+        }
 
     @staticmethod
     def _convertir_comando_a_texto(comando):

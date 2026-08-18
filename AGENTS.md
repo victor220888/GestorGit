@@ -73,7 +73,7 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 79 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 94 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
      en líneas CRLF añadidas: causa conocida y documentada);
@@ -105,12 +105,14 @@ El historial debe conservar estas características:
 ## Arquitectura
 
 - `modelos.py` — dataclasses: `ResultadoComando`, `EstadoRepositorio`, `CambioArchivo`, `ResultadoCambios`, `EstadoSincronizacion`.
-- `servicio_git.py` — operaciones Git locales: localizar Git, ejecutar comandos, validar repositorios, rama y remotos, `status --porcelain`, staging, identidad, operaciones en curso, commits, hash actual.
+- `servicio_git.py` — operaciones Git locales: localizar Git, ejecutar comandos, validar repositorios, rama y remotos, `status --porcelain`, staging (incluida la actualización de archivos preparados con `actualizar_archivos_preparados`), identidad, operaciones en curso, commits, hash actual.
 - `servicio_remoto_git.py` — hereda de `ServicioGit`. Selección segura del remoto, Fetch, estado de sincronización, Push seguro, Pull con `--ff-only`, configuración del primer remoto GitHub (`agregar_remoto_github`).
 - `modelos_historial.py` — modelos del historial: `CommitGit`, `ResultadoHistorial`, `ResultadoExportacion`.
 - `servicio_historial_git.py` — solo lectura: consultas locales de `git log` con separadores de control y parche de un commit (`obtener_cambios_commit`) con `git show`. No ejecuta operaciones remotas ni modifica el repositorio.
 - `servicio_exportacion_historial.py` — exporta el historial consultado a CSV (UTF-8 con BOM, `;` como separador, protección contra fórmulas Excel) o TXT con encabezado de repositorio y filtros. No ejecuta Git.
-- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging, commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, `threading` + `queue.Queue` para red.
+- `modelos_configuracion.py` — dataclass `ResultadoConfiguracion`.
+- `servicio_configuracion.py` — persistencia del último repositorio en `config.json`: carga validada y escritura conservadora (archivo temporal + `os.replace`). Nunca guarda credenciales ni ejecuta operaciones remotas.
+- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red.
 - `ayuda_interfaz.py` — ayuda visual: `AyudaEmergente` y `configurar_estilos`. Sin lógica Git.
 
 ## Seguridad
@@ -229,9 +231,79 @@ o cerrar el historial, la ventana de detalle también se cierra.
 
 Desde el historial se exportan los commits visibles a CSV o TXT mediante `ServicioExportacionHistorial` (sin ejecutar Git). CSV y TXT conservan el mismo orden de los commits visibles (más reciente primero). El CSV es compatible con Excel en Windows español (BOM + `;`); celdas con `=`, `+`, `-`, `@`, tabulación o CR se anteponen `'` contra fórmulas maliciosas.
 
+## Persistencia del último repositorio
+
+`ServicioConfiguracion` recuerda únicamente el último repositorio
+seleccionado manualmente por el usuario.
+
+- `config.json` vive junto a los archivos Python
+  (`Path(__file__).resolve().parent / "config.json"`), sin depender
+  del directorio desde el cual se ejecute la aplicación;
+- estructura permitida:
+  `{"ruta_repositorio": "D:\\ruta\\al\\repositorio"}`;
+- nunca guarda usuario, correo, contraseña, PAT, token, URLs de
+  remotos ni credenciales (Git Credential Manager queda intacto);
+- al iniciar se carga el estado LOCAL del repositorio recordado:
+  sin Fetch, Pull ni Push automáticos; Pull/Push quedan
+  deshabilitados hasta un Fetch manual exitoso;
+- un `config.json` inválido o con una ruta que ya no es repositorio
+  muestra un aviso en la barra de estado y no impide trabajar;
+  no se borra automáticamente;
+- la escritura es conservadora: primero se valida la ruta con Git,
+  después se escribe un archivo temporal en la misma carpeta y se
+  reemplaza con `os.replace`; nunca se sobrescribe una configuración
+  válida con una ruta inválida;
+- `config.json` está ignorado por `.gitignore` y no forma parte
+  del repositorio.
+
+## Actualización de archivos preparados
+
+Concepto: "archivo preparado y vuelto a modificar después".
+
+- se detecta desde el estado estructurado de
+  `git status --porcelain` (nunca buscando textos en la
+  descripción): `CambioArchivo.requiere_actualizar_preparado`
+  es True cuando el archivo está preparado y además existen
+  cambios posteriores en el working tree (p. ej. `MM`, `AM`,
+  `MD`, `RM`); los conflictos nunca son actualizables;
+- lo mismo se muestra en la columna Preparado como
+  `Sí (hay cambios nuevos)`;
+- el botón `Actualizar preparados` (entre Preparar y Quitar)
+  vuelve a ejecutar `git add -- <rutas explícitas>` con
+  `--literal-pathspecs` sobre la versión actual; nunca
+  `git add .` ni `git add -A`;
+- el servicio (`actualizar_archivos_preparados`) validar el
+  estado nuevamente antes de ejecutar: cada archivo debe seguir
+  preparado, con cambios nuevos fuera del índice y sin conflictos;
+  si no, bloquea con mensaje explicando el archivo;
+- no deshace cambios, no modifica el working tree, no quita
+  archivos del staging y no crea commits;
+- GestorGit trabaja a nivel de ARCHIVO: si se preparó solo parte
+  de un archivo con otra herramienta, la actualización incluye
+  la versión actual completa (la confirmación lo advierte);
+- el commit se sigue bloqueando si algún preparado fue
+  modificado después, con mensaje educativo que menciona
+  `Actualizar preparados`.
+
+Existen 7 pruebas específicas de esta funcionalidad:
+
+- detección de archivo preparado y modificado después;
+- actualización que incluye la versión actual completa en el índice;
+- actualización múltiple de archivos;
+- rechazo de archivo que ya no está preparado;
+- rechazo de archivo sin cambios nuevos;
+- commit bloqueado hasta actualizar preparados;
+- rechazo controlado de rutas con carácter NUL (\x00) antes
+  de ejecutar git add.
+
+Las pruebas de portabilidad en Windows normalizan rutas mediante
+`Path.resolve()` en lugar de comparación de strings, y los
+subprocess que leen diff con acentos usan `encoding="utf-8"`
+y `errors="replace"`.
+
 ## Pruebas
 
-79 pruebas automatizadas en `pruebas/`. Ejecutar:
+94 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -240,7 +312,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 79 tests in ...
+Ran 94 tests in ...
 OK
 ```
 
@@ -251,16 +323,20 @@ Las pruebas nunca tocan GitHub ni el repositorio Oracle real; usan `tempfile.Tem
 ```powershell
 python -m py_compile .\modelos.py
 python -m py_compile .\modelos_historial.py
+python -m py_compile .\modelos_configuracion.py
 python -m py_compile .\servicio_git.py
 python -m py_compile .\servicio_remoto_git.py
 python -m py_compile .\servicio_historial_git.py
 python -m py_compile .\servicio_exportacion_historial.py
+python -m py_compile .\servicio_configuracion.py
 python -m py_compile .\principal.py
 python -m py_compile .\ayuda_interfaz.py
 python -m py_compile .\pruebas\test_historial_git.py
 python -m py_compile .\pruebas\test_exportacion_historial.py
 python -m py_compile .\pruebas\test_configuracion_remoto_git.py
+python -m py_compile .\pruebas\test_configuracion.py
 python -m py_compile .\pruebas\test_detalle_commit_git.py
+python -m py_compile .\pruebas\test_actualizacion_preparados.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```
@@ -269,9 +345,6 @@ Nota: PowerShell puede mostrar mojibake (p. ej. `aplicaciÃ³n`); Tkinter muestr
 
 ## Siguiente etapa
 
-- recordar el último repositorio seleccionado;
-- persistir configuración en `config.json`;
-- nunca guardar credenciales;
 - eventualmente: selector/creación segura de ramas.
 
 ## Filosofía

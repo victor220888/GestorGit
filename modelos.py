@@ -40,6 +40,10 @@ class CambioArchivo:
     descripcion: str
     preparado: bool
     ruta_anterior: str = ""
+    # True cuando el archivo tiene cambios preparados y además
+    # existen cambios posteriores en el working tree: el área
+    # preparada no contiene la versión actual completa.
+    requiere_actualizar_preparado: bool = False
 
 
 @dataclass

@@ -9,6 +9,7 @@ from tkinter import messagebox
 from tkinter import ttk
 
 from ayuda_interfaz import AyudaEmergente, configurar_estilos
+from servicio_configuracion import ServicioConfiguracion
 from servicio_exportacion_historial import ServicioExportacionHistorial
 from servicio_historial_git import ServicioHistorialGit
 from servicio_remoto_git import ServicioRemotoGit
@@ -37,6 +38,13 @@ class AplicacionGit:
         # Servicio que contiene las operaciones locales,
         # Fetch, Pull y Push.
         self.servicio_git = ServicioRemotoGit()
+
+        # Servicio que recuerda el último repositorio seleccionado.
+        # Guarda únicamente la ruta local en config.json y nunca
+        # credenciales; la carga automática no ejecuta Fetch.
+        self.servicio_configuracion = ServicioConfiguracion(
+            self.servicio_git
+        )
 
         # Servicio independiente de solo lectura para consultar
         # el historial de commits. Reutiliza el mismo ServicioGit.
@@ -122,6 +130,7 @@ class AplicacionGit:
         self.configurar_ventana()
         self.crear_interfaz()
         self.verificar_git()
+        self.cargar_repositorio_recordado()
 
         # Tkinter revisará periódicamente la cola
         # de resultados de los hilos.
@@ -703,8 +712,8 @@ class AplicacionGit:
 
         self.tabla_cambios.column(
             "preparado",
-            width=100,
-            minwidth=80,
+            width=140,
+            minwidth=110,
             anchor="center"
         )
 
@@ -752,6 +761,12 @@ class AplicacionGit:
             xscrollcommand=barra_horizontal.set
         )
 
+        # Actualiza los botones de archivos según la selección.
+        self.tabla_cambios.bind(
+            "<<TreeviewSelect>>",
+            self.actualizar_estado_botones_archivos
+        )
+
         # ---------------------------------------------------------
         # Acciones sobre archivos
         # ---------------------------------------------------------
@@ -788,6 +803,19 @@ class AplicacionGit:
         )
 
         self.boton_preparar.pack(
+            side=tk.LEFT,
+            padx=(10, 0)
+        )
+
+        self.boton_actualizar_preparados = ttk.Button(
+            marco_acciones,
+            text="Actualizar preparados",
+            command=self.actualizar_preparados_seleccionados,
+            state=tk.DISABLED,
+            style="Accion.TButton"
+        )
+
+        self.boton_actualizar_preparados.pack(
             side=tk.LEFT,
             padx=(10, 0)
         )
@@ -1032,6 +1060,23 @@ class AplicacionGit:
             ),
 
             AyudaEmergente(
+                self.boton_actualizar_preparados,
+                (
+                    "Actualizar preparados\n\n"
+                    "Actualiza el área preparada con la versión actual "
+                    "completa de los archivos seleccionados.\n\n"
+                    "Úsalo cuando un archivo aparece como:\n"
+                    "'preparado y vuelto a modificar'.\n\n"
+                    "Equivale a volver a ejecutar git add sobre ese archivo.\n\n"
+                    "No modifica ni elimina el archivo del disco.\n"
+                    "No crea un commit.\n\n"
+                    "Si preparaste solamente parte del archivo utilizando "
+                    "otra herramienta, esta acción incluirá también los "
+                    "cambios restantes de la versión actual."
+                )
+            ),
+
+            AyudaEmergente(
                 self.boton_quitar_preparados,
                 (
                     "Quitar de preparados\n\n"
@@ -1193,19 +1238,60 @@ class AplicacionGit:
 
         self.cargar_repositorio(
             ruta_seleccionada,
-            reiniciar_fetch=True
+            reiniciar_fetch=True,
+            guardar_configuracion=True
+        )
+
+    def cargar_repositorio_recordado(self):
+        """
+        Carga automáticamente el último repositorio seleccionado.
+
+        Solamente carga el estado LOCAL del repositorio:
+        no ejecuta Fetch, Pull ni Push.
+        """
+
+        if not self.servicio_git.git_disponible():
+            return
+
+        resultado = (
+            self.servicio_configuracion.cargar_ultimo_repositorio()
+        )
+
+        if not resultado.exitoso:
+            self.variable_estado.set(
+                "No se pudo cargar el repositorio recordado. "
+                "Seleccione un repositorio manualmente."
+            )
+
+            return
+
+        if not resultado.ruta_repositorio:
+            return
+
+        self.cargar_repositorio(
+            resultado.ruta_repositorio
+        )
+
+        self.variable_estado.set(
+            "Repositorio recordado cargado. "
+            "Pulse Fetch para consultar el remoto."
         )
 
     def cargar_repositorio(
         self,
         ruta_repositorio,
-        reiniciar_fetch=False
+        reiniciar_fetch=False,
+        guardar_configuracion=False
     ):
         """
         Valida y carga un repositorio.
 
         Cuando reiniciar_fetch es True se exige un nuevo Fetch
         antes de habilitar Pull o Push.
+
+        Cuando guardar_configuracion es True se recuerda la ruta
+        en config.json para el próximo inicio; un fallo de
+        guardado no impide seguir trabajando.
         """
 
         self.variable_estado.set(
@@ -1312,6 +1398,19 @@ class AplicacionGit:
 
         self.actualizar_historial_si_abierto()
 
+        if guardar_configuracion:
+            resultado_guardado = (
+                self.servicio_configuracion.guardar_ultimo_repositorio(
+                    self.ruta_repositorio
+                )
+            )
+
+            if not resultado_guardado.exitoso:
+                self.variable_estado.set(
+                    "El repositorio fue cargado, pero no fue posible "
+                    "recordarlo para el próximo inicio."
+                )
+
     def cargar_cambios(self):
         """
         Consulta y muestra los archivos pendientes.
@@ -1345,11 +1444,12 @@ class AplicacionGit:
             return
 
         for cambio in resultado.cambios:
-            texto_preparado = (
-                "Sí"
-                if cambio.preparado
-                else "No"
-            )
+            if not cambio.preparado:
+                texto_preparado = "No"
+            elif cambio.requiere_actualizar_preparado:
+                texto_preparado = "Sí (hay cambios nuevos)"
+            else:
+                texto_preparado = "Sí"
 
             identificador = self.tabla_cambios.insert(
                 "",
@@ -1373,47 +1473,7 @@ class AplicacionGit:
             cantidad > 0
         )
 
-        hay_no_preparados = any(
-            not cambio.preparado
-            for cambio in resultado.cambios
-        )
-
-        hay_preparados = any(
-            cambio.preparado
-            for cambio in resultado.cambios
-        )
-
-        self.boton_seleccionar_todo.config(
-            state=(
-                tk.NORMAL
-                if cantidad > 0
-                else tk.DISABLED
-            )
-        )
-
-        self.boton_preparar.config(
-            state=(
-                tk.NORMAL
-                if hay_no_preparados
-                else tk.DISABLED
-            )
-        )
-
-        self.boton_quitar_preparados.config(
-            state=(
-                tk.NORMAL
-                if hay_preparados
-                else tk.DISABLED
-            )
-        )
-
-        self.boton_crear_commit.config(
-            state=(
-                tk.NORMAL
-                if hay_preparados
-                else tk.DISABLED
-            )
-        )
+        self.actualizar_estado_botones_archivos()
 
         self.actualizar_estado_botones_sincronizacion()
 
@@ -4611,6 +4671,116 @@ class AplicacionGit:
 
         self.cargar_cambios()
 
+    def actualizar_preparados_seleccionados(self):
+        """
+        Actualiza el área preparada con la versión actual completa
+        de los archivos seleccionados que lo requieran.
+
+        Equivale a volver a ejecutar git add sobre cada ruta.
+        No modifica el working tree y no crea commits.
+        """
+
+        if not self.ruta_repositorio:
+            return
+
+        seleccion = self.tabla_cambios.selection()
+
+        if not seleccion:
+            messagebox.showinfo(
+                "Sin selección",
+                "Seleccione al menos un archivo."
+            )
+
+            return
+
+        rutas_archivos = []
+
+        for identificador in seleccion:
+            cambio = self.cambios_por_elemento.get(
+                identificador
+            )
+
+            if cambio is None:
+                continue
+
+            if not cambio.requiere_actualizar_preparado:
+                continue
+
+            rutas_archivos.append(
+                cambio.ruta
+            )
+
+        if not rutas_archivos:
+            messagebox.showinfo(
+                "Sin archivos para actualizar",
+                (
+                    "Ninguno de los archivos seleccionados "
+                    "necesita actualización: ya están preparados "
+                    "con su versión actual completa."
+                )
+            )
+
+            return
+
+        mensaje = self._crear_mensaje_confirmacion_archivos(
+            rutas_archivos,
+            singular=(
+                "Se actualizará 1 archivo preparado "
+                "con sus cambios actuales."
+            ),
+            plural=(
+                "Se actualizarán {cantidad} archivos preparados "
+                "con sus cambios actuales."
+            ),
+            texto_final=(
+                "La versión preparada anterior de estos archivos "
+                "será reemplazada en el área preparada por su "
+                "versión actual completa.\n\n"
+                "Los archivos del disco NO serán modificados "
+                "ni eliminados.\n"
+                "No se creará ningún commit.\n\n"
+                "Si preparaste solamente parte de alguno de estos "
+                "archivos con otra herramienta, también se "
+                "incluirán sus cambios restantes.\n\n"
+                "¿Desea continuar?"
+            )
+        )
+
+        confirmado = messagebox.askyesno(
+            "Actualizar preparados",
+            mensaje
+        )
+
+        if not confirmado:
+            return
+
+        self.variable_estado.set(
+            "Actualizando archivos preparados..."
+        )
+
+        self.ventana_principal.update_idletasks()
+
+        resultado = (
+            self.servicio_git.actualizar_archivos_preparados(
+                self.ruta_repositorio,
+                rutas_archivos
+            )
+        )
+
+        if not resultado.exitoso:
+            self.variable_estado.set(
+                "No fue posible actualizar los archivos preparados."
+            )
+
+            messagebox.showerror(
+                "Error al actualizar preparados",
+                resultado.error
+            )
+
+            return
+
+        self.cargar_cambios()
+
     # =============================================================
     # COMMIT
     # =============================================================
@@ -4775,12 +4945,104 @@ class AplicacionGit:
             state=tk.DISABLED
         )
 
+        self.boton_actualizar_preparados.config(
+            state=tk.DISABLED
+        )
+
         self.boton_quitar_preparados.config(
             state=tk.DISABLED
         )
 
         self.boton_crear_commit.config(
             state=tk.DISABLED
+        )
+
+    def actualizar_estado_botones_archivos(self, _evento=None):
+        """
+        Actualiza el estado de los botones de archivos según
+        el contenido de la tabla y la selección actual.
+        """
+
+        cambios = [
+            self.cambios_por_elemento[elemento]
+            for elemento in self.tabla_cambios.get_children()
+            if elemento in self.cambios_por_elemento
+        ]
+
+        cambios_seleccionados = [
+            self.cambios_por_elemento[elemento]
+            for elemento in self.tabla_cambios.selection()
+            if elemento in self.cambios_por_elemento
+        ]
+
+        hay_cambios_visibles = len(
+            cambios
+        ) > 0
+
+        # Preparar actúa sobre los seleccionados que todavía
+        # no están en el área preparada.
+        hay_no_preparados_seleccionados = any(
+            not cambio.preparado
+            for cambio in cambios_seleccionados
+        )
+
+        # Quitar actúa sobre los seleccionados ya preparados.
+        hay_preparados_seleccionados = any(
+            cambio.preparado
+            for cambio in cambios_seleccionados
+        )
+
+        # Actualizar actúa sobre los seleccionados que tienen
+        # cambios nuevos fuera del índice.
+        hay_que_actualizar = any(
+            cambio.requiere_actualizar_preparado
+            for cambio in cambios_seleccionados
+        )
+
+        self.boton_seleccionar_todo.config(
+            state=(
+                tk.NORMAL
+                if hay_cambios_visibles
+                else tk.DISABLED
+            )
+        )
+
+        self.boton_preparar.config(
+            state=(
+                tk.NORMAL
+                if hay_no_preparados_seleccionados
+                else tk.DISABLED
+            )
+        )
+
+        self.boton_actualizar_preparados.config(
+            state=(
+                tk.NORMAL
+                if hay_que_actualizar
+                else tk.DISABLED
+            )
+        )
+
+        self.boton_quitar_preparados.config(
+            state=(
+                tk.NORMAL
+                if hay_preparados_seleccionados
+                else tk.DISABLED
+            )
+        )
+
+        # El commit se habilita cuando hay preparados; el servicio
+        # vuelve a bloquearlo con su mensaje educativo si algún
+        # archivo fue modificado después de haber sido preparado.
+        self.boton_crear_commit.config(
+            state=(
+                tk.NORMAL
+                if any(
+                    cambio.preparado
+                    for cambio in cambios
+                )
+                else tk.DISABLED
+            )
         )
 
     def limpiar_estado_sincronizacion(self):

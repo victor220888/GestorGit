@@ -301,9 +301,12 @@ La etapa del visor de cambios de commits quedó VALIDADA en la
 prueba manual: botón `Ver cambios...`, selección y doble clic,
 datos del commit, diff, colores (agregado/eliminado/bloque/
 encabezado), scroll vertical y horizontal y `Copiar diff`;
-consultar commits no modifica el repositorio. Pendiente
-únicamente el commit de la etapa (cambios preparados en el
-índice).
+consultar commits no modifica el repositorio. La etapa del visor
+quedó confirmada en el commit:
+
+```text
+0e3840e Agrega visor de cambios de commits
+```
 
 ## Detalle de cambios de un commit
 
@@ -349,16 +352,157 @@ copia únicamente el diff visible, no los metadatos del commit).
 Si ya existe una ventana de detalle se destruye y se recrea; al
 cambiar de repositorio o cerrar el historial también se cierra.
 
+## Persistencia del último repositorio
+
+`ServicioConfiguracion` recuerda únicamente el último repositorio
+seleccionado manualmente por el usuario. `config.json` vive junto
+a los archivos Python (`Path(__file__).resolve().parent`), sin
+depender del directorio desde el cual se ejecute la aplicación.
+
+Flujo:
+
+```text
+Seleccionar repositorio
+    ↓
+validar con Git
+    ↓
+guardar ruta local en config.json
+    ↓
+cerrar GestorGit
+    ↓
+abrir GestorGit
+    ↓
+validar ruta guardada
+    ↓
+cargar estado LOCAL
+    ↓
+Fetch manual
+```
+
+Durante la carga automática se carga únicamente el estado LOCAL:
+rama, remotos, commits, cambios y estado local de sincronización.
+Fetch queda habilitado si hay remoto, pero Pull y Push quedan
+deshabilitados hasta un Fetch manual exitoso. Se muestra el aviso:
+"Repositorio recordado cargado. Pulse Fetch para consultar el
+remoto."
+
+Reglas:
+
+- estructura permitida: `{"ruta_repositorio": "D:\\ruta\\al\\repositorio"}`;
+- se guarda la raíz confirmada por Git (`analizar_repositorio()`),
+  no el texto original;
+- la lectura ignora claves JSON desconocidas; la escritura siempre
+  vuelve a escribir únicamente `ruta_repositorio`;
+- nunca se guardan usuario, correo, contraseña, PAT, token, URLs
+  de remotos ni credenciales (Git Credential Manager queda intacto);
+- un `config.json` inválido, con JSON malformado o con una ruta
+  que ya no es repositorio, muestra un aviso en la barra de estado
+  (sin messagebox modal) y no impide trabajar; no se borra
+  automáticamente;
+- la escritura es conservadora: primero se valida la ruta con Git,
+  después se escribe un archivo temporal en la misma carpeta y se
+  reemplaza con `os.replace`; nunca se sobrescribe una
+  configuración válida con una ruta inválida; los errores de
+  escritura limpian el temporal;
+- se guarda únicamente tras una selección manual
+  (`guardar_configuracion=True` en `cargar_repositorio()`); un
+  fallo de guardado no impide trabajar (el repositorio permanece
+  cargado);
+- recuerda exactamente UN repositorio: el último seleccionado
+  (sin listas, favoritos ni historial de rutas);
+- `config.json` está ignorado por `.gitignore` y NO forma parte
+  del repositorio.
+
+La persistencia fue validada manualmente en Windows:
+
+- la selección manual de GestorGit guardó la configuración;
+- al cerrar y volver a abrir la aplicación, el repositorio se
+  cargó automáticamente SIN ejecutar Fetch; Fetch quedó
+  disponible y Pull/Push permanecieron deshabilitados hasta un
+  Fetch manual exitoso;
+- el cambio manual al repositorio Oracle también quedó recordado;
+  al volver a seleccionar GestorGit, quedó nuevamente como último
+  repositorio recordado;
+- `config.json` funcionó realmente y NO aparece en Git porque
+  está ignorado por `.gitignore`;
+- no se guardan credenciales.
+
+## Actualización de archivos preparados
+
+Concepto: "archivo preparado y vuelto a modificar después".
+
+Flujo:
+
+```text
+Preparar
+    ↓
+seguir editando archivo
+    ↓
+GestorGit detecta staging desactualizado
+    ↓
+Actualizar preparados
+    ↓
+índice contiene versión actual
+    ↓
+Commit permitido
+```
+
+`CambioArchivo.requiere_actualizar_preparado` es True únicamente
+cuando el archivo está preparado Y además existen cambios
+posteriores en el working tree. Se calcula desde el estado
+estructurado de `git status --porcelain=v1 -z` (nunca buscando
+textos en la descripción): p. ej. `MM`, `AM`, `MD` y `RM`.
+No se marca `M<espacio>` (working tree coincide con el índice)
+ni `<espacio>M` (todavía no preparado). Los conflictos
+(`DD/AU/UD/UA/DU/AA/UU` mediante `_es_estado_conflicto`) nunca
+son actualizables con este botón.
+
+Interfaz:
+
+- la columna Preparado muestra `Sí (hay cambios nuevos)` cuando
+  el archivo requiere actualización (ancho 140);
+- el botón `Actualizar preparados` queda entre `Preparar
+  seleccionados` y `Quitar de preparados`;
+- se habilita solo si hay selección con al menos un archivo que
+  requiera actualización (`actualizar_estado_botones_archivos`,
+  enlazado a `<<TreeviewSelect>>`);
+- la confirmación advierte que la versión preparada anterior será
+  reemplazada, que no se modifica el disco, que no se crea commit
+  y que un staging parcial hecho con otra herramienta también se
+  completa (GestorGit trabaja a nivel de ARCHIVO).
+
+Servicio (`actualizar_archivos_preparados`):
+
+- valida el repositorio y las rutas relativas con las mismas
+  validaciones de pathspec de `agregar_archivos` (sin NUL, sin
+  opciones Git, sin salir del repositorio);
+- consulta `obtener_cambios()` NUEVAMENTE antes de ejecutar: cada
+  archivo debe seguir preparado, con `requiere_actualizar_preparado
+  == True` y sin conflictos; si un archivo cambió de estado, la
+  operación se bloquea explicando cuál;
+- ejecuta `git --literal-pathspecs add -- <ruta1> <ruta2> ...`
+  únicamente sobre las rutas explícitas; nunca `git add .`,
+  `git add -A`, `reset`, `restore` ni `checkout`; sin
+  `shell=True`; no quita los archivos del staging antes;
+- no deshace cambios, no modifica el working tree y no crea
+  commits.
+
+El commit se sigue bloqueando si algún archivo preparado fue
+modificado después; el mensaje educativo menciona ahora
+`Actualizar preparados` y `Quitar de preparados` como opciones.
+
 ## Pruebas
 
-El proyecto tiene actualmente **79 pruebas automatizadas**:
+El proyecto tiene actualmente **94 pruebas automatizadas**:
 
 - 49 pruebas base de operaciones locales/remotas;
 - 11 pruebas del historial;
 - 5 pruebas de exportación;
 - 7 pruebas de configuración inicial del remoto GitHub;
 - 1 prueba del primer Push con remoto no vacío;
-- 6 pruebas del detalle de cambios de un commit.
+- 6 pruebas del detalle de cambios de un commit;
+- 8 pruebas de la persistencia del último repositorio;
+- 7 pruebas de la actualización de archivos preparados.
 
 Archivos principales de pruebas:
 
@@ -372,12 +516,14 @@ pruebas/test_historial_git.py
 pruebas/test_exportacion_historial.py
 pruebas/test_configuracion_remoto_git.py
 pruebas/test_detalle_commit_git.py
+pruebas/test_configuracion.py
+pruebas/test_actualizacion_preparados.py
 ```
 
 Resultado esperado:
 
 ```text
-Ran 79 tests in ...
+Ran 94 tests in ...
 OK
 ```
 
@@ -684,12 +830,16 @@ Ahora existen 11 pruebas específicas:
 
 Las 11 pruebas del historial fueron ejecutadas en aislamiento y pasaron correctamente.
 
-El conjunto anterior tenía 49 pruebas fuera del historial. A las 11 pruebas del historial se agregan 5 pruebas de exportación, 7 pruebas de configuración del remoto GitHub, 1 prueba del primer Push con remoto no vacío y 6 pruebas del detalle de cambios de un commit. El total esperado es:
+El conjunto anterior tenía 49 pruebas fuera del historial. A las 11 pruebas del historial se agregan 5 pruebas de exportación, 7 pruebas de configuración del remoto GitHub, 1 prueba del primer Push con remoto no vacío y 6 pruebas del detalle de cambios de un commit. El total esperado en aquella etapa era:
 
 ```text
 79 pruebas
 OK
 ```
+
+Nota: ese total de 79 es HISTÓRICO, anterior a la etapa de
+persistencia; el total ACTUAL es 94 (49 + 11 + 5 + 7 + 1 + 6 + 8
++ 7 pruebas de la actualización de archivos preparados).
 
 Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritura y protección contra fórmulas CSV. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
@@ -699,9 +849,15 @@ La prueba del primer Push con remoto no vacío valida el escenario peligroso (re
 
 Las 6 pruebas del detalle de un commit validan: archivo agregado visible en el parche, modificación con línea eliminada y agregada, repositorio sin cambios después de la consulta, rechazo de hashes inválidos sin ejecutar `git show`, rechazo de hash inexistente con error controlado y uso de `--no-ext-diff`/`--no-textconv`/`--no-color` sin comandos destructivos. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
+Las 8 pruebas de la persistencia validan: config.json inexistente (primer inicio), guardar y cargar un repositorio válido, JSON malformado sin excepción, ruta inexistente, carpeta sin `.git`, escritura que conserva únicamente `ruta_repositorio`, guardado inválido que no sobrescribe la configuración válida y rechazo de ruta que no es texto. Fueron ejecutadas en aislamiento y pasaron correctamente, usando únicamente `tempfile.TemporaryDirectory()`.
+
+Las 7 pruebas de la actualización de archivos preparados validan: detección de un archivo preparado y modificado después con su versión actual completa en el índice, actualización de varios archivos de una sola operación, rechazo de un archivo que ya no está preparado, rechazo de un archivo sin cambios nuevos, el flujo completo de commit bloqueado hasta actualizar (el commit sigue funcionando normalmente después) y rechazo controlado de rutas con carácter NUL (\x00) antes de ejecutar git add. Fueron ejecutadas en aislamiento y pasaron correctamente. Las correcciones de portabilidad en Windows consisten en: comparación semántica de rutas mediante `Path.resolve()` en las pruebas de configuración, y lectura de `git diff` con `encoding="utf-8"` y `errors="replace"` en los helpers de prueba de actualización de preparados.
+
+"Actualizar preparados" también fue validado MANUALMENTE en Windows con el caso real MM (archivos preparados y vueltos a modificar). Hechos confirmados visualmente: detección de los 4 archivos MM reales (AGENTS.md, CLAUDE.md, TRABAJO_ACTUAL.md y principal.py), columna Preparado con "Sí (hay cambios nuevos)", habilitación del botón solo con selección que lo requiere, confirmación que enumeró únicamente los 4 archivos que realmente necesitaban actualización (aunque la selección fuera más amplia), archivos que mantuvieron su estado preparado sin "vuelto a modificar" después de aceptar, botón deshabilitado cuando ninguno de los seleccionados requería actualización y ningún commit creado durante la prueba. Ni la persistencia ni la actualización de preparados tienen todavía commit: ambas funcionalidades viven únicamente en el working tree actual.
+
 ## Estado consolidado de la etapa actual
 
-La etapa de historial se considera funcionalmente integrada cuando están presentes:
+La etapa se considera funcionalmente integrada cuando están presentes:
 
 ```text
 Historial de solo lectura
@@ -714,7 +870,9 @@ Exportar TXT
 Configurar GitHub (primer remoto origin)
 Primer Push solo con remoto vacío de ramas
 Detalle de cambios de un commit (solo lectura)
-79 pruebas OK
+Persistencia del último repositorio (config.json)
+Actualización de archivos preparados
+94 pruebas OK
 ```
 
 El historial se ordena explícitamente por fecha de commit descendente
@@ -725,12 +883,7 @@ CSV y TXT exportan exactamente los commits visibles y conservan ese mismo orden.
 
 ## Funcionalidades posteriores
 
-Después de estabilizar el historial con filtros, exportación y detalle de un commit:
-
-1. recordar el último repositorio seleccionado;
-2. persistir configuración en `config.json`;
-3. nunca guardar credenciales;
-4. eventualmente selector/creación segura de ramas.
+- eventualmente selector/creación segura de ramas.
 
 ## Validación habitual
 
@@ -739,32 +892,38 @@ Desde el proyecto:
 ```powershell
 python -m py_compile .\modelos.py
 python -m py_compile .\modelos_historial.py
+python -m py_compile .\modelos_configuracion.py
 python -m py_compile .\servicio_git.py
 python -m py_compile .\servicio_remoto_git.py
 python -m py_compile .\servicio_historial_git.py
 python -m py_compile .\servicio_exportacion_historial.py
+python -m py_compile .\servicio_configuracion.py
 python -m py_compile .\principal.py
 python -m py_compile .\ayuda_interfaz.py
 python -m py_compile .\pruebas\test_historial_git.py
 python -m py_compile .\pruebas\test_exportacion_historial.py
 python -m py_compile .\pruebas\test_configuracion_remoto_git.py
+python -m py_compile .\pruebas\test_configuracion.py
 python -m py_compile .\pruebas\test_detalle_commit_git.py
+python -m py_compile .\pruebas\test_actualizacion_preparados.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```
 
-Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push y detalle de un commit, esperar:
+Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio y actualización de archivos preparados, esperar:
 
 ```text
-Ran 79 tests in ...
+Ran 94 tests in ...
 OK
 ```
 
-Si el total no es 79, revisar que estén presentes `pruebas/test_historial_git.py`,
+Si el total no es 94, revisar que estén presentes `pruebas/test_historial_git.py`,
 `pruebas/test_exportacion_historial.py`,
 `pruebas/test_configuracion_remoto_git.py`,
-`pruebas/test_push_git.py` y
-`pruebas/test_detalle_commit_git.py`.
+`pruebas/test_push_git.py`,
+`pruebas/test_detalle_commit_git.py`,
+`pruebas/test_configuracion.py` y
+`pruebas/test_actualizacion_preparados.py`.
 
 ## Notas del entorno
 
@@ -803,11 +962,12 @@ python -m unittest discover -s .\pruebas -v
 ```
 
 3. confirmar que cualquier cambio pendiente es conocido y esperado;
-4. confirmar que las 79 pruebas pasan;
+4. confirmar que las 94 pruebas pasan;
 5. confirmar que tooltips/estética, historial, filtros, orden, exportación,
-   configuración inicial de GitHub y detalle de cambios de un commit
-   siguen presentes;
-6. si la etapa actual está estable, continuar con persistencia del último repositorio seleccionado;
+   configuración inicial de GitHub, detalle de cambios de un commit,
+   persistencia del último repositorio y actualización de archivos
+   preparados siguen presentes;
+6. si la etapa actual está estable, continuar con el selector/creación segura de ramas;
 7. mantener todas las reglas de seguridad y coordinación entre agentes.
 
 ## Coordinación entre agentes
@@ -835,7 +995,7 @@ Reglas obligatorias:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 79 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 94 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check`;
    - `git diff --stat`;

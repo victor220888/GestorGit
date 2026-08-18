@@ -24,3 +24,12 @@ config.json
 # Archivos temporales de Windows
 Thumbs.db
 Desktop.ini
+
+# Archivos locales de agentes de desarrollo
+.opencode/
+.openclaw/
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
