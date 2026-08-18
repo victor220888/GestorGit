@@ -1,10 +1,15 @@
 import queue
+from datetime import datetime
+from pathlib import Path
 import threading
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import ttk
 
+from ayuda_interfaz import AyudaEmergente, configurar_estilos
+from servicio_exportacion_historial import ServicioExportacionHistorial
+from servicio_historial_git import ServicioHistorialGit
 from servicio_remoto_git import ServicioRemotoGit
 
 
@@ -22,9 +27,48 @@ class AplicacionGit:
         # Ventana principal de Tkinter.
         self.ventana_principal = ventana_principal
 
+        # Configuramos la apariencia visual antes de crear
+        # los controles de la aplicación.
+        self.estilos = configurar_estilos(
+            self.ventana_principal
+        )
+
         # Servicio que contiene las operaciones locales,
         # Fetch, Pull y Push.
         self.servicio_git = ServicioRemotoGit()
+
+        # Servicio independiente de solo lectura para consultar
+        # el historial de commits. Reutiliza el mismo ServicioGit.
+        self.servicio_historial = ServicioHistorialGit(
+            self.servicio_git
+        )
+
+        # Servicio que guarda una copia del historial visible en CSV o TXT.
+        # No ejecuta Git y no modifica el repositorio.
+        self.servicio_exportacion_historial = ServicioExportacionHistorial()
+
+        # La ventana de historial se crea únicamente cuando el usuario
+        # la solicita y se reutiliza mientras permanezca abierta.
+        self.ventana_historial = None
+        self.tabla_historial = None
+        self.variable_estado_historial = None
+        self.variable_filtro_archivo_historial = None
+        self.variable_fecha_desde_historial = None
+        self.variable_fecha_hasta_historial = None
+        self.boton_exportar_csv_historial = None
+        self.boton_exportar_txt_historial = None
+
+        # Conserva exactamente los commits que se están mostrando.
+        # Las exportaciones usan esta lista y no vuelven a ejecutar git log.
+        self.commits_historial_actual = []
+
+        # Conserva los filtros de la última consulta exitosa para que
+        # el TXT documente exactamente qué información fue exportada.
+        self.filtros_historial_aplicados = {
+            "archivo": "",
+            "desde": "",
+            "hasta": ""
+        }
 
         # Repositorio actualmente seleccionado.
         self.ruta_repositorio = ""
@@ -111,17 +155,39 @@ class AplicacionGit:
         # Título
         # ---------------------------------------------------------
 
-        etiqueta_titulo = ttk.Label(
-            marco_principal,
-            text="Gestor Git",
-            font=("Segoe UI", 18, "bold")
+        marco_titulo = ttk.Frame(
+            marco_principal
         )
 
-        etiqueta_titulo.grid(
+        marco_titulo.grid(
             row=0,
             column=0,
-            sticky="w",
+            sticky="ew",
             pady=(0, 15)
+        )
+
+        etiqueta_titulo = ttk.Label(
+            marco_titulo,
+            text="Gestor Git",
+            style="Titulo.TLabel"
+        )
+
+        etiqueta_titulo.pack(
+            anchor="w"
+        )
+
+        etiqueta_subtitulo = ttk.Label(
+            marco_titulo,
+            text=(
+                "Gestiona tus cambios paso a paso y aprende "
+                "qué hace cada operación de Git."
+            ),
+            style="Subtitulo.TLabel"
+        )
+
+        etiqueta_subtitulo.pack(
+            anchor="w",
+            pady=(2, 0)
         )
 
         # ---------------------------------------------------------
@@ -166,7 +232,8 @@ class AplicacionGit:
         self.boton_seleccionar = ttk.Button(
             marco_repositorio,
             text="Seleccionar...",
-            command=self.seleccionar_repositorio
+            command=self.seleccionar_repositorio,
+            style="Accion.TButton"
         )
 
         self.boton_seleccionar.grid(
@@ -178,7 +245,8 @@ class AplicacionGit:
             marco_repositorio,
             text="Actualizar",
             command=self.actualizar_repositorio,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Accion.TButton"
         )
 
         self.boton_actualizar.grid(
@@ -273,6 +341,21 @@ class AplicacionGit:
             row=0,
             column=5,
             sticky="w"
+        )
+
+        self.boton_historial = ttk.Button(
+            marco_informacion,
+            text="Historial...",
+            command=self.abrir_historial,
+            state=tk.DISABLED,
+            style="Accion.TButton"
+        )
+
+        self.boton_historial.grid(
+            row=0,
+            column=6,
+            sticky="e",
+            padx=(30, 0)
         )
 
         # ---------------------------------------------------------
@@ -411,16 +494,19 @@ class AplicacionGit:
             pady=(8, 0)
         )
 
-        ttk.Label(
+        self.etiqueta_estado_sincronizacion = ttk.Label(
             marco_sincronizacion,
             textvariable=self.variable_estado_sincronizacion,
-            wraplength=650
-        ).grid(
+            wraplength=650,
+            style="EstadoSincronizacion.TLabel"
+        )
+
+        self.etiqueta_estado_sincronizacion.grid(
             row=1,
             column=1,
             columnspan=5,
-            sticky="w",
-            pady=(8, 0)
+            sticky="ew",
+            pady=(8, 10)
         )
 
         # ---------------------------------------------------------
@@ -443,7 +529,8 @@ class AplicacionGit:
             marco_botones_remotos,
             text="Fetch",
             command=self.iniciar_fetch,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Fetch.TButton"
         )
 
         self.boton_fetch.pack(
@@ -454,7 +541,8 @@ class AplicacionGit:
             marco_botones_remotos,
             text="Pull",
             command=self.iniciar_pull,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Pull.TButton"
         )
 
         self.boton_pull.pack(
@@ -466,7 +554,8 @@ class AplicacionGit:
             marco_botones_remotos,
             text="Push",
             command=self.iniciar_push,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Push.TButton"
         )
 
         self.boton_push.pack(
@@ -483,6 +572,26 @@ class AplicacionGit:
             columnspan=8,
             sticky="w",
             pady=(8, 0)
+        )
+
+        etiqueta_guia_git = ttk.Label(
+            marco_sincronizacion,
+            text=(
+                "Guía rápida:  "
+                "Fetch = consultar cambios del remoto sin modificar tus archivos.   "
+                "Pull = descargar commits remotos mediante fast-forward.   "
+                "Push = enviar tus commits locales al remoto."
+            ),
+            style="AyudaVisible.TLabel",
+            wraplength=1050
+        )
+
+        etiqueta_guia_git.grid(
+            row=3,
+            column=0,
+            columnspan=8,
+            sticky="ew",
+            pady=(10, 0)
         )
 
         # ---------------------------------------------------------
@@ -626,7 +735,8 @@ class AplicacionGit:
             marco_acciones,
             text="Seleccionar todo",
             command=self.seleccionar_todos_los_cambios,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Accion.TButton"
         )
 
         self.boton_seleccionar_todo.pack(
@@ -637,7 +747,8 @@ class AplicacionGit:
             marco_acciones,
             text="Preparar seleccionados",
             command=self.preparar_seleccionados,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Accion.TButton"
         )
 
         self.boton_preparar.pack(
@@ -649,7 +760,8 @@ class AplicacionGit:
             marco_acciones,
             text="Quitar de preparados",
             command=self.quitar_preparados_seleccionados,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Accion.TButton"
         )
 
         self.boton_quitar_preparados.pack(
@@ -707,7 +819,8 @@ class AplicacionGit:
             marco_commit,
             text="Crear commit",
             command=self.crear_commit_desde_interfaz,
-            state=tk.DISABLED
+            state=tk.DISABLED,
+            style="Commit.TButton"
         )
 
         self.boton_crear_commit.grid(
@@ -737,19 +850,242 @@ class AplicacionGit:
             value="Listo."
         )
 
-        etiqueta_estado = ttk.Label(
+        self.etiqueta_estado = tk.Label(
             marco_principal,
             textvariable=self.variable_estado,
-            relief=tk.SUNKEN,
             anchor="w",
-            padding=(5, 4)
+            padx=10,
+            pady=7,
+            background="#E2E8F0",
+            foreground="#334155",
+            relief=tk.FLAT,
+            font=("Segoe UI", 9, "bold")
         )
 
-        etiqueta_estado.grid(
+        self.etiqueta_estado.grid(
             row=8,
             column=0,
             sticky="ew",
             pady=(10, 0)
+        )
+
+        # Cuando cambia el texto de estado actualizamos
+        # automáticamente su apariencia.
+        self.variable_estado.trace_add(
+            "write",
+            self.actualizar_apariencia_estado
+        )
+
+        self.actualizar_apariencia_estado()
+        self.configurar_ayudas()
+
+    def configurar_ayudas(self):
+        """
+        Agrega explicaciones educativas a los controles principales.
+
+        Guardamos las ayudas en una lista para mantener
+        sus objetos disponibles durante toda la aplicación.
+        """
+
+        self.ayudas_emergentes = [
+            AyudaEmergente(
+                self.boton_seleccionar,
+                (
+                    "Seleccionar repositorio\n\n"
+                    "Elige una carpeta que contenga un repositorio Git.\n\n"
+                    "La aplicación solamente analizará esa carpeta. "
+                    "Seleccionarla no modifica archivos ni ejecuta Fetch, "
+                    "Pull o Push."
+                )
+            ),
+
+            AyudaEmergente(
+                self.boton_actualizar,
+                (
+                    "Actualizar estado local\n\n"
+                    "Vuelve a leer el estado del repositorio desde tu disco.\n\n"
+                    "Sirve para detectar archivos modificados, preparados "
+                    "o nuevos commits locales.\n\n"
+                    "No consulta Internet ni el repositorio remoto."
+                )
+            ),
+
+            AyudaEmergente(
+                self.boton_historial,
+                (
+                    "Historial de commits\n\n"
+                    "Muestra los commits más recientes del repositorio local.\n\n"
+                    "Es una consulta de SOLO LECTURA: no cambia archivos, "
+                    "ramas, commits ni el repositorio remoto.\n\n"
+                    "También permite filtrar y exportar los resultados "
+                    "visibles a CSV o TXT."
+                )
+            ),
+
+            AyudaEmergente(
+                self.boton_fetch,
+                (
+                    "Fetch\n\n"
+                    "Consulta el repositorio remoto y actualiza la información "
+                    "que Git conoce sobre sus ramas.\n\n"
+                    "Fetch NO modifica tus archivos de trabajo.\n\n"
+                    "Después de Fetch, Gestor Git puede saber si existen "
+                    "commits por enviar o por descargar."
+                )
+            ),
+
+            AyudaEmergente(
+                self.boton_pull,
+                (
+                    "Pull\n\n"
+                    "Descarga commits que existen en el remoto y que todavía "
+                    "no tienes localmente.\n\n"
+                    "Gestor Git solamente permite Pull mediante fast-forward "
+                    "(--ff-only).\n\n"
+                    "No crea Merge automático y no realiza Rebase automático."
+                )
+            ),
+
+            AyudaEmergente(
+                self.boton_push,
+                (
+                    "Push\n\n"
+                    "Envía al repositorio remoto los commits que existen "
+                    "solamente en tu repositorio local.\n\n"
+                    "Antes de enviar, Gestor Git ejecuta Fetch nuevamente "
+                    "para comprobar que el remoto no haya cambiado.\n\n"
+                    "Nunca utiliza Push forzado."
+                )
+            ),
+
+            AyudaEmergente(
+                self.boton_seleccionar_todo,
+                (
+                    "Seleccionar todo\n\n"
+                    "Selecciona todas las filas visibles de la tabla.\n\n"
+                    "Todavía no modifica Git. Solo cambia la selección "
+                    "visual de archivos."
+                )
+            ),
+
+            AyudaEmergente(
+                self.boton_preparar,
+                (
+                    "Preparar seleccionados\n\n"
+                    "Equivale conceptualmente a usar git add.\n\n"
+                    "Los cambios seleccionados pasan al área preparada "
+                    "(staging/index) y quedarán incluidos en el próximo commit.\n\n"
+                    "Todavía no se crea ningún commit."
+                )
+            ),
+
+            AyudaEmergente(
+                self.boton_quitar_preparados,
+                (
+                    "Quitar de preparados\n\n"
+                    "Saca los archivos seleccionados del área preparada.\n\n"
+                    "NO elimina los archivos y NO descarta sus modificaciones.\n\n"
+                    "Simplemente deja esos cambios fuera del próximo commit."
+                )
+            ),
+
+            AyudaEmergente(
+                self.boton_crear_commit,
+                (
+                    "Crear commit\n\n"
+                    "Guarda una instantánea local de todos los cambios "
+                    "que están preparados.\n\n"
+                    "Un commit pertenece primero a tu repositorio local.\n\n"
+                    "Crear commit NO envía nada al remoto. Para eso existe Push."
+                )
+            )
+        ]
+
+    def actualizar_apariencia_estado(
+        self,
+        *_argumentos
+    ):
+        """
+        Cambia el color de la barra inferior según
+        el tipo de mensaje mostrado.
+
+        Los mensajes de éxito se evalúan antes que
+        las advertencias para evitar que frases como
+        "No hay cambios pendientes" aparezcan en amarillo.
+        """
+
+        texto = (
+            self.variable_estado.get().lower()
+        )
+
+        # Estado neutro.
+        fondo = "#E2E8F0"
+        texto_color = "#334155"
+
+        palabras_error = (
+            "error",
+            "falló",
+            "no realizado",
+            "no fue posible",
+            "conflicto",
+            "bloqueado"
+        )
+
+        palabras_proceso = (
+            "consultando",
+            "analizando",
+            "en curso",
+            "preparando",
+            "creando",
+            "verificando"
+        )
+
+        palabras_exito = (
+            "completado",
+            "correctamente",
+            "repositorio limpio",
+            "sincronizada",
+            "git disponible"
+        )
+
+        palabras_advertencia = (
+            "pendiente",
+            "diverg",
+            "por descargar",
+            "por enviar"
+        )
+
+        if any(
+            palabra in texto
+            for palabra in palabras_error
+        ):
+            fondo = "#FEE2E2"
+            texto_color = "#991B1B"
+
+        elif any(
+            palabra in texto
+            for palabra in palabras_proceso
+        ):
+            fondo = "#DBEAFE"
+            texto_color = "#1E40AF"
+
+        elif any(
+            palabra in texto
+            for palabra in palabras_exito
+        ):
+            fondo = "#DCFCE7"
+            texto_color = "#166534"
+
+        elif any(
+            palabra in texto
+            for palabra in palabras_advertencia
+        ):
+            fondo = "#FEF3C7"
+            texto_color = "#92400E"
+
+        self.etiqueta_estado.config(
+            background=fondo,
+            foreground=texto_color
         )
 
     def verificar_git(self):
@@ -846,6 +1182,12 @@ class AplicacionGit:
 
         ruta_anterior = self.ruta_repositorio
 
+        if (
+            ruta_anterior
+            and ruta_anterior != estado.ruta_raiz
+        ):
+            self.cerrar_historial()
+
         self.ruta_repositorio = estado.ruta_raiz
 
         self.remotos_repositorio = list(
@@ -884,6 +1226,10 @@ class AplicacionGit:
             state=tk.NORMAL
         )
 
+        self.boton_historial.config(
+            state=tk.NORMAL
+        )
+
         self.boton_fetch.config(
             state=(
                 tk.NORMAL
@@ -901,6 +1247,8 @@ class AplicacionGit:
 
         # Esta consulta no accede a Internet.
         self.cargar_estado_sincronizacion_local()
+
+        self.actualizar_historial_si_abierto()
 
     def cargar_cambios(self):
         """
@@ -1118,6 +1466,1019 @@ class AplicacionGit:
             self.ruta_repositorio,
             reiniciar_fetch=False
         )
+
+    # =============================================================
+    # HISTORIAL DE COMMITS
+    # =============================================================
+
+    def abrir_historial(self):
+        """
+        Abre una ventana de solo lectura con los commits locales.
+        """
+
+        if not self.ruta_repositorio:
+            return
+
+        if (
+            self.ventana_historial is not None
+            and self.ventana_historial.winfo_exists()
+        ):
+            self.ventana_historial.deiconify()
+            self.ventana_historial.lift()
+            self.ventana_historial.focus_force()
+            self.cargar_historial()
+            return
+
+        self.crear_ventana_historial()
+        self.cargar_historial()
+
+    def crear_ventana_historial(self):
+        """
+        Construye la ventana, los filtros y la tabla del historial.
+        """
+
+        self.ventana_historial = tk.Toplevel(
+            self.ventana_principal
+        )
+
+        self.ventana_historial.title(
+            "Historial de commits - Gestor Git"
+        )
+
+        self.ventana_historial.geometry(
+            "1180x640"
+        )
+
+        self.ventana_historial.minsize(
+            900,
+            480
+        )
+
+        self.ventana_historial.transient(
+            self.ventana_principal
+        )
+
+        self.ventana_historial.protocol(
+            "WM_DELETE_WINDOW",
+            self.cerrar_historial
+        )
+
+        marco_historial = ttk.Frame(
+            self.ventana_historial,
+            padding=15
+        )
+
+        marco_historial.pack(
+            fill=tk.BOTH,
+            expand=True
+        )
+
+        marco_historial.columnconfigure(
+            0,
+            weight=1
+        )
+
+        marco_historial.rowconfigure(
+            3,
+            weight=1
+        )
+
+        ttk.Label(
+            marco_historial,
+            text="Historial de commits",
+            style="Titulo.TLabel"
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w"
+        )
+
+        ttk.Label(
+            marco_historial,
+            text=(
+                "Vista de solo lectura del historial local. "
+                "Puedes filtrar por archivo y por un rango de fechas. "
+                "No ejecuta Checkout, Reset, Revert, Pull ni Push."
+            ),
+            style="AyudaVisible.TLabel",
+            wraplength=1050
+        ).grid(
+            row=1,
+            column=0,
+            sticky="ew",
+            pady=(8, 10)
+        )
+
+        # ---------------------------------------------------------
+        # Filtros del historial
+        # ---------------------------------------------------------
+
+        marco_filtros = ttk.LabelFrame(
+            marco_historial,
+            text="Filtros",
+            padding=10
+        )
+
+        marco_filtros.grid(
+            row=2,
+            column=0,
+            sticky="ew",
+            pady=(0, 10)
+        )
+
+        marco_filtros.columnconfigure(
+            1,
+            weight=1
+        )
+
+        self.variable_filtro_archivo_historial = tk.StringVar()
+        self.variable_fecha_desde_historial = tk.StringVar()
+        self.variable_fecha_hasta_historial = tk.StringVar()
+
+        ttk.Label(
+            marco_filtros,
+            text="Archivo contiene:"
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(0, 6)
+        )
+
+        self.entrada_filtro_archivo_historial = ttk.Entry(
+            marco_filtros,
+            textvariable=self.variable_filtro_archivo_historial,
+            width=34
+        )
+
+        self.entrada_filtro_archivo_historial.grid(
+            row=0,
+            column=1,
+            sticky="ew",
+            padx=(0, 16)
+        )
+
+        ttk.Label(
+            marco_filtros,
+            text="Desde:"
+        ).grid(
+            row=0,
+            column=2,
+            sticky="w",
+            padx=(0, 6)
+        )
+
+        self.entrada_fecha_desde_historial = ttk.Entry(
+            marco_filtros,
+            textvariable=self.variable_fecha_desde_historial,
+            width=12
+        )
+
+        self.entrada_fecha_desde_historial.grid(
+            row=0,
+            column=3,
+            sticky="w",
+            padx=(0, 5)
+        )
+
+        ttk.Label(
+            marco_filtros,
+            text="dd/mm/aaaa"
+        ).grid(
+            row=0,
+            column=4,
+            sticky="w",
+            padx=(0, 16)
+        )
+
+        ttk.Label(
+            marco_filtros,
+            text="Hasta:"
+        ).grid(
+            row=0,
+            column=5,
+            sticky="w",
+            padx=(0, 6)
+        )
+
+        self.entrada_fecha_hasta_historial = ttk.Entry(
+            marco_filtros,
+            textvariable=self.variable_fecha_hasta_historial,
+            width=12
+        )
+
+        self.entrada_fecha_hasta_historial.grid(
+            row=0,
+            column=6,
+            sticky="w",
+            padx=(0, 5)
+        )
+
+        ttk.Label(
+            marco_filtros,
+            text="dd/mm/aaaa"
+        ).grid(
+            row=0,
+            column=7,
+            sticky="w",
+            padx=(0, 16)
+        )
+
+        self.boton_aplicar_filtros_historial = ttk.Button(
+            marco_filtros,
+            text="Aplicar filtros",
+            command=self.cargar_historial,
+            style="Accion.TButton"
+        )
+
+        self.boton_aplicar_filtros_historial.grid(
+            row=0,
+            column=8,
+            sticky="e"
+        )
+
+        self.boton_limpiar_filtros_historial = ttk.Button(
+            marco_filtros,
+            text="Limpiar",
+            command=self.limpiar_filtros_historial,
+            style="Accion.TButton"
+        )
+
+        self.boton_limpiar_filtros_historial.grid(
+            row=0,
+            column=9,
+            sticky="e",
+            padx=(8, 0)
+        )
+
+        # Presionar Enter en cualquiera de los filtros aplica la consulta.
+        for entrada in (
+            self.entrada_filtro_archivo_historial,
+            self.entrada_fecha_desde_historial,
+            self.entrada_fecha_hasta_historial
+        ):
+            entrada.bind(
+                "<Return>",
+                lambda _evento: self.cargar_historial()
+            )
+
+        self.ayuda_filtro_archivo_historial = AyudaEmergente(
+            self.entrada_filtro_archivo_historial,
+            (
+                "Filtro por archivo\n\n"
+                "Escribe todo o parte del nombre de un archivo.\n\n"
+                "Por ejemplo: FINI004, .pls o Paquetes.\n\n"
+                "La búsqueda no distingue mayúsculas de minúsculas "
+                "y solamente muestra commits que modificaron archivos "
+                "cuyo nombre o ruta contiene ese texto."
+            )
+        )
+
+        self.ayuda_fecha_desde_historial = AyudaEmergente(
+            self.entrada_fecha_desde_historial,
+            (
+                "Fecha Desde\n\n"
+                "Muestra commits realizados a partir de esta fecha, "
+                "incluyéndola.\n\n"
+                "Formato: dd/mm/aaaa.\n"
+                "Puedes dejarla vacía."
+            )
+        )
+
+        self.ayuda_fecha_hasta_historial = AyudaEmergente(
+            self.entrada_fecha_hasta_historial,
+            (
+                "Fecha Hasta\n\n"
+                "Muestra commits realizados hasta esta fecha, "
+                "incluyéndola.\n\n"
+                "Formato: dd/mm/aaaa.\n"
+                "Puedes dejarla vacía."
+            )
+        )
+
+        self.ayuda_aplicar_filtros_historial = AyudaEmergente(
+            self.boton_aplicar_filtros_historial,
+            (
+                "Aplicar filtros\n\n"
+                "Consulta nuevamente el historial local utilizando "
+                "el archivo y las fechas indicadas.\n\n"
+                "Los filtros se combinan: si completas varios, "
+                "el commit debe cumplirlos todos."
+            )
+        )
+
+        self.ayuda_limpiar_filtros_historial = AyudaEmergente(
+            self.boton_limpiar_filtros_historial,
+            (
+                "Limpiar filtros\n\n"
+                "Vacía Archivo, Desde y Hasta y vuelve a mostrar "
+                "el historial sin filtros."
+            )
+        )
+
+        # ---------------------------------------------------------
+        # Tabla del historial
+        # ---------------------------------------------------------
+
+        marco_tabla_historial = ttk.Frame(
+            marco_historial
+        )
+
+        marco_tabla_historial.grid(
+            row=3,
+            column=0,
+            sticky="nsew"
+        )
+
+        marco_tabla_historial.columnconfigure(
+            0,
+            weight=1
+        )
+
+        marco_tabla_historial.rowconfigure(
+            0,
+            weight=1
+        )
+
+        columnas = (
+            "hash",
+            "fecha",
+            "autor",
+            "mensaje"
+        )
+
+        self.tabla_historial = ttk.Treeview(
+            marco_tabla_historial,
+            columns=columnas,
+            show="headings",
+            selectmode="browse"
+        )
+
+        self.tabla_historial.heading(
+            "hash",
+            text="Hash"
+        )
+
+        self.tabla_historial.heading(
+            "fecha",
+            text="Fecha ↓"
+        )
+
+        self.tabla_historial.heading(
+            "autor",
+            text="Autor"
+        )
+
+        self.tabla_historial.heading(
+            "mensaje",
+            text="Mensaje"
+        )
+
+        self.tabla_historial.column(
+            "hash",
+            width=100,
+            minwidth=85,
+            stretch=False
+        )
+
+        self.tabla_historial.column(
+            "fecha",
+            width=155,
+            minwidth=140,
+            stretch=False
+        )
+
+        self.tabla_historial.column(
+            "autor",
+            width=190,
+            minwidth=140
+        )
+
+        self.tabla_historial.column(
+            "mensaje",
+            width=540,
+            minwidth=250
+        )
+
+        self.tabla_historial.grid(
+            row=0,
+            column=0,
+            sticky="nsew"
+        )
+
+        barra_vertical = ttk.Scrollbar(
+            marco_tabla_historial,
+            orient=tk.VERTICAL,
+            command=self.tabla_historial.yview
+        )
+
+        barra_vertical.grid(
+            row=0,
+            column=1,
+            sticky="ns"
+        )
+
+        barra_horizontal = ttk.Scrollbar(
+            marco_tabla_historial,
+            orient=tk.HORIZONTAL,
+            command=self.tabla_historial.xview
+        )
+
+        barra_horizontal.grid(
+            row=1,
+            column=0,
+            sticky="ew"
+        )
+
+        self.tabla_historial.configure(
+            yscrollcommand=barra_vertical.set,
+            xscrollcommand=barra_horizontal.set
+        )
+
+        marco_inferior = ttk.Frame(
+            marco_historial
+        )
+
+        marco_inferior.grid(
+            row=4,
+            column=0,
+            sticky="ew",
+            pady=(10, 0)
+        )
+
+        marco_inferior.columnconfigure(
+            0,
+            weight=1
+        )
+
+        self.variable_estado_historial = tk.StringVar(
+            value="Listo para consultar el historial."
+        )
+
+        ttk.Label(
+            marco_inferior,
+            textvariable=self.variable_estado_historial
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w"
+        )
+
+        self.boton_exportar_csv_historial = ttk.Button(
+            marco_inferior,
+            text="Exportar CSV",
+            command=self.exportar_historial_csv,
+            state=tk.DISABLED,
+            style="Accion.TButton"
+        )
+
+        self.boton_exportar_csv_historial.grid(
+            row=0,
+            column=1,
+            sticky="e",
+            padx=(10, 0)
+        )
+
+        self.boton_exportar_txt_historial = ttk.Button(
+            marco_inferior,
+            text="Exportar TXT",
+            command=self.exportar_historial_txt,
+            state=tk.DISABLED,
+            style="Accion.TButton"
+        )
+
+        self.boton_exportar_txt_historial.grid(
+            row=0,
+            column=2,
+            sticky="e",
+            padx=(8, 0)
+        )
+
+        self.boton_actualizar_historial = ttk.Button(
+            marco_inferior,
+            text="Actualizar historial",
+            command=self.cargar_historial,
+            style="Accion.TButton"
+        )
+
+        self.boton_actualizar_historial.grid(
+            row=0,
+            column=3,
+            sticky="e",
+            padx=(8, 0)
+        )
+
+        self.ayuda_exportar_csv_historial = AyudaEmergente(
+            self.boton_exportar_csv_historial,
+            (
+                "Exportar CSV\n\n"
+                "Guarda exactamente los commits visibles en un archivo CSV.\n\n"
+                "Incluye hash completo, hash corto, fecha ISO, autor, correo "
+                "y mensaje.\n\n"
+                "Se utiliza UTF-8 y un formato amigable para Excel en Windows."
+            )
+        )
+
+        self.ayuda_exportar_txt_historial = AyudaEmergente(
+            self.boton_exportar_txt_historial,
+            (
+                "Exportar TXT\n\n"
+                "Guarda exactamente los commits visibles en un archivo de texto.\n\n"
+                "Además deja registrados el repositorio y los filtros aplicados "
+                "para facilitar análisis o documentación posterior."
+            )
+        )
+
+        self.ayuda_actualizar_historial = AyudaEmergente(
+            self.boton_actualizar_historial,
+            (
+                "Actualizar historial\n\n"
+                "Vuelve a ejecutar la consulta local manteniendo "
+                "los filtros actuales.\n\n"
+                "No consulta el remoto y no modifica el repositorio."
+            )
+        )
+
+        self.entrada_filtro_archivo_historial.focus_set()
+
+    def cargar_historial(self):
+        """
+        Consulta y muestra hasta 100 commits aplicando los filtros visibles.
+        """
+
+        if not self.ruta_repositorio:
+            return
+
+        if self.tabla_historial is None:
+            return
+
+        filtro_archivo = ""
+        texto_desde = ""
+        texto_hasta = ""
+
+        if self.variable_filtro_archivo_historial is not None:
+            filtro_archivo = (
+                self.variable_filtro_archivo_historial.get().strip()
+            )
+
+        if self.variable_fecha_desde_historial is not None:
+            texto_desde = (
+                self.variable_fecha_desde_historial.get().strip()
+            )
+
+        if self.variable_fecha_hasta_historial is not None:
+            texto_hasta = (
+                self.variable_fecha_hasta_historial.get().strip()
+            )
+
+        fecha_desde = self._convertir_fecha_filtro_historial(
+            texto_desde,
+            "Desde"
+        )
+
+        if fecha_desde is None:
+            return
+
+        fecha_hasta = self._convertir_fecha_filtro_historial(
+            texto_hasta,
+            "Hasta"
+        )
+
+        if fecha_hasta is None:
+            return
+
+        if (
+            fecha_desde
+            and fecha_hasta
+            and fecha_desde > fecha_hasta
+        ):
+            if self.variable_estado_historial is not None:
+                self.variable_estado_historial.set(
+                    "El rango de fechas no es válido."
+                )
+
+            messagebox.showwarning(
+                "Rango de fechas no válido",
+                (
+                    "La fecha Desde no puede ser posterior "
+                    "a la fecha Hasta."
+                ),
+                parent=self.ventana_historial
+            )
+
+            return
+
+        for elemento in self.tabla_historial.get_children():
+            self.tabla_historial.delete(
+                elemento
+            )
+
+        self.commits_historial_actual = []
+        self.actualizar_estado_botones_exportacion_historial()
+
+        if self.variable_estado_historial is not None:
+            self.variable_estado_historial.set(
+                "Consultando historial local..."
+            )
+
+        resultado = self.servicio_historial.obtener_historial_commits(
+            self.ruta_repositorio,
+            limite=100,
+            filtro_archivo=filtro_archivo,
+            fecha_desde=(
+                fecha_desde.isoformat()
+                if fecha_desde
+                else ""
+            ),
+            fecha_hasta=(
+                fecha_hasta.isoformat()
+                if fecha_hasta
+                else ""
+            )
+        )
+
+        if not resultado.exitoso:
+            if self.variable_estado_historial is not None:
+                self.variable_estado_historial.set(
+                    "No fue posible consultar el historial."
+                )
+
+            messagebox.showerror(
+                "Error al consultar historial",
+                resultado.error,
+                parent=self.ventana_historial
+            )
+
+            return
+
+        self.commits_historial_actual = list(
+            resultado.commits
+        )
+
+        self.filtros_historial_aplicados = {
+            "archivo": filtro_archivo,
+            "desde": texto_desde,
+            "hasta": texto_hasta
+        }
+
+        self.actualizar_estado_botones_exportacion_historial()
+
+        for commit in resultado.commits:
+            self.tabla_historial.insert(
+                "",
+                tk.END,
+                values=(
+                    commit.hash_corto,
+                    self._formatear_fecha_historial(
+                        commit.fecha_iso
+                    ),
+                    commit.autor,
+                    commit.mensaje
+                )
+            )
+
+        cantidad = len(
+            resultado.commits
+        )
+
+        hay_filtros = bool(
+            filtro_archivo
+            or fecha_desde
+            or fecha_hasta
+        )
+
+        if self.variable_estado_historial is not None:
+            if cantidad == 0:
+                if hay_filtros:
+                    self.variable_estado_historial.set(
+                        "No se encontraron commits que cumplan los filtros."
+                    )
+                else:
+                    self.variable_estado_historial.set(
+                        "El repositorio todavía no tiene commits."
+                    )
+
+            elif cantidad == 1:
+                if hay_filtros:
+                    self.variable_estado_historial.set(
+                        "Se muestra 1 commit que cumple los filtros."
+                    )
+                else:
+                    self.variable_estado_historial.set(
+                        "Se muestra 1 commit."
+                    )
+
+            else:
+                if hay_filtros:
+                    self.variable_estado_historial.set(
+                        f"Se muestran {cantidad} commits que cumplen los filtros."
+                    )
+                else:
+                    self.variable_estado_historial.set(
+                        f"Se muestran {cantidad} commits, del más reciente al más antiguo."
+                    )
+
+    def limpiar_filtros_historial(self):
+        """
+        Vacía todos los filtros y vuelve a cargar el historial.
+        """
+
+        if self.variable_filtro_archivo_historial is not None:
+            self.variable_filtro_archivo_historial.set("")
+
+        if self.variable_fecha_desde_historial is not None:
+            self.variable_fecha_desde_historial.set("")
+
+        if self.variable_fecha_hasta_historial is not None:
+            self.variable_fecha_hasta_historial.set("")
+
+        self.cargar_historial()
+
+        if hasattr(
+            self,
+            "entrada_filtro_archivo_historial"
+        ):
+            self.entrada_filtro_archivo_historial.focus_set()
+
+    def actualizar_estado_botones_exportacion_historial(self):
+        """
+        Habilita exportar solamente cuando existen commits visibles.
+        """
+
+        estado = (
+            tk.NORMAL
+            if self.commits_historial_actual
+            else tk.DISABLED
+        )
+
+        if self.boton_exportar_csv_historial is not None:
+            try:
+                self.boton_exportar_csv_historial.config(
+                    state=estado
+                )
+            except tk.TclError:
+                pass
+
+        if self.boton_exportar_txt_historial is not None:
+            try:
+                self.boton_exportar_txt_historial.config(
+                    state=estado
+                )
+            except tk.TclError:
+                pass
+
+    def exportar_historial_csv(self):
+        """
+        Guarda exactamente los commits visibles en un archivo CSV.
+        """
+
+        if not self.commits_historial_actual:
+            messagebox.showinfo(
+                "Nada para exportar",
+                "No hay commits visibles para exportar.",
+                parent=self.ventana_historial
+            )
+            return
+
+        ruta_destino = filedialog.asksaveasfilename(
+            parent=self.ventana_historial,
+            title="Guardar historial como CSV",
+            defaultextension=".csv",
+            filetypes=(
+                ("Archivo CSV", "*.csv"),
+                ("Todos los archivos", "*.*")
+            ),
+            initialfile=self._crear_nombre_archivo_historial(
+                "csv"
+            )
+        )
+
+        if not ruta_destino:
+            return
+
+        resultado = self.servicio_exportacion_historial.exportar_csv(
+            ruta_destino,
+            self.commits_historial_actual
+        )
+
+        self._procesar_resultado_exportacion_historial(
+            resultado,
+            "CSV"
+        )
+
+    def exportar_historial_txt(self):
+        """
+        Guarda exactamente los commits visibles en un archivo TXT.
+        """
+
+        if not self.commits_historial_actual:
+            messagebox.showinfo(
+                "Nada para exportar",
+                "No hay commits visibles para exportar.",
+                parent=self.ventana_historial
+            )
+            return
+
+        ruta_destino = filedialog.asksaveasfilename(
+            parent=self.ventana_historial,
+            title="Guardar historial como TXT",
+            defaultextension=".txt",
+            filetypes=(
+                ("Archivo de texto", "*.txt"),
+                ("Todos los archivos", "*.*")
+            ),
+            initialfile=self._crear_nombre_archivo_historial(
+                "txt"
+            )
+        )
+
+        if not ruta_destino:
+            return
+
+        resultado = self.servicio_exportacion_historial.exportar_txt(
+            ruta_destino,
+            self.commits_historial_actual,
+            ruta_repositorio=self.ruta_repositorio,
+            filtro_archivo=self.filtros_historial_aplicados.get(
+                "archivo",
+                ""
+            ),
+            fecha_desde=self.filtros_historial_aplicados.get(
+                "desde",
+                ""
+            ),
+            fecha_hasta=self.filtros_historial_aplicados.get(
+                "hasta",
+                ""
+            )
+        )
+
+        self._procesar_resultado_exportacion_historial(
+            resultado,
+            "TXT"
+        )
+
+    def _procesar_resultado_exportacion_historial(
+        self,
+        resultado,
+        formato
+    ):
+        """
+        Muestra el resultado de una exportación sin modificar Git.
+        """
+
+        if not resultado.exitoso:
+            if self.variable_estado_historial is not None:
+                self.variable_estado_historial.set(
+                    f"No fue posible exportar el historial a {formato}."
+                )
+
+            messagebox.showerror(
+                "Error al exportar historial",
+                resultado.error,
+                parent=self.ventana_historial
+            )
+            return
+
+        if self.variable_estado_historial is not None:
+            self.variable_estado_historial.set(
+                f"Historial exportado correctamente a {formato}."
+            )
+
+        messagebox.showinfo(
+            "Historial exportado",
+            (
+                f"El historial visible se exportó correctamente a {formato}.\n\n"
+                f"Archivo:\n{resultado.ruta_archivo}"
+            ),
+            parent=self.ventana_historial
+        )
+
+    def _crear_nombre_archivo_historial(self, extension):
+        """
+        Crea un nombre sugerido seguro para Windows.
+        """
+
+        nombre_repositorio = (
+            Path(self.ruta_repositorio).name
+            if self.ruta_repositorio
+            else "repositorio"
+        )
+
+        for caracter in '<>:"/\\|?*':
+            nombre_repositorio = nombre_repositorio.replace(
+                caracter,
+                "_"
+            )
+
+        momento = datetime.now().strftime(
+            "%Y%m%d_%H%M%S"
+        )
+
+        return (
+            f"historial_{nombre_repositorio}_{momento}.{extension}"
+        )
+
+    @staticmethod
+    def _convertir_fecha_filtro_historial(
+        texto_fecha,
+        nombre_campo
+    ):
+        """
+        Convierte dd/mm/aaaa a date para validar los filtros visuales.
+
+        Devuelve una cadena vacía cuando el campo está vacío y None
+        cuando el usuario escribió una fecha inválida.
+        """
+
+        texto_fecha = texto_fecha.strip()
+
+        if not texto_fecha:
+            return ""
+
+        try:
+            return datetime.strptime(
+                texto_fecha,
+                "%d/%m/%Y"
+            ).date()
+
+        except ValueError:
+            messagebox.showwarning(
+                "Fecha no válida",
+                (
+                    f"La fecha {nombre_campo} no es válida.\n\n"
+                    "Utilice el formato dd/mm/aaaa.\n"
+                    "Ejemplo: 18/08/2026"
+                )
+            )
+
+            return None
+
+    def actualizar_historial_si_abierto(self):
+        """
+        Refresca el historial únicamente si su ventana está abierta.
+        """
+
+        if self.ventana_historial is None:
+            return
+
+        try:
+            existe = self.ventana_historial.winfo_exists()
+        except tk.TclError:
+            existe = False
+
+        if not existe:
+            return
+
+        self.cargar_historial()
+
+    def cerrar_historial(self):
+        """
+        Cierra y libera los controles asociados al historial.
+        """
+
+        if self.ventana_historial is not None:
+            try:
+                if self.ventana_historial.winfo_exists():
+                    self.ventana_historial.destroy()
+            except tk.TclError:
+                pass
+
+        self.ventana_historial = None
+        self.tabla_historial = None
+        self.variable_estado_historial = None
+        self.variable_filtro_archivo_historial = None
+        self.variable_fecha_desde_historial = None
+        self.variable_fecha_hasta_historial = None
+        self.boton_exportar_csv_historial = None
+        self.boton_exportar_txt_historial = None
+        self.commits_historial_actual = []
+        self.filtros_historial_aplicados = {
+            "archivo": "",
+            "desde": "",
+            "hasta": ""
+        }
+
+    @staticmethod
+    def _formatear_fecha_historial(fecha_iso):
+        """
+        Convierte la fecha ISO de Git a un formato compacto para la GUI.
+        """
+
+        if not fecha_iso:
+            return "-"
+
+        try:
+            fecha = datetime.fromisoformat(
+                fecha_iso
+            )
+
+            return fecha.strftime(
+                "%d/%m/%Y %H:%M"
+            )
+
+        except ValueError:
+            return fecha_iso
 
     # =============================================================
     # FETCH
@@ -1823,9 +3184,10 @@ class AplicacionGit:
                 )
             )
 
-        # Los archivos del repositorio pudieron cambiar
+        # Los archivos y el historial pudieron cambiar
         # como consecuencia del fast-forward.
         self.cargar_cambios()
+        self.actualizar_historial_si_abierto()
 
         self.variable_estado.set(
             "Pull completado correctamente mediante fast-forward."
@@ -1952,6 +3314,10 @@ class AplicacionGit:
                 state=tk.DISABLED
             )
 
+            self.boton_historial.config(
+                state=tk.DISABLED
+            )
+
             self.boton_fetch.config(
                 state=tk.DISABLED
             )
@@ -1971,6 +3337,14 @@ class AplicacionGit:
         )
 
         self.boton_actualizar.config(
+            state=(
+                tk.NORMAL
+                if self.ruta_repositorio
+                else tk.DISABLED
+            )
+        )
+
+        self.boton_historial.config(
             state=(
                 tk.NORMAL
                 if self.ruta_repositorio
@@ -2498,6 +3872,10 @@ class AplicacionGit:
             state=tk.DISABLED
         )
 
+        self.boton_historial.config(
+            state=tk.DISABLED
+        )
+
         self.boton_fetch.config(
             state=tk.DISABLED
         )
@@ -2515,6 +3893,8 @@ class AplicacionGit:
         self.limpiar_tabla()
 
         self.limpiar_estado_sincronizacion()
+
+        self.cerrar_historial()
 
     # =============================================================
     # MENSAJES DE CONFIRMACIÓN
