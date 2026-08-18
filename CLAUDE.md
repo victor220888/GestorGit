@@ -223,29 +223,55 @@ La URL contiene `..git`, pero el Push real funcionó. No modificarla automática
 
 ## Repositorio GestorGit
 
-Último HEAD conocido antes de comenzar tooltips/estética:
+Como varios agentes pueden trabajar sobre el proyecto en paralelo, este documento
+no debe asumir que un hash antiguo sigue siendo el `HEAD` actual.
+
+Antes de continuar cualquier sesión, obtener siempre el estado real con:
+
+```powershell
+git status
+git log --oneline --decorate -8
+```
+
+Referencia histórica conocida antes de tooltips, historial y exportación:
 
 ```text
 1e8fd1c Agrega pull seguro a la interfaz
 ```
 
-Historial reciente:
+Esa referencia es solamente histórica y **no debe usarse como fuente de verdad**
+para decidir qué archivos reemplazar o qué cambios faltan.
+
+La fuente de verdad es el working tree actual y su historial Git real.
+
+Último estado estable confirmado:
 
 ```text
-1e8fd1c Agrega pull seguro a la interfaz
-30111ca Agrega pull seguro con fast forward
-d8dda96 Agrega push seguro a la interfaz
-dab8708 Agrega push seguro con validaciones
-e8ed41f Actualiza interfaz con estado de sincronizacion remota
+fe5e49e Agrega historial con filtros y exportacion
 ```
 
-El working tree estaba limpio antes de esta etapa.
+Estado validado de esa línea base:
+
+- 65 pruebas automatizadas OK;
+- `git diff --check` OK;
+- `principal.py` integra filtros del historial;
+- historial ordenado explícitamente por fecha de commit descendente;
+- interfaz con cabecera `Fecha ↓`;
+- exportación CSV y TXT integrada en la GUI;
+- `modelos_historial.py` contiene `CommitGit`, `ResultadoHistorial` y `ResultadoExportacion`;
+- `servicio_exportacion_historial.py` integrado;
+- Push sigue siendo seguro y nunca forzado;
+- Pull continúa exclusivamente con `--ff-only`.
 
 ## Pruebas
 
-Existen 49 pruebas automatizadas.
+El proyecto tiene actualmente **65 pruebas automatizadas**:
 
-Archivos:
+- 49 pruebas base de operaciones locales/remotas;
+- 11 pruebas del historial;
+- 5 pruebas de exportación.
+
+Archivos principales de pruebas:
 
 ```text
 pruebas/test_servicio_git.py
@@ -253,12 +279,14 @@ pruebas/test_commit_git.py
 pruebas/test_sincronizacion_git.py
 pruebas/test_push_git.py
 pruebas/test_pull_git.py
+pruebas/test_historial_git.py
+pruebas/test_exportacion_historial.py
 ```
 
-Resultado confirmado:
+Resultado esperado:
 
 ```text
-Ran 49 tests in ...
+Ran 65 tests in ...
 OK
 ```
 
@@ -269,6 +297,23 @@ Usar repositorios temporales locales con:
 ```python
 tempfile.TemporaryDirectory()
 ```
+
+Las pruebas del historial deben proteger especialmente:
+
+- filtros por archivo;
+- filtros Desde/Hasta inclusivos;
+- combinación de filtros mediante AND;
+- orden explícito por fecha de commit descendente;
+- límite de resultados;
+- fechas inválidas y rangos invertidos.
+
+Las pruebas de exportación deben proteger:
+
+- CSV con todos los campos;
+- TXT con repositorio y filtros;
+- rechazo de listas vacías;
+- errores controlados de escritura;
+- protección contra fórmulas al abrir CSV en hojas de cálculo.
 
 ## Reglas de seguridad
 
@@ -384,7 +429,8 @@ pruebas/test_exportacion_historial.py
 `modelos_historial.py` contiene:
 
 - `CommitGit`;
-- `ResultadoHistorial`.
+- `ResultadoHistorial`;
+- `ResultadoExportacion`.
 
 `servicio_historial_git.py` contiene `ServicioHistorialGit`, que reutiliza el `ServicioGit` ya existente y ejecuta únicamente consultas locales de `git log`.
 
@@ -517,6 +563,27 @@ OK
 
 Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritura y protección contra fórmulas CSV. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
+## Estado consolidado de la etapa actual
+
+La etapa de historial se considera funcionalmente integrada cuando están presentes:
+
+```text
+Historial de solo lectura
+Filtros por archivo
+Filtro Desde
+Filtro Hasta
+Orden Fecha ↓
+Exportar CSV
+Exportar TXT
+65 pruebas OK
+```
+
+El historial se ordena explícitamente por fecha de commit descendente
+(más reciente -> más antiguo), independientemente del orden topológico
+devuelto por `git log`.
+
+CSV y TXT exportan exactamente los commits visibles y conservan ese mismo orden.
+
 ## Funcionalidades posteriores
 
 Después de estabilizar el historial con filtros y exportación:
@@ -586,14 +653,67 @@ No eliminar ese respaldo automáticamente.
 
 ```powershell
 git status
-git log --oneline -8
+git log --oneline --decorate -8
+git diff --stat
 python -m unittest discover -s .\pruebas -v
 ```
 
-3. confirmar que el proyecto está limpio;
-4. confirmar que tooltips/estética e historial están confirmados en Git;
-5. si el historial está estable, continuar con persistencia del último repositorio seleccionado;
-6. mantener todas las reglas de seguridad.
+3. confirmar que cualquier cambio pendiente es conocido y esperado;
+4. confirmar que las 65 pruebas pasan;
+5. confirmar que tooltips/estética, historial, filtros, orden y exportación siguen presentes;
+6. si la etapa actual está estable, continuar con persistencia del último repositorio seleccionado;
+7. mantener todas las reglas de seguridad y coordinación entre agentes.
+
+## Coordinación entre agentes
+
+Este proyecto puede ser modificado por más de un agente en paralelo.
+
+Reglas obligatorias:
+
+1. Antes de modificar cualquier archivo:
+   - ejecutar `git status --short`;
+   - ejecutar `git log -1 --oneline`;
+   - leer SIEMPRE la versión actual del archivo antes de editarlo;
+   - no trabajar desde backups o copias generadas antiguas.
+
+2. Nunca reemplazar `principal.py` completo utilizando una versión anterior.
+   Integrar cambios mediante modificaciones pequeñas sobre la versión actual,
+   porque otro agente puede haber agregado funcionalidades en paralelo.
+
+3. Si otro agente está trabajando sobre el mismo archivo, no modificarlo
+   en paralelo sin coordinar primero.
+
+4. No normalizar saltos de línea ni reformatear todo un archivo durante
+   un cambio funcional.
+
+5. Mantener comentarios, variables, métodos y clases en español.
+
+6. Antes de considerar terminado un cambio ejecutar:
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 65 tests ... OK`);
+   - `git diff --check`;
+   - `git diff --stat`;
+   - `git status --short`;
+   - no hacer commit automáticamente salvo indicación del usuario.
+
+7. Si una modificación reduce funcionalidades que ya están documentadas
+   en `AGENTS.md` o `CLAUDE.md`, detenerse antes de reemplazar el archivo.
+
+Línea base estable:
+
+```text
+fe5e49e Agrega historial con filtros y exportacion
+```
+
+`fe5e49e` es la línea base estable confirmada, pero después de nuevos commits
+no debe asumirse que sigue siendo el HEAD actual. Siempre consultar Git
+antes de trabajar.
+
+El historial debe conservar siempre:
+- filtros por archivo y fechas;
+- orden explícito por fecha de commit descendente;
+- cabecera `Fecha ↓`;
+- exportación CSV y TXT de los commits visibles;
+- ninguna operación destructiva desde la ventana de historial.
 
 ## Filosofía
 

@@ -42,41 +42,51 @@ Capacidades esperadas:
 ## Coordinación entre agentes
 
 1. Antes de modificar cualquier archivo:
-   - ejecutar `git status`;
-   - leer la versión ACTUAL del archivo en el working tree;
+   - ejecutar `git status --short`;
+   - ejecutar `git log -1 --oneline`;
+   - leer SIEMPRE la versión actual del archivo antes de editarlo;
    - no trabajar desde backups o copias generadas antiguas.
 
-2. No reemplazar `principal.py` completo usando una versión anterior.
-   Integrar siempre sobre la versión actual, porque varios agentes pueden
-   haber agregado funcionalidades en paralelo.
+2. Nunca reemplazar `principal.py` completo usando una copia antigua o un
+   archivo generado en una sesión anterior.
+   Integrar cambios mediante modificaciones pequeñas sobre la versión actual,
+   porque varios agentes pueden haber agregado funcionalidades en paralelo.
 
-3. Antes de entregar cambios:
-   - ejecutar `git diff --stat`;
-   - revisar `git diff` de cada archivo modificado;
-   - comprobar que no desaparecieron funcionalidades existentes.
+3. Si otro agente está trabajando sobre el mismo archivo, no modificarlo
+   en paralelo sin coordinar primero.
 
-4. Si otro agente está trabajando en el mismo momento, evitar modificar
-   los mismos archivos cuando sea posible. Si es inevitable, reconciliar
-   explícitamente ambas versiones antes de reemplazar nada.
+4. No normalizar saltos de línea ni reformatear todo un archivo durante
+   un cambio funcional.
 
-5. La fuente de verdad es, en este orden:
-   - archivos actuales del working tree;
-   - pruebas automatizadas;
-   - `AGENTS.md` / `CLAUDE.md`;
-   - backups antiguos solo como referencia.
+5. Mantener comentarios, variables, métodos y clases en español.
 
-6. Después de cualquier cambio funcional:
-   - compilar módulos afectados;
-   - ejecutar las 65 pruebas;
-   - comprobar `git status`;
+6. Antes de considerar terminado un cambio ejecutar:
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 65 tests ... OK`);
+   - `git diff --check`;
+   - `git diff --stat`;
+   - `git status --short`;
    - no hacer commit automáticamente salvo indicación del usuario.
 
-7. El historial debe conservar estas características:
-   - filtros por archivo y fechas;
-   - orden explícito por fecha de commit descendente;
-   - cabecera `Fecha ↓`;
-   - exportación CSV y TXT de los commits visibles;
-   - ninguna operación destructiva desde el historial.
+7. Si una modificación reduce funcionalidades que ya están documentadas
+   en `AGENTS.md` o `CLAUDE.md`, detenerse antes de reemplazar el archivo.
+
+Línea base estable:
+
+```text
+fe5e49e Agrega historial con filtros y exportacion
+```
+
+`fe5e49e` es la línea base estable confirmada, pero después de nuevos commits
+no debe asumirse que sigue siendo el HEAD actual. Siempre consultar Git
+antes de trabajar.
+
+El historial debe conservar estas características:
+
+- filtros por archivo y fechas;
+- orden explícito por fecha de commit descendente;
+- cabecera `Fecha ↓`;
+- exportación CSV y TXT de los commits visibles;
+- ninguna operación destructiva desde el historial.
 
 ## Arquitectura
 
