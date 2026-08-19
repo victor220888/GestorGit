@@ -9,6 +9,7 @@ from tkinter import messagebox
 from tkinter import ttk
 
 from ayuda_interfaz import AyudaEmergente, configurar_estilos
+from servicio_cambios_locales_git import ServicioCambiosLocalesGit
 from servicio_configuracion import ServicioConfiguracion
 from servicio_exportacion_historial import ServicioExportacionHistorial
 from servicio_historial_git import ServicioHistorialGit
@@ -56,6 +57,13 @@ class AplicacionGit:
         # No ejecuta Git y no modifica el repositorio.
         self.servicio_exportacion_historial = ServicioExportacionHistorial()
 
+        # Servicio de solo lectura para inspeccionar los cambios
+        # locales de un archivo (working tree / índice / HEAD).
+        # No ejecuta operaciones remotas ni modifica el repositorio.
+        self.servicio_cambios_locales = ServicioCambiosLocalesGit(
+            self.servicio_git
+        )
+
         # La ventana de historial se crea únicamente cuando el usuario
         # la solicita y se reutiliza mientras permanezca abierta.
         self.ventana_historial = None
@@ -78,6 +86,22 @@ class AplicacionGit:
         # Ventana única con los cambios de un commit (solo lectura).
         self.ventana_detalle_commit = None
         self.texto_detalle_commit = None
+
+        # Ventana única del inspector de cambios locales
+        # (solo lectura). Se cierra al cambiar de repositorio.
+        self.ventana_cambios_locales = None
+        self.notebook_cambios_locales = None
+        self.marco_sin_preparar_locales = None
+        self.marco_preparados_locales = None
+        self.texto_sin_preparar_locales = None
+        self.texto_preparados_locales = None
+        self.variable_resumen_sin_preparar = None
+        self.variable_resumen_preparados = None
+        self.variable_estado_inspector = None
+        self.variable_preparado_inspector = None
+        self.variable_commit_inspector = None
+        self.detalle_cambio_local_actual = None
+        self.ruta_archivo_inspector = ""
 
         # Límite visual del diff mostrado en la ventana de detalle.
         # La truncación es solamente visual: no modifica el repositorio.
@@ -833,6 +857,19 @@ class AplicacionGit:
             padx=(10, 0)
         )
 
+        self.boton_ver_cambios_locales = ttk.Button(
+            marco_acciones,
+            text="Ver cambios locales...",
+            command=self.abrir_cambios_locales,
+            state=tk.DISABLED,
+            style="Accion.TButton"
+        )
+
+        self.boton_ver_cambios_locales.pack(
+            side=tk.LEFT,
+            padx=(10, 0)
+        )
+
         # ---------------------------------------------------------
         # Crear commit
         # ---------------------------------------------------------
@@ -1087,6 +1124,23 @@ class AplicacionGit:
             ),
 
             AyudaEmergente(
+                self.boton_ver_cambios_locales,
+                (
+                    "Ver cambios locales...\n\n"
+                    "Abre una ventana de SOLO LECTURA con los cambios "
+                    "del archivo seleccionado.\n\n"
+                    "La pestaña 'Sin preparar' muestra los cambios todavía "
+                    "no preparados (working tree -> índice).\n\n"
+                    "La pestaña 'Preparados' muestra los cambios ya "
+                    "listos para el commit (índice -> HEAD).\n\n"
+                    "Útil para entender el flujo:\n"
+                    "Working tree -> Preparar -> Staging -> Commit -> HEAD.\n\n"
+                    "No modifica archivos, staging ni commits y no ejecuta "
+                    "Fetch, Pull ni Push."
+                )
+            ),
+
+            AyudaEmergente(
                 self.boton_crear_commit,
                 (
                     "Crear commit\n\n"
@@ -1327,6 +1381,7 @@ class AplicacionGit:
             self.cerrar_historial()
             self.cerrar_configuracion_github()
             self.cerrar_detalle_commit()
+            self.cerrar_cambios_locales()
 
         self.ruta_repositorio = estado.ruta_raiz
 
@@ -3170,6 +3225,785 @@ class AplicacionGit:
         self.texto_detalle_commit = None
 
     # =============================================================
+    # INSPECTOR DE CAMBIOS LOCALES
+    # =============================================================
+
+    def abrir_cambios_locales(self):
+        """
+        Abre (o recrea) la ventana única del inspector de cambios
+        locales con el archivo seleccionado.
+
+        Solamente funciona con exactamente un archivo seleccionado.
+        """
+
+        if not self.ruta_repositorio:
+            return
+
+        seleccion = self.tabla_cambios.selection()
+
+        if len(seleccion) != 1:
+            return
+
+        identificador = seleccion[0]
+
+        cambio = self.cambios_por_elemento.get(
+            identificador
+        )
+
+        if cambio is None:
+            return
+
+        self.cerrar_cambios_locales()
+
+        self.ruta_archivo_inspector = cambio.ruta
+
+        self.crear_ventana_cambios_locales()
+
+    def crear_ventana_cambios_locales(self):
+        """
+        Construye la ventana de solo lectura con los cambios
+        locales del archivo seleccionado.
+        """
+
+        self.ventana_cambios_locales = tk.Toplevel(
+            self.ventana_principal
+        )
+
+        self.ventana_cambios_locales.title(
+            "Cambios locales - Gestor Git"
+        )
+
+        self.ventana_cambios_locales.geometry(
+            "1100x700"
+        )
+
+        self.ventana_cambios_locales.minsize(
+            850,
+            500
+        )
+
+        self.ventana_cambios_locales.transient(
+            self.ventana_principal
+        )
+
+        self.ventana_cambios_locales.protocol(
+            "WM_DELETE_WINDOW",
+            self.cerrar_cambios_locales
+        )
+
+        marco_inspector = ttk.Frame(
+            self.ventana_cambios_locales,
+            padding=15
+        )
+
+        marco_inspector.pack(
+            fill=tk.BOTH,
+            expand=True
+        )
+
+        marco_inspector.columnconfigure(
+            0,
+            weight=1
+        )
+
+        marco_inspector.rowconfigure(
+            3,
+            weight=1
+        )
+
+        ttk.Label(
+            marco_inspector,
+            text="Cambios locales",
+            style="Titulo.TLabel"
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w"
+        )
+
+        advertencia = tk.Label(
+            marco_inspector,
+            text=(
+                "Vista de SOLO LECTURA.\n"
+                "Esta pantalla NO modifica archivos, staging ni commits "
+                "y NO ejecuta Fetch, Pull ni Push."
+            ),
+            justify=tk.LEFT,
+            anchor="w",
+            background="#FEF2E0",
+            foreground="#7C3A00",
+            padx=10,
+            pady=7,
+            wraplength=1040
+        )
+
+        advertencia.grid(
+            row=1,
+            column=0,
+            sticky="ew",
+            pady=(10, 8)
+        )
+
+        marco_datos = ttk.Frame(
+            marco_inspector
+        )
+
+        marco_datos.grid(
+            row=2,
+            column=0,
+            sticky="ew",
+            pady=(0, 10)
+        )
+
+        marco_datos.columnconfigure(
+            1,
+            weight=1
+        )
+
+        self._agregar_fila_dato(
+            marco_datos,
+            "Repositorio:",
+            self.ruta_repositorio,
+            0
+        )
+
+        self._agregar_fila_dato(
+            marco_datos,
+            "Archivo:",
+            self.ruta_archivo_inspector,
+            1
+        )
+
+        self.variable_estado_inspector = tk.StringVar(
+            value="..."
+        )
+
+        self.variable_preparado_inspector = tk.StringVar(
+            value="..."
+        )
+
+        self.variable_commit_inspector = tk.StringVar(
+            value="..."
+        )
+
+        self._agregar_fila_dato_variable(
+            marco_datos,
+            "Estado:",
+            self.variable_estado_inspector,
+            2
+        )
+
+        self._agregar_fila_dato_variable(
+            marco_datos,
+            "Preparado:",
+            self.variable_preparado_inspector,
+            3
+        )
+
+        self._agregar_fila_dato_variable(
+            marco_datos,
+            "Último commit local:",
+            self.variable_commit_inspector,
+            4
+        )
+
+        self.notebook_cambios_locales = ttk.Notebook(
+            marco_inspector
+        )
+
+        self.notebook_cambios_locales.grid(
+            row=3,
+            column=0,
+            sticky="nsew"
+        )
+
+        self.marco_sin_preparar_locales = ttk.Frame(
+            self.notebook_cambios_locales
+        )
+
+        self.marco_preparados_locales = ttk.Frame(
+            self.notebook_cambios_locales
+        )
+
+        self.notebook_cambios_locales.add(
+            self.marco_sin_preparar_locales,
+            text="Sin preparar"
+        )
+
+        self.notebook_cambios_locales.add(
+            self.marco_preparados_locales,
+            text="Preparados"
+        )
+
+        self.variable_resumen_sin_preparar = tk.StringVar(
+            value=""
+        )
+
+        self.variable_resumen_preparados = tk.StringVar(
+            value=""
+        )
+
+        self.texto_sin_preparar_locales = (
+            self._construir_pestana_diff_locales(
+                self.marco_sin_preparar_locales,
+                self.variable_resumen_sin_preparar
+            )
+        )
+
+        self.texto_preparados_locales = (
+            self._construir_pestana_diff_locales(
+                self.marco_preparados_locales,
+                self.variable_resumen_preparados
+            )
+        )
+
+        self.detalle_cambio_local_actual = None
+
+        self.actualizar_cambios_locales()
+
+        marco_botones_inspector = ttk.Frame(
+            marco_inspector
+        )
+
+        marco_botones_inspector.grid(
+            row=4,
+            column=0,
+            sticky="e",
+            pady=(10, 0)
+        )
+
+        ttk.Button(
+            marco_botones_inspector,
+            text="Actualizar",
+            command=self.actualizar_cambios_locales,
+            style="Accion.TButton"
+        ).grid(
+            row=0,
+            column=0,
+            padx=(0, 8)
+        )
+
+        ttk.Button(
+            marco_botones_inspector,
+            text="Copiar diff",
+            command=self.copiar_diff_cambios_locales,
+            style="Accion.TButton"
+        ).grid(
+            row=0,
+            column=1,
+            padx=(0, 8)
+        )
+
+        ttk.Button(
+            marco_botones_inspector,
+            text="Cerrar",
+            command=self.cerrar_cambios_locales,
+            style="Accion.TButton"
+        ).grid(
+            row=0,
+            column=2
+        )
+
+    def _construir_pestana_diff_locales(
+        self,
+        marco,
+        variable_resumen
+    ):
+        """
+        Construye una pestaña con su resumen y su visor de diff.
+        """
+
+        marco.columnconfigure(
+            0,
+            weight=1
+        )
+
+        marco.rowconfigure(
+            1,
+            weight=1
+        )
+
+        ttk.Label(
+            marco,
+            textvariable=variable_resumen
+        ).grid(
+            row=0,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(6, 6)
+        )
+
+        texto = tk.Text(
+            marco,
+            wrap=tk.NONE,
+            font=("Consolas", 10),
+            relief=tk.SOLID,
+            borderwidth=1,
+            background="#FBFCFE",
+            foreground="#1F2937"
+        )
+
+        texto.grid(
+            row=1,
+            column=0,
+            sticky="nsew"
+        )
+
+        barra_vertical = ttk.Scrollbar(
+            marco,
+            orient=tk.VERTICAL,
+            command=texto.yview
+        )
+
+        barra_vertical.grid(
+            row=1,
+            column=1,
+            sticky="ns"
+        )
+
+        barra_horizontal = ttk.Scrollbar(
+            marco,
+            orient=tk.HORIZONTAL,
+            command=texto.xview
+        )
+
+        barra_horizontal.grid(
+            row=2,
+            column=0,
+            sticky="ew"
+        )
+
+        texto.configure(
+            yscrollcommand=barra_vertical.set,
+            xscrollcommand=barra_horizontal.set
+        )
+
+        texto.tag_configure(
+            "agregado",
+            foreground="#1A7F37"
+        )
+
+        texto.tag_configure(
+            "eliminado",
+            foreground="#CF222E"
+        )
+
+        texto.tag_configure(
+            "bloque",
+            foreground="#0969DA",
+            font=("Consolas", 10, "bold")
+        )
+
+        texto.tag_configure(
+            "tecnico",
+            foreground="#57606A"
+        )
+
+        return texto
+
+    def _agregar_fila_dato_variable(
+        self,
+        marco,
+        nombre,
+        variable,
+        fila
+    ):
+        """
+        Agrega una fila nombre/valor dinámico en el inspector.
+        """
+
+        ttk.Label(
+            marco,
+            text=nombre,
+            font=("Segoe UI", 9, "bold")
+        ).grid(
+            row=fila,
+            column=0,
+            sticky="nw",
+            padx=(0, 8)
+        )
+
+        ttk.Label(
+            marco,
+            textvariable=variable,
+            wraplength=950
+        ).grid(
+            row=fila,
+            column=1,
+            sticky="w"
+        )
+
+    def actualizar_cambios_locales(self):
+        """
+        Consulta nuevamente el estado LOCAL del archivo y
+        actualiza las pestañas y los datos mostrados.
+
+        No ejecuta Fetch ni ninguna operación remota y nunca
+        modifica el repositorio.
+        """
+
+        if self.ventana_cambios_locales is None:
+            return
+
+        if not self.ruta_repositorio:
+            return
+
+        if not self.ruta_archivo_inspector:
+            return
+
+        resultado = self.servicio_cambios_locales.obtener_detalle(
+            self.ruta_repositorio,
+            self.ruta_archivo_inspector
+        )
+
+        if not resultado.exitoso:
+            self.detalle_cambio_local_actual = None
+
+            self.variable_estado_inspector.set(
+                "No fue posible consultar los cambios."
+            )
+
+            self.variable_preparado_inspector.set("-")
+            self.variable_commit_inspector.set("-")
+
+            self.variable_resumen_sin_preparar.set("")
+            self.variable_resumen_preparados.set("")
+
+            self._limpiar_textos_inspector()
+
+            self._insertar_mensaje_inspector(
+                self.texto_sin_preparar_locales,
+                (
+                    "No fue posible consultar los cambios "
+                    f"del archivo.\n\n{resultado.error}"
+                )
+            )
+
+            self._insertar_mensaje_inspector(
+                self.texto_preparados_locales,
+                "No fue posible consultar los cambios del archivo."
+            )
+
+            return
+
+        if resultado.detalle is None:
+            # El archivo ya no tiene cambios pendientes.
+            self.detalle_cambio_local_actual = None
+
+            self.variable_estado_inspector.set(
+                "Sin cambios pendientes"
+            )
+
+            self.variable_preparado_inspector.set("-")
+            self.variable_commit_inspector.set("-")
+
+            self.variable_resumen_sin_preparar.set("")
+            self.variable_resumen_preparados.set("")
+
+            self._limpiar_textos_inspector()
+
+            mensaje = (
+                "El archivo ya no tiene cambios locales pendientes."
+            )
+
+            self._insertar_mensaje_inspector(
+                self.texto_sin_preparar_locales,
+                mensaje
+            )
+
+            self._insertar_mensaje_inspector(
+                self.texto_preparados_locales,
+                mensaje
+            )
+
+            return
+
+        detalle = resultado.detalle
+
+        self.detalle_cambio_local_actual = detalle
+
+        self.variable_estado_inspector.set(
+            detalle.descripcion
+        )
+
+        if not detalle.preparado:
+            texto_preparado = "No"
+        elif detalle.requiere_actualizar_preparado:
+            texto_preparado = "Sí (hay cambios nuevos)"
+        else:
+            texto_preparado = "Sí"
+
+        self.variable_preparado_inspector.set(
+            texto_preparado
+        )
+
+        if detalle.hash_commit:
+            texto_commit = (
+                f"{detalle.hash_commit} {detalle.mensaje_commit}"
+            ).strip()
+        else:
+            texto_commit = (
+                "El repositorio todavía no tiene commits. "
+                "Los cambios preparados se comparan contra un "
+                "árbol vacío."
+            )
+
+        self.variable_commit_inspector.set(
+            texto_commit
+        )
+
+        self._limpiar_textos_inspector()
+
+        if detalle.nuevo_sin_preparar:
+            self._insertar_mensaje_inspector(
+                self.texto_sin_preparar_locales,
+                (
+                    "Este archivo es nuevo y todavía no está preparado.\n\n"
+                    "Git aún no tiene una versión anterior para comparar "
+                    "en el índice.\n\n"
+                    "Después de prepararlo podrá verse su contenido en la "
+                    "pestaña 'Preparados'."
+                )
+            )
+        elif detalle.diff_sin_preparar:
+            self._mostrar_diff_en_texto_inspector(
+                self.texto_sin_preparar_locales,
+                detalle.diff_sin_preparar
+            )
+        else:
+            self._insertar_mensaje_inspector(
+                self.texto_sin_preparar_locales,
+                "No hay cambios sin preparar."
+            )
+
+        if detalle.diff_preparado:
+            self._mostrar_diff_en_texto_inspector(
+                self.texto_preparados_locales,
+                detalle.diff_preparado
+            )
+        else:
+            self._insertar_mensaje_inspector(
+                self.texto_preparados_locales,
+                "No hay cambios preparados."
+            )
+
+        self.variable_resumen_sin_preparar.set(
+            self._crear_resumen_cambios_locales(
+                detalle.binario_sin_preparar,
+                detalle.inserciones_sin_preparar,
+                detalle.eliminaciones_sin_preparar
+            )
+        )
+
+        self.variable_resumen_preparados.set(
+            self._crear_resumen_cambios_locales(
+                detalle.binario_preparado,
+                detalle.inserciones_preparadas,
+                detalle.eliminaciones_preparadas
+            )
+        )
+
+    def _limpiar_textos_inspector(self):
+        """
+        Vacía ambos visores y los deja editables para rellenarlos.
+        """
+
+        for texto in (
+            self.texto_sin_preparar_locales,
+            self.texto_preparados_locales,
+        ):
+            if texto is None:
+                continue
+
+            texto.configure(
+                state=tk.NORMAL
+            )
+
+            texto.delete(
+                "1.0",
+                tk.END
+            )
+
+    def _mostrar_diff_en_texto_inspector(
+        self,
+        texto,
+        salida
+    ):
+        """
+        Inserta el diff en el visor indicado con colores simples.
+
+        La visualización se limita a
+        self.limite_caracteres_detalle caracteres; la truncación
+        es solamente visual y no modifica el repositorio.
+        """
+
+        if len(salida) > self.limite_caracteres_detalle:
+            texto_exhibido = salida[
+                :self.limite_caracteres_detalle
+            ]
+        else:
+            texto_exhibido = salida
+
+        texto.insert(
+            tk.END,
+            texto_exhibido
+        )
+
+        lineas = texto_exhibido.split("\n")
+
+        # Posición inicial de cada línea dentro del texto insertado.
+        posiciones = []
+        posicion = 0
+
+        for linea in lineas:
+            posiciones.append(posicion)
+            posicion += len(linea) + 1
+
+        for numero, linea in enumerate(lineas, start=1):
+            tag = self._tag_para_linea_diff(
+                linea
+            )
+
+            if tag is None:
+                continue
+
+            inicio = posiciones[numero - 1]
+
+            texto.tag_add(
+                tag,
+                f"1.0+{inicio}c",
+                f"1.0+{inicio + len(linea)}c"
+            )
+
+        if len(salida) > self.limite_caracteres_detalle:
+            texto.insert(
+                tk.END,
+                (
+                    "\n\n[Vista truncada: el archivo contiene más "
+                    "cambios de los que se muestran en esta pantalla.]\n"
+                )
+            )
+
+        texto.configure(
+            state=tk.DISABLED
+        )
+
+    def _insertar_mensaje_inspector(self, texto, mensaje):
+        """
+        Inserta un mensaje informativo y deja el visor
+        en modo solo lectura.
+        """
+
+        texto.insert(
+            tk.END,
+            mensaje
+        )
+
+        texto.configure(
+            state=tk.DISABLED
+        )
+
+    @staticmethod
+    def _crear_resumen_cambios_locales(
+        binario,
+        inserciones,
+        eliminaciones
+    ):
+        """
+        Crea el resumen de una pestaña del inspector.
+
+        Para archivos binarios devuelve "Archivo binario"
+        sin intentar interpretar las cantidades.
+        """
+
+        if binario:
+            return "Archivo binario"
+
+        partes = []
+
+        if inserciones == 1:
+            partes.append("1 inserción")
+        else:
+            partes.append(f"{inserciones} inserciones")
+
+        if eliminaciones == 1:
+            partes.append("1 eliminación")
+        else:
+            partes.append(f"{eliminaciones} eliminaciones")
+
+        return " · ".join(partes)
+
+    def copiar_diff_cambios_locales(self):
+        """
+        Copia el contenido visible de la pestaña activa
+        al portapapeles.
+        """
+
+        if self.ventana_cambios_locales is None:
+            return
+
+        if self.notebook_cambios_locales is None:
+            return
+
+        if (
+            self.texto_sin_preparar_locales is None
+            or self.texto_preparados_locales is None
+        ):
+            return
+
+        pestana_activa = (
+            self.notebook_cambios_locales.select()
+        )
+
+        if pestana_activa == str(
+            self.marco_sin_preparar_locales
+        ):
+            texto_activo = self.texto_sin_preparar_locales
+        else:
+            texto_activo = self.texto_preparados_locales
+
+        try:
+            contenido = texto_activo.get(
+                "1.0",
+                tk.END
+            )
+        except tk.TclError:
+            return
+
+        self.ventana_cambios_locales.clipboard_clear()
+
+        self.ventana_cambios_locales.clipboard_append(
+            contenido.rstrip("\n")
+        )
+
+    def cerrar_cambios_locales(self):
+        """
+        Cierra la ventana del inspector si está abierta.
+        """
+
+        if self.ventana_cambios_locales is not None:
+            try:
+                if self.ventana_cambios_locales.winfo_exists():
+                    self.ventana_cambios_locales.destroy()
+            except tk.TclError:
+                pass
+
+        self.ventana_cambios_locales = None
+        self.notebook_cambios_locales = None
+        self.marco_sin_preparar_locales = None
+        self.marco_preparados_locales = None
+        self.texto_sin_preparar_locales = None
+        self.texto_preparados_locales = None
+        self.variable_resumen_sin_preparar = None
+        self.variable_resumen_preparados = None
+        self.variable_estado_inspector = None
+        self.variable_preparado_inspector = None
+        self.variable_commit_inspector = None
+        self.detalle_cambio_local_actual = None
+        self.ruta_archivo_inspector = ""
+
+    # =============================================================
     # FETCH
     # =============================================================
 
@@ -4953,6 +5787,10 @@ class AplicacionGit:
             state=tk.DISABLED
         )
 
+        self.boton_ver_cambios_locales.config(
+            state=tk.DISABLED
+        )
+
         self.boton_crear_commit.config(
             state=tk.DISABLED
         )
@@ -5027,6 +5865,20 @@ class AplicacionGit:
             state=(
                 tk.NORMAL
                 if hay_preparados_seleccionados
+                else tk.DISABLED
+            )
+        )
+
+        # El inspector actúa únicamente con exactamente un
+        # archivo seleccionado.
+        hay_un_solo_seleccionado = (
+            len(cambios_seleccionados) == 1
+        )
+
+        self.boton_ver_cambios_locales.config(
+            state=(
+                tk.NORMAL
+                if hay_un_solo_seleccionado
                 else tk.DISABLED
             )
         )

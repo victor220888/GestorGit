@@ -126,6 +126,9 @@ Interfaz Tkinter con:
 - Push;
 - botón `Configurar GitHub...` (primer remoto origin);
 - estado por enviar/por descargar;
+- historial con filtros y exportación;
+- visor de cambios de un commit (solo lectura);
+- inspector de cambios locales (solo lectura);
 - `threading` + `queue.Queue` para operaciones de red.
 
 ### `ayuda_interfaz.py`
@@ -152,6 +155,39 @@ Modelos exclusivos de la funcionalidad de historial:
 Servicio de solo lectura para consultar commits locales mediante `git log`.
 
 Reutiliza la instancia existente de `ServicioRemotoGit`/`ServicioGit`, pero no ejecuta operaciones remotas ni modifica el repositorio.
+
+### `modelos_cambios_locales.py`
+
+Modelos del inspector de cambios locales:
+
+- `DetalleCambioLocal` (ruta, descripcion, preparado,
+  requiere_actualizar_preparado, diffs, conteos, binarios,
+  nuevo_sin_preparar, hash y mensaje del último commit);
+- `ResultadoDetalleCambioLocal` (exitoso, detalle, error, mensaje).
+
+### `servicio_cambios_locales_git.py`
+
+`ServicioCambiosLocalesGit` consulta los cambios locales de UN
+archivo en las dos zonas de Git:
+working tree -> índice y índice -> HEAD.
+
+- reutiliza un `ServicioGit` existente (la instancia de
+  `ServicioRemotoGit` de la interfaz) para `ejecutar_git`,
+  `analizar_repositorio` y `obtener_cambios`; no duplica
+  subprocess y no usa `shell=True`;
+- diffs con `--literal-pathspecs diff [--cached]
+  --no-color --no-ext-diff --no-textconv --unified=3 -- <ruta>`;
+- resúmenes con `--numstat`; `-` marca binario sin convertir
+  texto a entero;
+- `??` marca `nuevo_sin_preparar` sin leer el archivo;
+- un archivo sin cambios pendientes devuelve un resultado
+  normal con mensaje informativo;
+- último commit local con `rev-parse --short HEAD` y
+  `log -1 --format=%s`; sin commits no falla;
+- validación propia `_validar_ruta_archivo` (vacía, absoluta,
+  `..`, NUL) ANTES de construir/ejecutar cualquier comando:
+  sin acoplamiento a métodos privados de `ServicioGit`;
+- `servicio_git.py` NO se modifica.
 
 ## Estado funcional validado
 
@@ -491,9 +527,73 @@ El commit se sigue bloqueando si algún archivo preparado fue
 modificado después; el mensaje educativo menciona ahora
 `Actualizar preparados` y `Quitar de preparados` como opciones.
 
+## Inspector de cambios locales
+
+Etapa actual: inspector de cambios locales (SOLO LECTURA).
+
+Se agregó para que un caso real de la práctica
+(`git diff --stat -- servicio_git.py` + `git diff --
+servicio_git.py`) pueda entenderse desde GestorGit sin
+PowerShell.
+
+Flujo enseñado:
+
+```text
+Working tree
+    ↓ Preparar
+Staging (índice)
+    ↓ Commit
+HEAD
+```
+
+Ventana única `Cambios locales - Gestor Git`:
+
+- botón `Ver cambios locales...` habilitado únicamente con
+  exactamente UN archivo seleccionado;
+- datos superiores: Repositorio, Archivo, Estado, Preparado
+  (`Sí` / `No` / `Sí (hay cambios nuevos)`) y Último commit
+  local (hash corto + mensaje);
+- sin commits: mensaje educativo, sin fallar;
+- `ttk.Notebook` con pestañas `Sin preparar` y `Preparados`;
+- en el caso `MM` ambas pestañas pueden contener cambios
+  distintos (es el objetivo didáctico principal);
+- resumen por pestaña: `N inserciones · M eliminaciones`
+  (con singulares `1 inserción` / `1 eliminación`) o
+  `Archivo binario` cuando `--numstat` devuelve `-`;
+- archivo nuevo sin preparar (`??`): mensaje educativo; Git
+  aún no tiene versión anterior para comparar; no se lee el
+  archivo ni se inventa un diff;
+- archivo sin cambios pendientes: "El archivo ya no tiene
+  cambios locales pendientes."; resultado normal, no error;
+- `Actualizar`: consulta SOLO el estado LOCAL, sin Fetch;
+- `Copiar diff`: copia el contenido visible de la pestaña
+  activa al portapapeles;
+- `Cerrar`: cierra la ventana;
+- se destruye y recrea al abrir de nuevo (patrón de la ventana
+  de detalle de commits); se cierra al cambiar de repositorio;
+- visores `tk.Text` de solo lectura, `wrap=tk.NONE`, Consolas,
+  colores idénticos al visor de commits (reutiliza el estático
+  `_tag_para_linea_diff`, sin refactorizar el visor histórico);
+- límite visual de 500000 caracteres con
+  `[Vista truncada: ...]`; truncación solamente visual.
+
+Seguridad:
+
+- comandos siempre como listas de argumentos, nunca
+  `shell=True`; `--` obligatorio antes del pathspec;
+- `--literal-pathspecs` para tratar la ruta literalmente
+  (nombres que empiezan por `-` o con caracteres especiales);
+- `--no-ext-diff` y `--no-textconv` evitan programas externos
+  configurados en Git;
+- la validación de la ruta (vacía, absoluta, `..`, NUL) ocurre
+  ANTES de construir/ejecutar cualquier diff; helper propio
+  `_validar_ruta_archivo`, sin acoplarse a métodos privados de
+  `ServicioGit`;
+- ninguna operación destructiva ni remota.
+
 ## Pruebas
 
-El proyecto tiene actualmente **94 pruebas automatizadas**:
+El proyecto tiene actualmente **104 pruebas automatizadas**:
 
 - 49 pruebas base de operaciones locales/remotas;
 - 11 pruebas del historial;
@@ -502,7 +602,8 @@ El proyecto tiene actualmente **94 pruebas automatizadas**:
 - 1 prueba del primer Push con remoto no vacío;
 - 6 pruebas del detalle de cambios de un commit;
 - 8 pruebas de la persistencia del último repositorio;
-- 7 pruebas de la actualización de archivos preparados.
+- 7 pruebas de la actualización de archivos preparados;
+- 10 pruebas del inspector de cambios locales.
 
 Archivos principales de pruebas:
 
@@ -518,12 +619,13 @@ pruebas/test_configuracion_remoto_git.py
 pruebas/test_detalle_commit_git.py
 pruebas/test_configuracion.py
 pruebas/test_actualizacion_preparados.py
+pruebas/test_cambios_locales_git.py
 ```
 
 Resultado esperado:
 
 ```text
-Ran 94 tests in ...
+Ran 104 tests in ...
 OK
 ```
 
@@ -838,8 +940,10 @@ OK
 ```
 
 Nota: ese total de 79 es HISTÓRICO, anterior a la etapa de
-persistencia; el total ACTUAL es 94 (49 + 11 + 5 + 7 + 1 + 6 + 8
-+ 7 pruebas de la actualización de archivos preparados).
+persistencia. El total de 94 (49 + 11 + 5 + 7 + 1 + 6 + 8 + 7
+pruebas de la actualización de archivos preparados) es también
+HISTÓRICO (commit 014e3f7); el total ACTUAL es 104 (94 + 10
+pruebas del inspector de cambios locales).
 
 Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritura y protección contra fórmulas CSV. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
@@ -853,7 +957,11 @@ Las 8 pruebas de la persistencia validan: config.json inexistente (primer inicio
 
 Las 7 pruebas de la actualización de archivos preparados validan: detección de un archivo preparado y modificado después con su versión actual completa en el índice, actualización de varios archivos de una sola operación, rechazo de un archivo que ya no está preparado, rechazo de un archivo sin cambios nuevos, el flujo completo de commit bloqueado hasta actualizar (el commit sigue funcionando normalmente después) y rechazo controlado de rutas con carácter NUL (\x00) antes de ejecutar git add. Fueron ejecutadas en aislamiento y pasaron correctamente. Las correcciones de portabilidad en Windows consisten en: comparación semántica de rutas mediante `Path.resolve()` en las pruebas de configuración, y lectura de `git diff` con `encoding="utf-8"` y `errors="replace"` en los helpers de prueba de actualización de preparados.
 
-"Actualizar preparados" también fue validado MANUALMENTE en Windows con el caso real MM (archivos preparados y vueltos a modificar). Hechos confirmados visualmente: detección de los 4 archivos MM reales (AGENTS.md, CLAUDE.md, TRABAJO_ACTUAL.md y principal.py), columna Preparado con "Sí (hay cambios nuevos)", habilitación del botón solo con selección que lo requiere, confirmación que enumeró únicamente los 4 archivos que realmente necesitaban actualización (aunque la selección fuera más amplia), archivos que mantuvieron su estado preparado sin "vuelto a modificar" después de aceptar, botón deshabilitado cuando ninguno de los seleccionados requería actualización y ningún commit creado durante la prueba. Ni la persistencia ni la actualización de preparados tienen todavía commit: ambas funcionalidades viven únicamente en el working tree actual.
+"Actualizar preparados" también fue validado MANUALMENTE en Windows con el caso real MM (archivos preparados y vueltos a modificar). Hechos confirmados visualmente: detección de los 4 archivos MM reales (AGENTS.md, CLAUDE.md, TRABAJO_ACTUAL.md y principal.py), columna Preparado con "Sí (hay cambios nuevos)", habilitación del botón solo con selección que lo requiere, confirmación que enumeró únicamente los 4 archivos que realmente necesitaban actualización (aunque la selección fuera más amplia), archivos que mantuvieron su estado preparado sin "vuelto a modificar" después de aceptar, botón deshabilitado cuando ninguno de los seleccionados requería actualización y ningún commit creado durante la prueba.
+
+Las 10 pruebas del inspector de cambios locales validan: archivo modificado sin preparar (diff en `Sin preparar`, preparado vacío), archivo solamente preparado (a la inversa), caso MM con ambos diffs presentes y distintos, conteos de inserciones/eliminaciones mediante `--numstat`, archivo nuevo sin preparar con bandera educativa, archivo eliminado con diff visible, rechazo de ruta con NUL comprobando que no se ejecuta ningún comando (registro de llamadas vacío), ruta con globs/carácter inicial `-` tratada literalmente (`--literal-pathspecs` y `--`), argumentos seguros de todos los diffs interceptando `ejecutar_git()` con un spy (sin ejecutar Git real ni simulaciones especiales en el código de producción: `--no-color`, `--no-ext-diff`, `--no-textconv`, `--cached` solo en el preparado, sin comandos destructivos) y consulta que deja el repositorio intacto (`git status` antes/después idéntico). Fueron ejecutadas en aislamiento y en la suite completa y pasaron correctamente.
+
+Estado de la etapa inspector de cambios locales: implementada con 104 pruebas OK; PRUEBA MANUAL PENDIENTE hasta que el usuario la confirme en Windows; ninguna funcionalidad de esta etapa tiene commit todavía.
 
 ## Estado consolidado de la etapa actual
 
@@ -872,7 +980,8 @@ Primer Push solo con remoto vacío de ramas
 Detalle de cambios de un commit (solo lectura)
 Persistencia del último repositorio (config.json)
 Actualización de archivos preparados
-94 pruebas OK
+Inspector de cambios locales (solo lectura)
+104 pruebas OK
 ```
 
 El historial se ordena explícitamente por fecha de commit descendente
@@ -906,24 +1015,28 @@ python -m py_compile .\pruebas\test_configuracion_remoto_git.py
 python -m py_compile .\pruebas\test_configuracion.py
 python -m py_compile .\pruebas\test_detalle_commit_git.py
 python -m py_compile .\pruebas\test_actualizacion_preparados.py
+python -m py_compile .\modelos_cambios_locales.py
+python -m py_compile .\servicio_cambios_locales_git.py
+python -m py_compile .\pruebas\test_cambios_locales_git.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```
 
-Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio y actualización de archivos preparados, esperar:
+Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio, actualización de archivos preparados e inspector de cambios locales, esperar:
 
 ```text
-Ran 94 tests in ...
+Ran 104 tests in ...
 OK
 ```
 
-Si el total no es 94, revisar que estén presentes `pruebas/test_historial_git.py`,
+Si el total no es 104, revisar que estén presentes `pruebas/test_historial_git.py`,
 `pruebas/test_exportacion_historial.py`,
 `pruebas/test_configuracion_remoto_git.py`,
 `pruebas/test_push_git.py`,
 `pruebas/test_detalle_commit_git.py`,
-`pruebas/test_configuracion.py` y
-`pruebas/test_actualizacion_preparados.py`.
+`pruebas/test_configuracion.py`,
+`pruebas/test_actualizacion_preparados.py` y
+`pruebas/test_cambios_locales_git.py`.
 
 ## Notas del entorno
 
@@ -962,11 +1075,11 @@ python -m unittest discover -s .\pruebas -v
 ```
 
 3. confirmar que cualquier cambio pendiente es conocido y esperado;
-4. confirmar que las 94 pruebas pasan;
+4. confirmar que las 104 pruebas pasan;
 5. confirmar que tooltips/estética, historial, filtros, orden, exportación,
    configuración inicial de GitHub, detalle de cambios de un commit,
-   persistencia del último repositorio y actualización de archivos
-   preparados siguen presentes;
+   persistencia del último repositorio, actualización de archivos
+   preparados e inspector de cambios locales siguen presentes;
 6. si la etapa actual está estable, continuar con el selector/creación segura de ramas;
 7. mantener todas las reglas de seguridad y coordinación entre agentes.
 
@@ -995,7 +1108,7 @@ Reglas obligatorias:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 94 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 104 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check`;
    - `git diff --stat`;

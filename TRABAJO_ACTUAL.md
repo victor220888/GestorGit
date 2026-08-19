@@ -63,88 +63,84 @@ Estado actual:
 - primer Push solo con remoto vacío de ramas;
 - detalle de cambios de un commit (solo lectura);
 - persistencia del último repositorio (config.json);
-- actualización de archivos preparados.
+- actualización de archivos preparados;
+- inspector de cambios locales (solo lectura).
 
 ## Trabajo actual
 
-Estado: ETAPA VALIDADA - PENDIENTE DE COMMIT
+Estado: ETAPA IMPLEMENTADA - PRUEBA MANUAL PENDIENTE
 
-Tarea: botón "Actualizar preparados" (OpenCode).
+Tarea: inspector de cambios locales (OpenCode).
 
-ADVERTENCIA ESPECIAL:
+HEAD inicial observado: 014e3f7 (working tree limpio).
 
-Esta tarea comenzó deliberadamente con un working tree/índice
-NO limpio y AUTORIZADO por el usuario:
+NO se ejecutó durante el desarrollo:
 
-- CLAUDE.md y TRABAJO_ACTUAL.md estaban en el estado real
-  "Modificado, preparado y vuelto a modificar" (MM);
-- el índice contiene además los archivos preparados de la
-  etapa de persistencia (aún NO commiteada);
-- .opencode/ está sin versionar.
-
-NO se ejecutó ni se ejecutará durante el desarrollo:
-
-git reset / git restore / git checkout / git add / git commit / git push
-
-El índice NO se modifica durante el desarrollo.
+git add / git reset / git restore / git checkout / git commit /
+git fetch / git pull / git push
 
 Descripción:
 
-- detectar "preparado y vuelto a modificar" desde el estado
-  estructurado de git status --porcelain;
-- botón "Actualizar preparados" entre Preparar y Quitar;
-- columna Preparado con "Sí (hay cambios nuevos)";
-- equivale a volver a ejecutar git add sobre rutas explícitas;
-- no deshace cambios; no crea commits.
+- ventana de SOLO LECTURA "Cambios locales - Gestor Git";
+- botón "Ver cambios locales..." habilitado únicamente con
+  exactamente UN archivo seleccionado;
+- pestañas "Sin preparar" (git diff) y "Preparados"
+  (git diff --cached);
+- resúmenes con --numstat; binarios muestran "Archivo binario";
+- archivos nuevos sin preparar (??): mensaje educativo;
+- archivo sin cambios: "El archivo ya no tiene cambios locales
+  pendientes."
+- Actualizar solo consulta el estado LOCAL (sin Fetch);
+- Copiar diff copia la pestaña activa;
+- límite visual 500000 caracteres;
+- ventana única; se cierra al cambiar de repositorio.
 
 ChatGPT:
 - tarea: ninguna;
 - archivos reservados: ninguno.
 
 OpenCode:
-- tarea: botón "Actualizar preparados";
-- estado: ETAPA VALIDADA - PENDIENTE DE COMMIT;
-- archivos que modificó:
+- tarea: inspector de cambios locales;
+- estado: ETAPA IMPLEMENTADA - PRUEBA MANUAL PENDIENTE;
+- archivos que creó/modificó:
 
-  - modelos.py (campo requiere_actualizar_preparado);
-  - servicio_git.py (detección + actualizar_archivos_preparados
-    + mensaje educativo del commit);
-  - principal.py (botón, columna, tooltip, confirmación);
-  - pruebas/test_actualizacion_preparados.py (7 pruebas nuevas,
-    archivo nuevo);
+  - modelos_cambios_locales.py (nuevo);
+  - servicio_cambios_locales_git.py (nuevo);
+  - pruebas/test_cambios_locales_git.py (nuevo, 10 pruebas);
+  - principal.py (botón + ventana + integración);
   - AGENTS.md;
   - CLAUDE.md;
   - TRABAJO_ACTUAL.md (este documento).
 
 Resultados:
 
-- HEAD inicial observado: 0e3840e;
-- git status --short inicial (autorizado, sin limpiar):
-  M AGENTS.md; MM CLAUDE.md; MM TRABAJO_ACTUAL.md;
-  A modelos_configuracion.py; M principal.py;
-  A pruebas/test_configuracion.py; A servicio_configuracion.py;
-  ?? .opencode/
-- 94 pruebas OK (python3 -m unittest discover -s ./pruebas);
-- no se hizo commit ni push.
+- 104 pruebas OK en la suite completa
+  (94 anteriores + 10 nuevas);
+- py_compile de todos los módulos OK
+  (principal.py incluido; el import requiere Tkinter,
+  presente en Windows);
+- git diff --check: SIN avisos;
+- git diff --cached --check: sin avisos (no hay nada preparado);
+- git status --short final:
+  M AGENTS.md; M principal.py; M TRABAJO_ACTUAL.md;
+  ?? modelos_cambios_locales.py; ?? servicio_cambios_locales_git.py;
+  ?? pruebas/test_cambios_locales_git.py; ?? .opencode/ ;
+- no se ejecutó git add ni commit;
+- .opencode/ no se versiona.
 
-PRUEBA MANUAL EN WINDOWS: EXITOSA
+PRUEBA MANUAL: PENDIENTE (esperando confirmación del usuario).
 
-Hechos confirmados visualmente con el repositorio de GestorGit:
-
-- AGENTS.md, CLAUDE.md, TRABAJO_ACTUAL.md y principal.py fueron
-  detectados como "Modificado, preparado y vuelto a modificar";
-- la columna Preparado mostró "Sí (hay cambios nuevos)";
-- al seleccionar esos archivos, "Actualizar preparados" se
-  habilitó;
-- la confirmación enumeró únicamente los 4 archivos que
-  realmente necesitaban actualización, aunque hubiera una
-  selección más amplia;
-- después de aceptar: dejaron de mostrar "vuelto a modificar",
-  continuaron preparados y la columna volvió a mostrar "Sí";
-- cuando ninguno de los seleccionados requería actualización,
-  "Actualizar preparados" quedó deshabilitado;
-- no se creó ningún commit durante la prueba;
-- 94 pruebas automatizadas OK.
+Caso recomendado:
+1. Modificar temporalmente un archivo del repositorio GestorGit.
+2. Actualizar GestorGit.
+3. Seleccionarlo y abrir "Ver cambios locales...".
+4. Confirmar: pestaña Sin preparar con diff; Preparados vacía.
+5. Preparar el archivo desde la interfaz y comprobar que el diff
+   pasa a la pestaña Preparados.
+6. Modificar nuevamente el mismo archivo y confirmar el caso MM:
+   Sin preparar -> cambios posteriores;
+   Preparados -> versión ya preparada.
+7. Probar Actualizar, Copiar diff y Cerrar.
 
 ## Regla para reservar archivos
 

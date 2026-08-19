@@ -73,7 +73,7 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 94 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 104 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
      en líneas CRLF añadidas: causa conocida y documentada);
@@ -112,7 +112,9 @@ El historial debe conservar estas características:
 - `servicio_exportacion_historial.py` — exporta el historial consultado a CSV (UTF-8 con BOM, `;` como separador, protección contra fórmulas Excel) o TXT con encabezado de repositorio y filtros. No ejecuta Git.
 - `modelos_configuracion.py` — dataclass `ResultadoConfiguracion`.
 - `servicio_configuracion.py` — persistencia del último repositorio en `config.json`: carga validada y escritura conservadora (archivo temporal + `os.replace`). Nunca guarda credenciales ni ejecuta operaciones remotas.
-- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red.
+- `modelos_cambios_locales.py` — modelos del inspector de cambios locales: `DetalleCambioLocal`, `ResultadoDetalleCambioLocal`.
+- `servicio_cambios_locales_git.py` — solo lectura: diffs sin preparar y preparados de UN archivo (`--literal-pathspecs`, `--no-color`, `--no-ext-diff`, `--no-textconv`, `--unified=3`), resúmenes `--numstat`, último commit local. Reutiliza un `ServicioGit` existente; validación propia de la ruta relativa.
+- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales, carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red.
 - `ayuda_interfaz.py` — ayuda visual: `AyudaEmergente` y `configurar_estilos`. Sin lógica Git.
 
 ## Seguridad
@@ -301,9 +303,62 @@ Las pruebas de portabilidad en Windows normalizan rutas mediante
 subprocess que leen diff con acentos usan `encoding="utf-8"`
 y `errors="replace"`.
 
+## Inspector de cambios locales
+
+Ventana de SOLO LECTURA que enseña qué cambió en UN archivo antes
+de prepararlo, después de prepararlo, o en ambos lugares a la vez.
+`ServicioCambiosLocalesGit` reutiliza el `ServicioGit` existente;
+`servicio_git.py` no se modifica.
+
+- el botón `Ver cambios locales...` está habilitado únicamente con
+  exactamente UN archivo seleccionado en la tabla de cambios;
+- ventana única `Cambios locales - Gestor Git` (se destruye y recrea
+  al abrir de nuevo; se cierra al cambiar de repositorio);
+- NO prepara ni quita archivos, no crea commits, no ejecuta
+  Fetch/Pull/Push y nunca modifica el repositorio;
+- pestañas `Sin preparar` (working tree -> índice, equivale a
+  `git diff`) y `Preparados` (índice -> HEAD, equivale a
+  `git diff --cached`); en el caso `MM` ambas pueden contener
+  cambios distintos;
+- comandos conceptuales para el diff sin preparar:
+
+  ```text
+  git --literal-pathspecs diff --no-color --no-ext-diff
+      --no-textconv --unified=3 -- <ruta>
+  ```
+
+  y con `--cached` insertado después de `diff` para el preparado;
+  siempre listas de argumentos, nunca `shell=True`, siempre `--`
+  antes del pathspec;
+- resúmenes de inserciones/eliminaciones mediante `--numstat`
+  (nunca interpretando texto localizado de `--stat`); un binario
+  devuelve `-` y se muestra `Archivo binario` sin convertir el
+  texto a entero;
+- un archivo nuevo sin preparar (`??`) no inventa diffs ni lee el
+  archivo: muestra un mensaje educativo explicando que Git aún no
+  tiene versión anterior para comparar;
+- un archivo que ya no tiene cambios devuelve "El archivo ya no
+  tiene cambios locales pendientes." (resultado normal, no error);
+  el botón `Actualizar` solo consulta el estado LOCAL;
+- `Copiar diff` copia el contenido visible de la pestaña activa;
+- la ruta debe ser relativa al repositorio: se rechazan controladas
+  ruta vacía, ruta absoluta, `..` y NUL antes de construir/ejecutar
+  cualquier diff (validación propia del servicio, sin acoplarse a
+  métodos privados de `ServicioGit`);
+- límite visual de 500000 caracteres con aviso
+  `[Vista truncada: ...]`; la truncación es solo visual;
+- visor `tk.Text` de solo lectura, `wrap=tk.NONE`, fuente Consolas,
+  colores como el visor de cambios de commits; reutiliza
+  `_tag_para_linea_diff` sin refactorizar el visor histórico;
+- hay 10 pruebas específicas en
+  `pruebas/test_cambios_locales_git.py` (archivo, modificación,
+  MM, numstat, archivo nuevo, eliminado, NUL, pathspecs literales,
+  argumentos seguros interceptando `ejecutar_git()` con un spy y
+  no-modificación del repositorio).
+
 ## Pruebas
 
-94 pruebas automatizadas en `pruebas/`. Ejecutar:
+104 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -312,7 +367,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 94 tests in ...
+Ran 104 tests in ...
 OK
 ```
 
@@ -337,6 +392,9 @@ python -m py_compile .\pruebas\test_configuracion_remoto_git.py
 python -m py_compile .\pruebas\test_configuracion.py
 python -m py_compile .\pruebas\test_detalle_commit_git.py
 python -m py_compile .\pruebas\test_actualizacion_preparados.py
+python -m py_compile .\modelos_cambios_locales.py
+python -m py_compile .\servicio_cambios_locales_git.py
+python -m py_compile .\pruebas\test_cambios_locales_git.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```
