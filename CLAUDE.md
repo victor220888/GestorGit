@@ -529,12 +529,38 @@ modificado después; el mensaje educativo menciona ahora
 
 ## Inspector de cambios locales
 
-Etapa actual: inspector de cambios locales (SOLO LECTURA).
+Etapa: inspector de cambios locales (SOLO LECTURA).
+VALIDADA MANUALMENTE en Windows.
 
 Se agregó para que un caso real de la práctica
 (`git diff --stat -- servicio_git.py` + `git diff --
 servicio_git.py`) pueda entenderse desde GestorGit sin
 PowerShell.
+
+PRUEBA MANUAL EN WINDOWS: EXITOSA.
+
+Hechos confirmados visualmente por el usuario:
+
+- archivo modificado sin preparar: la pestaña `Sin preparar`
+  muestra el diff y `Preparados` muestra el resumen 0/0 con
+  "No hay cambios preparados";
+- archivo preparado: `Preparados` muestra el diff que entraría
+  al commit;
+- caso MM: "Modificado, preparado y vuelto a modificar",
+  Preparado = "Sí (hay cambios nuevos)"; `Sin preparar` muestra
+  únicamente los cambios posteriores al staging y `Preparados`
+  conserva el diff previamente preparado; ambos diffs son
+  distintos;
+- resúmenes de inserciones/eliminaciones visibles;
+- colores `+` / `-` / `@@` funcionan;
+- scroll horizontal y vertical funcionan;
+- `Actualizar` dentro del Inspector refresca únicamente el
+  estado LOCAL;
+- `Copiar diff` funciona;
+- `Ver cambios locales...` se habilita con exactamente un
+  archivo y se deshabilita con selección múltiple;
+- la prueba temporal fue retirada y el staging de prueba fue
+  quitado al finalizar.
 
 Flujo enseñado:
 
@@ -591,9 +617,22 @@ Seguridad:
   `ServicioGit`;
 - ninguna operación destructiva ni remota.
 
+Corrección posterior (cierre documental):
+
+- si `git diff --numstat` FALLA, `obtener_detalle()` devuelve
+  `ResultadoDetalleCambioLocal(exitoso=False, error=<mensaje>)`;
+  nunca informa 0 inserciones / 0 eliminaciones falsos;
+  `_obtener_resumen()` devuelve la tupla
+  (inserciones, eliminaciones, binario) solo cuando la consulta
+  es exitosa y un resultado de error controlado cuando falla
+  (patrón `_convertir_fecha_iso` de `ServicioHistorialGit`);
+- un `--numstat` exitoso y realmente vacío sigue siendo
+  legítimamente 0 inserciones / 0 eliminaciones;
+- `servicio_git.py` no se modificó.
+
 ## Pruebas
 
-El proyecto tiene actualmente **104 pruebas automatizadas**:
+El proyecto tiene actualmente **105 pruebas automatizadas**:
 
 - 49 pruebas base de operaciones locales/remotas;
 - 11 pruebas del historial;
@@ -603,7 +642,7 @@ El proyecto tiene actualmente **104 pruebas automatizadas**:
 - 6 pruebas del detalle de cambios de un commit;
 - 8 pruebas de la persistencia del último repositorio;
 - 7 pruebas de la actualización de archivos preparados;
-- 10 pruebas del inspector de cambios locales.
+- 11 pruebas del inspector de cambios locales.
 
 Archivos principales de pruebas:
 
@@ -625,7 +664,7 @@ pruebas/test_cambios_locales_git.py
 Resultado esperado:
 
 ```text
-Ran 104 tests in ...
+Ran 105 tests in ...
 OK
 ```
 
@@ -935,15 +974,16 @@ Las 11 pruebas del historial fueron ejecutadas en aislamiento y pasaron correcta
 El conjunto anterior tenía 49 pruebas fuera del historial. A las 11 pruebas del historial se agregan 5 pruebas de exportación, 7 pruebas de configuración del remoto GitHub, 1 prueba del primer Push con remoto no vacío y 6 pruebas del detalle de cambios de un commit. El total esperado en aquella etapa era:
 
 ```text
-79 pruebas
+Ran 105 tests in ...
 OK
 ```
 
 Nota: ese total de 79 es HISTÓRICO, anterior a la etapa de
 persistencia. El total de 94 (49 + 11 + 5 + 7 + 1 + 6 + 8 + 7
 pruebas de la actualización de archivos preparados) es también
-HISTÓRICO (commit 014e3f7); el total ACTUAL es 104 (94 + 10
-pruebas del inspector de cambios locales).
+HISTÓRICO (commit 014e3f7). El total de 104 (94 + 10 pruebas del
+inspector) fue el confirmado en el commit c62b0a0. El total ACTUAL
+es 105 (104 + 1 prueba de regresión del error de --numstat).
 
 Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritura y protección contra fórmulas CSV. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
@@ -959,9 +999,9 @@ Las 7 pruebas de la actualización de archivos preparados validan: detección de
 
 "Actualizar preparados" también fue validado MANUALMENTE en Windows con el caso real MM (archivos preparados y vueltos a modificar). Hechos confirmados visualmente: detección de los 4 archivos MM reales (AGENTS.md, CLAUDE.md, TRABAJO_ACTUAL.md y principal.py), columna Preparado con "Sí (hay cambios nuevos)", habilitación del botón solo con selección que lo requiere, confirmación que enumeró únicamente los 4 archivos que realmente necesitaban actualización (aunque la selección fuera más amplia), archivos que mantuvieron su estado preparado sin "vuelto a modificar" después de aceptar, botón deshabilitado cuando ninguno de los seleccionados requería actualización y ningún commit creado durante la prueba.
 
-Las 10 pruebas del inspector de cambios locales validan: archivo modificado sin preparar (diff en `Sin preparar`, preparado vacío), archivo solamente preparado (a la inversa), caso MM con ambos diffs presentes y distintos, conteos de inserciones/eliminaciones mediante `--numstat`, archivo nuevo sin preparar con bandera educativa, archivo eliminado con diff visible, rechazo de ruta con NUL comprobando que no se ejecuta ningún comando (registro de llamadas vacío), ruta con globs/carácter inicial `-` tratada literalmente (`--literal-pathspecs` y `--`), argumentos seguros de todos los diffs interceptando `ejecutar_git()` con un spy (sin ejecutar Git real ni simulaciones especiales en el código de producción: `--no-color`, `--no-ext-diff`, `--no-textconv`, `--cached` solo en el preparado, sin comandos destructivos) y consulta que deja el repositorio intacto (`git status` antes/después idéntico). Fueron ejecutadas en aislamiento y en la suite completa y pasaron correctamente.
+Las 11 pruebas del inspector de cambios locales validan: archivo modificado sin preparar (diff en `Sin preparar`, preparado vacío), archivo solamente preparado (a la inversa), caso MM con ambos diffs presentes y distintos, conteos de inserciones/eliminaciones mediante `--numstat`, archivo nuevo sin preparar con bandera educativa, archivo eliminado con diff visible, rechazo de ruta con NUL comprobando que no se ejecuta ningún comando (registro de llamadas vacío), ruta con globs/carácter inicial `-` tratada literalmente (`--literal-pathspecs` y `--`), argumentos seguros de todos los diffs interceptando `ejecutar_git()` con un spy (sin ejecutar Git real ni simulaciones especiales en el código de producción: `--no-color`, `--no-ext-diff`, `--no-textconv`, `--cached` solo en el preparado, sin comandos destructivos), consulta que deja el repositorio intacto (`git status` antes/después idéntico) y regresión del error de `--numstat`: cuando la llamada falla deliberadamente, `obtener_detalle()` devuelve `exitoso=False` con el mensaje controlado y NUNCA un detalle exitoso con 0 inserciones / 0 eliminaciones. Fueron ejecutadas en aislamiento y en la suite completa y pasaron correctamente.
 
-Estado de la etapa inspector de cambios locales: implementada con 104 pruebas OK; PRUEBA MANUAL PENDIENTE hasta que el usuario la confirme en Windows; ninguna funcionalidad de esta etapa tiene commit todavía.
+Estado de la etapa inspector de cambios locales: ETAPA VALIDADA MANUALMENTE (prueba manual en Windows EXITOSA, confirmada por el usuario); el inspector forma parte de HEAD desde el commit c62b0a0, con Push confirmado (origin/master apunta a c62b0a0); los cambios de esta tarea de cierre documental y corrección de --numstat viven únicamente en el working tree actual.
 
 ## Estado consolidado de la etapa actual
 
@@ -981,7 +1021,7 @@ Detalle de cambios de un commit (solo lectura)
 Persistencia del último repositorio (config.json)
 Actualización de archivos preparados
 Inspector de cambios locales (solo lectura)
-104 pruebas OK
+105 pruebas OK
 ```
 
 El historial se ordena explícitamente por fecha de commit descendente
@@ -992,7 +1032,9 @@ CSV y TXT exportan exactamente los commits visibles y conservan ese mismo orden.
 
 ## Funcionalidades posteriores
 
-- eventualmente selector/creación segura de ramas.
+- eventualmente selector/creación segura de ramas;
+- posible etapa futura (NO implementada todavía):
+  "Descartar cambios sin preparar" desde el inspector.
 
 ## Validación habitual
 
@@ -1025,11 +1067,11 @@ git status
 Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio, actualización de archivos preparados e inspector de cambios locales, esperar:
 
 ```text
-Ran 104 tests in ...
+Ran 105 tests in ...
 OK
 ```
 
-Si el total no es 104, revisar que estén presentes `pruebas/test_historial_git.py`,
+Si el total no es 105, revisar que estén presentes `pruebas/test_historial_git.py`,
 `pruebas/test_exportacion_historial.py`,
 `pruebas/test_configuracion_remoto_git.py`,
 `pruebas/test_push_git.py`,
@@ -1075,7 +1117,7 @@ python -m unittest discover -s .\pruebas -v
 ```
 
 3. confirmar que cualquier cambio pendiente es conocido y esperado;
-4. confirmar que las 104 pruebas pasan;
+4. confirmar que las 105 pruebas pasan;
 5. confirmar que tooltips/estética, historial, filtros, orden, exportación,
    configuración inicial de GitHub, detalle de cambios de un commit,
    persistencia del último repositorio, actualización de archivos
@@ -1108,7 +1150,7 @@ Reglas obligatorias:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 104 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 105 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check`;
    - `git diff --stat`;

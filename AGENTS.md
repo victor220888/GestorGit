@@ -73,7 +73,7 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 104 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 105 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
      en líneas CRLF añadidas: causa conocida y documentada);
@@ -310,6 +310,29 @@ de prepararlo, después de prepararlo, o en ambos lugares a la vez.
 `ServicioCambiosLocalesGit` reutiliza el `ServicioGit` existente;
 `servicio_git.py` no se modifica.
 
+PRUEBA MANUAL EN WINDOWS: EXITOSA (confirmada por el usuario).
+
+Casos confirmados visualmente:
+
+- archivo modificado sin preparar: la pestaña `Sin preparar`
+  muestra el diff y `Preparados` queda vacía;
+- archivo preparado: `Preparados` muestra el diff que entraría
+  al commit;
+- caso MM ("Modificado, preparado y vuelto a modificar" con
+  Preparado = "Sí (hay cambios nuevos)"): la pestaña
+  `Sin preparar` muestra únicamente los cambios posteriores al
+  staging y `Preparados` conserva el diff previamente preparado;
+  ambos diffs son distintos;
+- resúmenes de inserciones/eliminaciones visibles;
+- colores `+` / `-` / `@@` funcionan;
+- scroll horizontal y vertical funcionan;
+- `Actualizar` refresca únicamente el estado LOCAL;
+- `Copiar diff` funciona;
+- `Ver cambios locales...` se habilita con exactamente un archivo
+  y se deshabilita con selección múltiple.
+
+Resto del comportamiento:
+
 - el botón `Ver cambios locales...` está habilitado únicamente con
   exactamente UN archivo seleccionado en la tabla de cambios;
 - ventana única `Cambios locales - Gestor Git` (se destruye y recrea
@@ -334,6 +357,8 @@ de prepararlo, después de prepararlo, o en ambos lugares a la vez.
   (nunca interpretando texto localizado de `--stat`); un binario
   devuelve `-` y se muestra `Archivo binario` sin convertir el
   texto a entero;
+- si `--numstat` FALLA, la consulta devuelve un error controlado
+  (nunca 0 inserciones / 0 eliminaciones falsos);
 - un archivo nuevo sin preparar (`??`) no inventa diffs ni lee el
   archivo: muestra un mensaje educativo explicando que Git aún no
   tiene versión anterior para comparar;
@@ -350,15 +375,15 @@ de prepararlo, después de prepararlo, o en ambos lugares a la vez.
 - visor `tk.Text` de solo lectura, `wrap=tk.NONE`, fuente Consolas,
   colores como el visor de cambios de commits; reutiliza
   `_tag_para_linea_diff` sin refactorizar el visor histórico;
-- hay 10 pruebas específicas en
+- hay 11 pruebas específicas en
   `pruebas/test_cambios_locales_git.py` (archivo, modificación,
-  MM, numstat, archivo nuevo, eliminado, NUL, pathspecs literales,
-  argumentos seguros interceptando `ejecutar_git()` con un spy y
-  no-modificación del repositorio).
+  MM, numstat, error de numstat, archivo nuevo, eliminado, NUL,
+  pathspecs literales, argumentos seguros interceptando
+  `ejecutar_git()` con un spy y no-modificación del repositorio).
 
 ## Pruebas
 
-104 pruebas automatizadas en `pruebas/`. Ejecutar:
+105 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -367,7 +392,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 104 tests in ...
+Ran 105 tests in ...
 OK
 ```
 
@@ -403,7 +428,9 @@ Nota: PowerShell puede mostrar mojibake (p. ej. `aplicaciÃ³n`); Tkinter muestr
 
 ## Siguiente etapa
 
-- eventualmente: selector/creación segura de ramas.
+- eventualmente: selector/creación segura de ramas;
+- posible etapa futura (NO implementada todavía):
+  "Descartar cambios sin preparar" desde el inspector.
 
 ## Filosofía
 

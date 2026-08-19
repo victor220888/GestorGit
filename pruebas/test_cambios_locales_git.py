@@ -35,10 +35,19 @@ class ServicioGitEspia:
     Registra las llamadas a ejecutar_git sin ejecutar Git real y
     devuelve resultados controlados para que el flujo del servicio
     llegue a construir los diffs.
+
+    Cuando fallar_numstat es True, cualquier llamada que contenga
+    "--numstat" devuelve un resultado NO exitoso para poder probar
+    que el servicio propaga el error.
     """
 
-    def __init__(self, ruta_cambio="servicio_git.py"):
+    def __init__(
+        self,
+        ruta_cambio="servicio_git.py",
+        fallar_numstat=False
+    ):
         self.ruta_cambio = ruta_cambio
+        self.fallar_numstat = fallar_numstat
         self.llamadas_ejecutar_git = []
 
     def analizar_repositorio(self, ruta_repositorio):
@@ -75,6 +84,15 @@ class ServicioGitEspia:
         self.llamadas_ejecutar_git.append(
             list(argumentos)
         )
+
+        if self.fallar_numstat and "--numstat" in argumentos:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=1,
+                salida="",
+                error="Error controlado de numstat.",
+                comando="git diff --numstat"
+            )
 
         return ResultadoComando(
             exitoso=True,
@@ -701,6 +719,34 @@ class TestCambiosLocalesGit(unittest.TestCase):
             estado_antes,
             estado_despues
         )
+
+    def test_error_numstat_no_se_convierte_en_cero(self):
+        """
+        Si git diff --numstat falla, obtener_detalle debe devolver
+        un error controlado y NO un detalle exitoso con 0
+        inserciones / 0 eliminaciones.
+        """
+
+        espia = ServicioGitEspia(
+            fallar_numstat=True
+        )
+
+        servicio = ServicioCambiosLocalesGit(
+            espia
+        )
+
+        resultado = servicio.obtener_detalle(
+            "c:/repositorio",
+            "servicio_git.py"
+        )
+
+        self.assertFalse(resultado.exitoso)
+        self.assertTrue(resultado.error)
+        self.assertIn(
+            "Error controlado de numstat.",
+            resultado.error
+        )
+        self.assertIsNone(resultado.detalle)
 
 
 if __name__ == "__main__":

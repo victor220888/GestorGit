@@ -147,11 +147,23 @@ class ServicioCambiosLocalesGit:
             preparado=False
         )
 
+        if isinstance(
+            resumen_sin_preparar,
+            ResultadoDetalleCambioLocal
+        ):
+            return resumen_sin_preparar
+
         resumen_preparado = self._obtener_resumen(
             estado.ruta_raiz,
             ruta_archivo,
             preparado=True
         )
+
+        if isinstance(
+            resumen_preparado,
+            ResultadoDetalleCambioLocal
+        ):
+            return resumen_preparado
 
         detalle.inserciones_sin_preparar = (
             resumen_sin_preparar[0]
@@ -234,7 +246,14 @@ class ServicioCambiosLocalesGit:
         """
         Calcula inserciones y eliminaciones mediante --numstat.
 
-        Devuelve la tupla (inserciones, eliminaciones, binario).
+        Devuelve la tupla (inserciones, eliminaciones, binario)
+        cuando la consulta es exitosa.
+
+        Cuando la consulta FALLA devuelve un
+        ResultadoDetalleCambioLocal con exitoso=False y un mensaje
+        controlado: nunca se informa 0 inserciones / 0 eliminaciones
+        como si fueran datos reales.
+
         Para archivos binarios Git devuelve "-"; en ese caso se
         marca binario=True y no se intenta convertir el texto.
         """
@@ -263,7 +282,17 @@ class ServicioCambiosLocalesGit:
         )
 
         if not resultado.exitoso:
-            return (0, 0, False)
+            return ResultadoDetalleCambioLocal(
+                exitoso=False,
+                error=(
+                    resultado.error
+                    if resultado.error
+                    else (
+                        "No fue posible calcular el resumen de "
+                        "inserciones y eliminaciones del archivo."
+                    )
+                )
+            )
 
         return self._interpretar_numstat(
             resultado.salida

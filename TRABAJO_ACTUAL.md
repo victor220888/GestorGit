@@ -10,36 +10,34 @@ No sustituye AGENTS.md ni CLAUDE.md.
 
 ## Estado del repositorio
 
-Último HEAD conocido:
+HEAD observado al iniciar la corrección final:
 
-0e3840e Agrega visor de cambios de commits
+c62b0a0 Agrega inspector de cambios locales
 
-Línea base funcional validada (histórica):
+El HEAD actual debe consultarse siempre con:
 
-fe5e49e Agrega historial con filtros y exportacion
+git log -1 --oneline
 
-Validación funcional de esa línea base:
+El HEAD apunta a master y está sincronizado con origin/master
+(Push confirmado por Git y por el usuario).
 
-65 pruebas OK
+Históricos:
+
+- 014e3f7 Agrega persistencia y actualizacion segura de preparados
+  (persistencia + actualización de preparados: commiteadas y con Push);
+- 0e3840e Agrega visor de cambios de commits;
+- fe5e49e Agrega historial con filtros y exportacion
+  (línea base funcional validada; 65 pruebas OK en su momento).
 
 Estado actual:
 
-- etapa: ETAPA VALIDADA - PENDIENTE DE COMMIT;
-- persistencia del último repositorio: VALIDADA (prueba manual
-  en Windows EXITOSA con anterioridad);
-- actualización de archivos preparados: VALIDADA MANUALMENTE en
-  Windows con el caso real MM;
-- validación de rechazo de ruta con carácter NUL: PRUEBA
-  AUTOMATIZADA EXITOSA;
-- correcciones de portabilidad de pruebas (comparación
-  semántica de rutas mediante Path.resolve(), encoding UTF-8
-  en subprocess de diff): EXITOSAS;
-- 94 pruebas OK;
+- etapa inspector de cambios locales: ETAPA VALIDADA MANUALMENTE;
+- prueba manual en Windows: EXITOSA (confirmada por el usuario);
+- el inspector forma parte de HEAD (c62b0a0) y del remoto;
+- corrección del error silencioso de git diff --numstat:
+  pendiente de commit (vive en el working tree actual);
+- 105 pruebas OK (104 anteriores + 1 de regresión de --numstat);
 - config.json ignorado y no versionado;
-- ambas funcionalidades (persistencia y actualización de
-  preparados) todavía forman parte del working tree actual y
-  todavía NO tienen commit;
-- no hubo Push;
 - .opencode/ sigue sin versionar y NO debe incluirse
   automáticamente.
 
@@ -68,79 +66,81 @@ Estado actual:
 
 ## Trabajo actual
 
-Estado: ETAPA IMPLEMENTADA - PRUEBA MANUAL PENDIENTE
+Estado: TAREA TERMINADA - SIN COMMIT
 
-Tarea: inspector de cambios locales (OpenCode).
+Tarea: cierre documental del inspector + corrección de --numstat.
 
-HEAD inicial observado: 014e3f7 (working tree limpio).
+HEAD inicial observado: c62b0a0 (working tree limpio).
+El inspector ya estaba commiteado y pusheado (origin/master = c62b0a0).
 
-NO se ejecutó durante el desarrollo:
+NO se ejecutó durante esta tarea:
 
 git add / git reset / git restore / git checkout / git commit /
 git fetch / git pull / git push
 
-Descripción:
+Trabajo realizado (documental):
 
-- ventana de SOLO LECTURA "Cambios locales - Gestor Git";
-- botón "Ver cambios locales..." habilitado únicamente con
-  exactamente UN archivo seleccionado;
-- pestañas "Sin preparar" (git diff) y "Preparados"
-  (git diff --cached);
-- resúmenes con --numstat; binarios muestran "Archivo binario";
-- archivos nuevos sin preparar (??): mensaje educativo;
-- archivo sin cambios: "El archivo ya no tiene cambios locales
-  pendientes."
-- Actualizar solo consulta el estado LOCAL (sin Fetch);
-- Copiar diff copia la pestaña activa;
-- límite visual 500000 caracteres;
-- ventana única; se cierra al cambiar de repositorio.
+- TRABAJO_ACTUAL.md, AGENTS.md y CLAUDE.md corregidos: cabeceras
+  obsoletas eliminadas, HEAD real c62b0a0 documentado, 014e3f7
+  y 0e3840e quedan como históricos;
+- prueba manual del inspector: marcada EXITOSA en Windows con los
+  casos confirmados por el usuario (sin preparar, preparado, MM,
+  resúmenes, colores, scroll, Actualizar local, Copiar diff,
+  habilitación con un archivo);
+- persistencia y actualización de preparados: ya commiteadas
+  (014e3f7); ya no figuran como pendientes;
+- "Descartar cambios sin preparar": mencionado únicamente como
+  posible etapa futura, no implementada.
 
-ChatGPT:
-- tarea: ninguna;
-- archivos reservados: ninguno.
+Trabajo realizado (corrección funcional):
 
-OpenCode:
-- tarea: inspector de cambios locales;
-- estado: ETAPA IMPLEMENTADA - PRUEBA MANUAL PENDIENTE;
-- archivos que creó/modificó:
-
-  - modelos_cambios_locales.py (nuevo);
-  - servicio_cambios_locales_git.py (nuevo);
-  - pruebas/test_cambios_locales_git.py (nuevo, 10 pruebas);
-  - principal.py (botón + ventana + integración);
-  - AGENTS.md;
-  - CLAUDE.md;
-  - TRABAJO_ACTUAL.md (este documento).
+- servicio_cambios_locales_git.py: si git diff --numstat FALLA,
+  obtener_detalle() devuelve ResultadoDetalleCambioLocal con
+  exitoso=False y mensaje controlado; nunca 0 inserciones /
+  0 eliminaciones falsos; _obtener_resumen() devuelve el error
+  como resultado (patrón _convertir_fecha_iso del historial);
+  un numstat exitoso y vacío sigue siendo legítimamente 0/0;
+- prueba nueva en pruebas/test_cambios_locales_git.py:
+  test_error_numstat_no_se_convierte_en_cero (ServicioGitEspia
+  con fallar_numstat=True); el spy no ejecuta Git real;
+- servicio_git.py NO se modificó.
 
 Resultados:
 
-- 104 pruebas OK en la suite completa
-  (94 anteriores + 10 nuevas);
-- py_compile de todos los módulos OK
-  (principal.py incluido; el import requiere Tkinter,
-  presente en Windows);
+- 105 pruebas OK en la suite completa
+  (104 anteriores + 1 nueva de regresión);
+- py_compile de todos los módulos OK;
 - git diff --check: SIN avisos;
 - git diff --cached --check: sin avisos (no hay nada preparado);
 - git status --short final:
-  M AGENTS.md; M principal.py; M TRABAJO_ACTUAL.md;
-  ?? modelos_cambios_locales.py; ?? servicio_cambios_locales_git.py;
-  ?? pruebas/test_cambios_locales_git.py; ?? .opencode/ ;
-- no se ejecutó git add ni commit;
-- .opencode/ no se versiona.
+  M AGENTS.md; M CLAUDE.md; M TRABAJO_ACTUAL.md;
+  M servicio_cambios_locales_git.py;
+  M pruebas/test_cambios_locales_git.py;
+- sin cambios en servicio_git.py (git diff -- servicio_git.py vacío);
+- no se ejecutó git add ni commit.
 
-PRUEBA MANUAL: PENDIENTE (esperando confirmación del usuario).
+PRUEBA MANUAL DEL INSPECTOR EN WINDOWS: EXITOSA.
 
-Caso recomendado:
-1. Modificar temporalmente un archivo del repositorio GestorGit.
-2. Actualizar GestorGit.
-3. Seleccionarlo y abrir "Ver cambios locales...".
-4. Confirmar: pestaña Sin preparar con diff; Preparados vacía.
-5. Preparar el archivo desde la interfaz y comprobar que el diff
-   pasa a la pestaña Preparados.
-6. Modificar nuevamente el mismo archivo y confirmar el caso MM:
-   Sin preparar -> cambios posteriores;
-   Preparados -> versión ya preparada.
-7. Probar Actualizar, Copiar diff y Cerrar.
+Hechos confirmados visualmente por el usuario:
+
+- archivo modificado sin preparar: la pestaña `Sin preparar`
+  muestra el diff y `Preparados` muestra 0/0 con
+  "No hay cambios preparados";
+- archivo preparado: `Preparados` muestra el diff que entraría
+  al commit;
+- caso MM: "Modificado, preparado y vuelto a modificar",
+  Preparado = "Sí (hay cambios nuevos)"; `Sin preparar` muestra
+  únicamente los cambios posteriores al staging y `Preparados`
+  conserva el diff previamente preparado; ambos diffs distintos;
+- resúmenes de inserciones/eliminaciones visibles;
+- colores + / - / @@ funcionan;
+- scroll horizontal y vertical funcionan;
+- `Actualizar` refresca únicamente el estado LOCAL;
+- `Copiar diff` funciona;
+- `Ver cambios locales...` se habilita con exactamente un archivo
+  y se deshabilita con selección múltiple;
+- la prueba temporal fue retirada y el staging de prueba quitado
+  al finalizar.
 
 ## Regla para reservar archivos
 
