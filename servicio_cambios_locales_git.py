@@ -110,6 +110,10 @@ class ServicioCambiosLocalesGit:
             nuevo_sin_preparar=(
                 cambio_encontrado.estado_indice == "?"
                 and cambio_encontrado.estado_trabajo == "?"
+            ),
+            en_conflicto=self._calcular_en_conflicto(
+                cambio_encontrado.estado_indice,
+                cambio_encontrado.estado_trabajo
             )
         )
 
@@ -199,6 +203,28 @@ class ServicioCambiosLocalesGit:
             exitoso=True,
             detalle=detalle
         )
+
+    @staticmethod
+    def _calcular_en_conflicto(estado_indice, estado_trabajo):
+        """
+        Determina si el par de códigos de git status corresponde
+        a un conflicto de merge.
+
+        Helper propio del servicio (sin acoplarse a métodos
+        privados de ServicioGit): la seguridad se decide desde
+        los códigos estructurados, nunca desde el texto
+        localizado de descripcion.
+        """
+
+        return (estado_indice + estado_trabajo) in {
+            "DD",
+            "AU",
+            "UD",
+            "UA",
+            "DU",
+            "AA",
+            "UU",
+        }
 
     def _ejecutar_diff(
         self,

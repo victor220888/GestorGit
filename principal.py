@@ -11,6 +11,7 @@ from tkinter import ttk
 from ayuda_interfaz import AyudaEmergente, configurar_estilos
 from servicio_cambios_locales_git import ServicioCambiosLocalesGit
 from servicio_configuracion import ServicioConfiguracion
+from servicio_descarte_cambios_git import ServicioDescarteCambiosGit
 from servicio_exportacion_historial import ServicioExportacionHistorial
 from servicio_historial_git import ServicioHistorialGit
 from servicio_remoto_git import ServicioRemotoGit
@@ -64,6 +65,13 @@ class AplicacionGit:
             self.servicio_git
         )
 
+        # Servicio que descarta los cambios SIN PREPARAR de un
+        # archivo (git restore --worktree desde el índice).
+        # 100 % local: conserva el staging y no toca el remoto.
+        self.servicio_descarte_cambios = ServicioDescarteCambiosGit(
+            self.servicio_git
+        )
+
         # La ventana de historial se crea únicamente cuando el usuario
         # la solicita y se reutiliza mientras permanezca abierta.
         self.ventana_historial = None
@@ -102,6 +110,10 @@ class AplicacionGit:
         self.variable_commit_inspector = None
         self.detalle_cambio_local_actual = None
         self.ruta_archivo_inspector = ""
+
+        # Botón destructivo controlado del Inspector: descarta los
+        # cambios sin preparar de UN archivo conservando el staging.
+        self.boton_descartar_sin_preparar = None
 
         # Límite visual del diff mostrado en la ventana de detalle.
         # La truncación es solamente visual: no modifica el repositorio.
@@ -1127,16 +1139,21 @@ class AplicacionGit:
                 self.boton_ver_cambios_locales,
                 (
                     "Ver cambios locales...\n\n"
-                    "Abre una ventana de SOLO LECTURA con los cambios "
+                    "Abre una ventana para inspeccionar los cambios "
                     "del archivo seleccionado.\n\n"
+                    "Consultar, Actualizar y Copiar diff son operaciones "
+                    "de solo lectura.\n\n"
+                    "Desde la pestaña 'Sin preparar' existe una acción "
+                    "separada: 'Descartar cambios sin preparar...', que "
+                    "puede eliminar cambios del working tree después de "
+                    "una confirmación explícita.\n\n"
                     "La pestaña 'Sin preparar' muestra los cambios todavía "
                     "no preparados (working tree -> índice).\n\n"
                     "La pestaña 'Preparados' muestra los cambios ya "
                     "listos para el commit (índice -> HEAD).\n\n"
                     "Útil para entender el flujo:\n"
                     "Working tree -> Preparar -> Staging -> Commit -> HEAD.\n\n"
-                    "No modifica archivos, staging ni commits y no ejecuta "
-                    "Fetch, Pull ni Push."
+                    "No ejecuta Fetch, Pull ni Push."
                 )
             ),
 
@@ -3261,8 +3278,7 @@ class AplicacionGit:
 
     def crear_ventana_cambios_locales(self):
         """
-        Construye la ventana de solo lectura con los cambios
-        locales del archivo seleccionado.
+        Construye la ventana de inspección de cambios locales.
         """
 
         self.ventana_cambios_locales = tk.Toplevel(
@@ -3324,9 +3340,12 @@ class AplicacionGit:
         advertencia = tk.Label(
             marco_inspector,
             text=(
-                "Vista de SOLO LECTURA.\n"
-                "Esta pantalla NO modifica archivos, staging ni commits "
-                "y NO ejecuta Fetch, Pull ni Push."
+                "Pantalla de inspección.\n"
+                "La única acción que modifica el working tree es "
+                "'Descartar cambios sin preparar...' desde la pestaña "
+                "'Sin preparar'.\n"
+                "El staging se conserva intacto y no se ejecuta "
+                "Fetch, Pull ni Push."
             ),
             justify=tk.LEFT,
             anchor="w",
@@ -3435,6 +3454,13 @@ class AplicacionGit:
             text="Preparados"
         )
 
+        # El botón de descarte solo se habilita en la pestaña
+        # 'Sin preparar': al cambiar de pestaña se reevalúa.
+        self.notebook_cambios_locales.bind(
+            "<<NotebookTabChanged>>",
+            self.actualizar_estado_boton_descartar
+        )
+
         self.variable_resumen_sin_preparar = tk.StringVar(
             value=""
         )
@@ -3472,6 +3498,31 @@ class AplicacionGit:
             pady=(10, 0)
         )
 
+        self.boton_descartar_sin_preparar = ttk.Button(
+            marco_botones_inspector,
+            text="Descartar cambios sin preparar...",
+            command=self.descartar_cambios_sin_preparar,
+            style="Accion.TButton",
+            state=tk.DISABLED
+        )
+
+        self.boton_descartar_sin_preparar.grid(
+            row=0,
+            column=0,
+            padx=(0, 18)
+        )
+
+        AyudaEmergente(
+            self.boton_descartar_sin_preparar,
+            (
+                "Descartar cambios sin preparar...\n\n"
+                "Descarta únicamente los cambios que todavía NO están "
+                "preparados de este archivo. Si ya existen cambios "
+                "preparados, se conservan.\n\n"
+                "No está disponible para archivos nuevos ni conflictos."
+            )
+        )
+
         ttk.Button(
             marco_botones_inspector,
             text="Actualizar",
@@ -3479,7 +3530,7 @@ class AplicacionGit:
             style="Accion.TButton"
         ).grid(
             row=0,
-            column=0,
+            column=1,
             padx=(0, 8)
         )
 
@@ -3490,7 +3541,7 @@ class AplicacionGit:
             style="Accion.TButton"
         ).grid(
             row=0,
-            column=1,
+            column=2,
             padx=(0, 8)
         )
 
@@ -3501,8 +3552,16 @@ class AplicacionGit:
             style="Accion.TButton"
         ).grid(
             row=0,
-            column=2
+            column=3
         )
+
+        # El botón se crea deshabilitado y se recalcula recién ahora:
+        # actualizar_cambios_locales() se ejecutó antes de crearlo y
+        # su llamada a actualizar_estado_boton_descartar() entonces
+        # no tenía efecto. Sin esta llamada, al abrir por primera
+        # vez el Inspector el botón podría quedar habilitado sin
+        # importar si el archivo es descartable.
+        self.actualizar_estado_boton_descartar()
 
     def _construir_pestana_diff_locales(
         self,
@@ -3685,6 +3744,8 @@ class AplicacionGit:
                 "No fue posible consultar los cambios del archivo."
             )
 
+            self.actualizar_estado_boton_descartar()
+
             return
 
         if resultado.detalle is None:
@@ -3716,6 +3777,8 @@ class AplicacionGit:
                 self.texto_preparados_locales,
                 mensaje
             )
+
+            self.actualizar_estado_boton_descartar()
 
             return
 
@@ -3803,6 +3866,8 @@ class AplicacionGit:
                 detalle.eliminaciones_preparadas
             )
         )
+
+        self.actualizar_estado_boton_descartar()
 
     def _limpiar_textos_inspector(self):
         """
@@ -3977,6 +4042,202 @@ class AplicacionGit:
             contenido.rstrip("\n")
         )
 
+    def actualizar_estado_boton_descartar(self, _evento=None):
+        """
+        Habilita el botón de descarte únicamente cuando la pestaña
+        activa es 'Sin preparar' y el archivo inspeccionado tiene
+        cambios sin preparar reales (no es nuevo y no está en
+        conflicto).
+        """
+
+        permitido = False
+
+        if (
+            self.boton_descartar_sin_preparar is not None
+            and self.ventana_cambios_locales is not None
+            and self.notebook_cambios_locales is not None
+            and self.marco_sin_preparar_locales is not None
+            and self.ruta_repositorio
+            and not self.operacion_remota_en_curso
+        ):
+            pestana_activa = (
+                self.notebook_cambios_locales.select()
+            )
+
+            detalle = self.detalle_cambio_local_actual
+
+            if (
+                pestana_activa == str(
+                    self.marco_sin_preparar_locales
+                )
+                and detalle is not None
+            ):
+                permitido = (
+                    not detalle.nuevo_sin_preparar
+                    and not detalle.en_conflicto
+                    and bool(detalle.diff_sin_preparar)
+                )
+
+        if self.boton_descartar_sin_preparar is not None:
+            self.boton_descartar_sin_preparar.config(
+                state=(
+                    tk.NORMAL
+                    if permitido
+                    else tk.DISABLED
+                )
+            )
+
+    def descartar_cambios_sin_preparar(self):
+        """
+        Descarta únicamente los cambios SIN PREPARAR del archivo
+        inspeccionado.
+
+        Primero consulta el estado LOCAL de nuevo (sin Fetch) para
+        decidir si la operación sigue permitida; después muestra una
+        confirmación fuerte y ejecuta el restore desde el índice.
+        El staging se conserva intacto.
+
+        Si hay una operación remota en curso (Fetch/Pull/Push),
+        el descarte se bloquea antes de cualquier consulta o
+        confirmación: la defensa en profundidad no depende de
+        la modalidad de las ventanas.
+        """
+
+        if self.operacion_remota_en_curso:
+            self.variable_estado.set(
+                "Espere a que termine la operación remota en curso "
+                "(Fetch/Pull/Push) antes de descartar cambios."
+            )
+            return
+
+        if self.ventana_cambios_locales is None:
+            return
+
+        if not self.ruta_repositorio:
+            return
+
+        if not self.ruta_archivo_inspector:
+            return
+
+        self.actualizar_cambios_locales()
+
+        if self.notebook_cambios_locales.select() != str(
+            self.marco_sin_preparar_locales
+        ):
+            self.variable_estado.set(
+                "La acción de descarte solamente está disponible "
+                "desde la pestaña 'Sin preparar'."
+            )
+            return
+
+        detalle = self.detalle_cambio_local_actual
+
+        if detalle is None:
+            self.variable_estado.set(
+                "El archivo ya no tiene cambios sin preparar."
+            )
+            return
+
+        if detalle.nuevo_sin_preparar:
+            messagebox.showinfo(
+                "No se puede descartar",
+                (
+                    "Este archivo es nuevo y todavía no está "
+                    "bajo seguimiento.\n\n"
+                    "GestorGit no lo eliminará automáticamente."
+                ),
+                parent=self.ventana_cambios_locales
+            )
+            return
+
+        if detalle.en_conflicto:
+            messagebox.showwarning(
+                "Archivo en conflicto",
+                (
+                    "El archivo está en conflicto. GestorGit no "
+                    "descartará cambios automáticamente mientras "
+                    "exista un conflicto."
+                ),
+                parent=self.ventana_cambios_locales
+            )
+            return
+
+        if not detalle.diff_sin_preparar:
+            self.variable_estado.set(
+                "El archivo ya no tiene cambios sin preparar."
+            )
+            return
+
+        ruta_archivo = self.ruta_archivo_inspector
+
+        if detalle.preparado:
+            texto_restauracion = (
+                "El archivo volverá a coincidir con la versión "
+                "que está actualmente en el área preparada "
+                "(staging).\n\n"
+                "Si el archivo ya tiene cambios preparados, "
+                "esos cambios SE CONSERVARÁN."
+            )
+        else:
+            texto_restauracion = (
+                "El archivo volverá a coincidir con la versión "
+                "actualmente registrada en el índice/HEAD."
+            )
+
+        continuar = messagebox.askyesno(
+            "Descartar cambios sin preparar",
+            (
+                "Se descartarán permanentemente los cambios "
+                f"SIN PREPARAR de:\n\n{ruta_archivo}\n\n"
+                f"{texto_restauracion}\n\n"
+                "Esta acción no puede deshacerse desde GestorGit.\n\n"
+                "¿Desea continuar?"
+            ),
+            icon="warning",
+            parent=self.ventana_cambios_locales
+        )
+
+        if not continuar:
+            return
+
+        resultado = (
+            self.servicio_descarte_cambios
+            .descartar_cambios_sin_preparar(
+                self.ruta_repositorio,
+                ruta_archivo
+            )
+        )
+
+        if not resultado.exitoso:
+            messagebox.showerror(
+                "No se pudo descartar",
+                resultado.error,
+                parent=self.ventana_cambios_locales
+            )
+            return
+
+        self.cargar_cambios()
+
+        self.actualizar_cambios_locales()
+
+        if detalle.preparado:
+            mensaje_exito = (
+                "Se descartaron los cambios sin preparar.\n"
+                "Los cambios preparados se conservaron."
+            )
+        else:
+            mensaje_exito = (
+                "Se descartaron los cambios sin preparar.\n"
+                "El archivo volvió a la versión registrada "
+                "en el índice/HEAD."
+            )
+
+        messagebox.showinfo(
+            "Cambios descartados",
+            mensaje_exito,
+            parent=self.ventana_cambios_locales
+        )
+
     def cerrar_cambios_locales(self):
         """
         Cierra la ventana del inspector si está abierta.
@@ -4002,6 +4263,7 @@ class AplicacionGit:
         self.variable_commit_inspector = None
         self.detalle_cambio_local_actual = None
         self.ruta_archivo_inspector = ""
+        self.boton_descartar_sin_preparar = None
 
     # =============================================================
     # FETCH
@@ -4857,6 +5119,10 @@ class AplicacionGit:
                 state=tk.DISABLED
             )
 
+            # El botón de descarte del Inspector también se bloquea
+            # durante la operación remota; segura si no existe.
+            self.actualizar_estado_boton_descartar()
+
             return
 
         self.boton_seleccionar.config(
@@ -4902,6 +5168,10 @@ class AplicacionGit:
         )
 
         self.actualizar_estado_botones_sincronizacion()
+
+        # Al terminar la operación remota el botón de descarte del
+        # Inspector vuelve a recalcularse; segura si no existe.
+        self.actualizar_estado_boton_descartar()
 
     def actualizar_estado_botones_sincronizacion(self):
         """

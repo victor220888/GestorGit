@@ -73,7 +73,7 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 105 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 123 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
      en líneas CRLF añadidas: causa conocida y documentada);
@@ -114,7 +114,8 @@ El historial debe conservar estas características:
 - `servicio_configuracion.py` — persistencia del último repositorio en `config.json`: carga validada y escritura conservadora (archivo temporal + `os.replace`). Nunca guarda credenciales ni ejecuta operaciones remotas.
 - `modelos_cambios_locales.py` — modelos del inspector de cambios locales: `DetalleCambioLocal`, `ResultadoDetalleCambioLocal`.
 - `servicio_cambios_locales_git.py` — solo lectura: diffs sin preparar y preparados de UN archivo (`--literal-pathspecs`, `--no-color`, `--no-ext-diff`, `--no-textconv`, `--unified=3`), resúmenes `--numstat`, último commit local. Reutiliza un `ServicioGit` existente; validación propia de la ruta relativa.
-- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales, carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red.
+- `servicio_descarte_cambios_git.py` — descarta los cambios SIN PREPARAR de UN archivo con `git --literal-pathspecs restore --worktree -- <ruta>` (restaura desde el ÍNDICE, no desde HEAD). Conserva el staging, revalida el estado antes del restore y nunca ejecuta operaciones remotas.
+- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales (incluido el botón `Descartar cambios sin preparar...`), carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red.
 - `ayuda_interfaz.py` — ayuda visual: `AyudaEmergente` y `configurar_estilos`. Sin lógica Git.
 
 ## Seguridad
@@ -305,8 +306,12 @@ y `errors="replace"`.
 
 ## Inspector de cambios locales
 
-Ventana de SOLO LECTURA que enseña qué cambió en UN archivo antes
-de prepararlo, después de prepararlo, o en ambos lugares a la vez.
+Ventana de inspección de cambios locales que enseña qué cambió en
+UN archivo antes de prepararlo, después de prepararlo, o en ambos
+lugares a la vez. Las CONSULTAS y los visores son de SOLO LECTURA,
+pero la ventana incorpora además una acción destructiva controlada
+y separada: `Descartar cambios sin preparar...` (sección
+siguiente), exclusiva de la pestaña `Sin preparar`.
 `ServicioCambiosLocalesGit` reutiliza el `ServicioGit` existente;
 `servicio_git.py` no se modifica.
 
@@ -337,8 +342,10 @@ Resto del comportamiento:
   exactamente UN archivo seleccionado en la tabla de cambios;
 - ventana única `Cambios locales - Gestor Git` (se destruye y recrea
   al abrir de nuevo; se cierra al cambiar de repositorio);
-- NO prepara ni quita archivos, no crea commits, no ejecuta
-  Fetch/Pull/Push y nunca modifica el repositorio;
+- la consulta NO prepara ni quita archivos, no crea commits, no
+  ejecuta Fetch/Pull/Push y nunca modifica el repositorio; la
+  única acción que modifica el working tree es el botón
+  `Descartar cambios sin preparar...` (sección siguiente);
 - pestañas `Sin preparar` (working tree -> índice, equivale a
   `git diff`) y `Preparados` (índice -> HEAD, equivale a
   `git diff --cached`); en el caso `MM` ambas pueden contener
@@ -375,15 +382,123 @@ Resto del comportamiento:
 - visor `tk.Text` de solo lectura, `wrap=tk.NONE`, fuente Consolas,
   colores como el visor de cambios de commits; reutiliza
   `_tag_para_linea_diff` sin refactorizar el visor histórico;
-- hay 11 pruebas específicas en
+- hay 12 pruebas específicas en
   `pruebas/test_cambios_locales_git.py` (archivo, modificación,
   MM, numstat, error de numstat, archivo nuevo, eliminado, NUL,
   pathspecs literales, argumentos seguros interceptando
-  `ejecutar_git()` con un spy y no-modificación del repositorio).
+  `ejecutar_git()` con un spy, no-modificación del repositorio y
+  conflicto expuesto de forma estructurada con `en_conflicto`).
+
+## Descarte de cambios sin preparar
+
+Operación explícita y controlada dentro de la ventana del Inspector
+(`Cambios locales - Gestor Git`), exclusiva de la pestaña
+`Sin preparar`. PRUEBA MANUAL EN WINDOWS: EXITOSA (confirmada por
+el usuario).
+
+Casos confirmados manualmente en Windows:
+
+- caso A (archivo modificado sin preparar): el Inspector muestra
+  el diff, Preparado = No, el botón queda habilitado en
+  `Sin preparar` y deshabilitado en `Preparados`; tras la
+  confirmación el descarte funciona y el archivo vuelve a HEAD;
+- caso B (MM): A preparada y B agregada después; estado
+  "Modificado, preparado y vuelto a modificar", Preparado =
+  "Sí (hay cambios nuevos)", `Preparados` muestra A y
+  `Sin preparar` muestra B; el descarte elimina B, A permanece
+  preparada, `git diff` vuelve a quedar vacío y `git diff --cached`
+  conserva A; después, quitar de preparados conserva A en el
+  working tree, un segundo descarte elimina A y servicio_git.py
+  vuelve exactamente a HEAD;
+- caso C (archivo nuevo ??): estado Nuevo, Preparado No, mensaje
+  educativo, botón de descarte deshabilitado desde el primer
+  momento (también en `Preparados`); `Test-Path` confirmó que el
+  archivo sigue existiendo: GestorGit no lo eliminó;
+- caso D (archivo solamente preparado): `Sin preparar` vacío y el
+  botón de descarte deshabilitado;
+- caso E (actualización visual): tras el descarte el Inspector se
+  actualiza correctamente y, cuando ya no quedan cambios, muestra
+  "El archivo ya no tiene cambios locales pendientes.";
+- caso F (Fetch simultáneo): NO APLICABLE desde la GUI actual
+  (con el Inspector abierto no fue posible interactuar con Fetch
+  de la ventana principal); documentado como limitación, no como
+  fallo ni prueba exitosa.
+
+Comportamiento:
+
+- botón `Descartar cambios sin preparar...` junto a
+  `Actualizar` / `Copiar diff` / `Cerrar`;
+- se habilita únicamente cuando la pestaña activa es
+  `Sin preparar`, el archivo inspeccionado tiene cambios SIN
+  PREPARAR reales, no es nuevo (??) y no está en conflicto;
+  al cambiar de pestaña el botón queda deshabilitado;
+- antes de la confirmación se vuelve a consultar el estado LOCAL
+  del archivo (sin Fetch) y la vista se actualiza; el servicio
+  revalida otra vez justo antes del restore;
+- confirmación fuerte con messagebox que cita explícitamente la
+  ruta y explica qué versión quedará (staging, o índice/HEAD si
+  no hay preparados) y que los cambios preparados SE CONSERVAN;
+- comando productivo exacto:
+
+  ```text
+  git --literal-pathspecs restore --worktree -- <ruta>
+  ```
+
+  construido SIEMPRE como lista de argumentos (nunca
+  `shell=True`); sin `--source`: restaura desde el ÍNDICE, no
+  desde HEAD; nunca `--staged`, `git restore .`, `checkout`,
+  `reset`, `clean`, `add`, `rm`;
+- un archivo nuevo (??) se rechaza con mensaje educativo: nunca
+  se ejecuta `os.remove`, `Path.unlink` ni `git clean`;
+- los conflictos se bloquean (DD, AU, UD, UA, DU, AA, UU) con
+  mensaje educativo; la decisión usa el booleano estructurado
+  `detalle.en_conflicto` de `DetalleCambioLocal` (calculado en
+  `ServicioCambiosLocalesGit._calcular_en_conflicto` desde
+  `estado_indice` + `estado_trabajo`, nunca desde el texto
+  localizado de `descripcion`); `ServicioDescarteCambiosGit`
+  conserva además su revalidación estructurada propia antes del
+  restore;
+- la regla de los estados permitidos se basa en
+  `estado_indice` / `estado_trabajo` (nunca en `descripcion`):
+  el working tree debe tener una diferencia real respecto del
+  índice; funcionan " M", " D", MM, MD, AM y equivalentes;
+- `ServicioDescarteCambiosGit` reutiliza el `ServicioGit`
+  existente, tiene validación propia de la ruta (None, vacía,
+  espacios, NUL antes de construir `Path`, absoluta, `..`) y
+  nunca duplica `subprocess.run`;
+- si hay una operación remota en curso (Fetch/Pull/Push), el
+  botón de descarte queda deshabilitado y
+  `descartar_cambios_sin_preparar()` se bloquea al principio con
+  un mensaje controlado, sin consulta ni confirmación previas
+  (defensa en profundidad, independiente de la modalidad de las
+  ventanas); `actualizar_controles_operacion_remota()` recalcula
+  el botón de forma segura cuando el Inspector no existe;
+- después del restore: se refresca la tabla principal y el
+  Inspector, no se cierra la ventana, no se hace Fetch y se
+  muestra un mensaje breve de éxito; si el archivo ya no tiene
+  cambios, el Inspector maneja normalmente "El archivo ya no
+  tiene cambios locales pendientes." y la fila desaparece;
+- caso MM esperado: tras el descarte el archivo queda
+  `Modificado y preparado` con Preparado = `Sí`, `Sin preparar`
+  vacía (0 inserciones · 0 eliminaciones) y `Preparados`
+  conservando exactamente su diff;
+- staging intacto: `git diff --cached -- <ruta>` antes y después
+  del descarte son IDÉNTICOS;
+- no Fetch/Pull/Push; no se altera `fetch_exitoso_en_sesion`;
+  no se crean commits ni se modifica HEAD;
+- hay 17 pruebas específicas en
+  `pruebas/test_descarte_cambios_git.py` (" M", MM, " D", MD,
+  AM sin versión en HEAD (restaura desde el índice), ?? con y
+  sin spy, solamente preparado con y sin spy, NUL,
+  ruta absoluta, `..`, guion/caracteres especiales literales,
+  argumentos exactos del restore, verbos prohibidos —se
+  identifica el VERBO real, un archivo llamado `reset` solo
+  aparece como pathspec—, otro archivo sin seleccionar conserva
+  cambios y conflicto UU).
 
 ## Pruebas
 
-105 pruebas automatizadas en `pruebas/`. Ejecutar:
+123 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -392,7 +507,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 105 tests in ...
+Ran 123 tests in ...
 OK
 ```
 
@@ -419,7 +534,9 @@ python -m py_compile .\pruebas\test_detalle_commit_git.py
 python -m py_compile .\pruebas\test_actualizacion_preparados.py
 python -m py_compile .\modelos_cambios_locales.py
 python -m py_compile .\servicio_cambios_locales_git.py
+python -m py_compile .\servicio_descarte_cambios_git.py
 python -m py_compile .\pruebas\test_cambios_locales_git.py
+python -m py_compile .\pruebas\test_descarte_cambios_git.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```
@@ -428,9 +545,7 @@ Nota: PowerShell puede mostrar mojibake (p. ej. `aplicaciÃ³n`); Tkinter muestr
 
 ## Siguiente etapa
 
-- eventualmente: selector/creación segura de ramas;
-- posible etapa futura (NO implementada todavía):
-  "Descartar cambios sin preparar" desde el inspector.
+- eventualmente: selector/creación segura de ramas.
 
 ## Filosofía
 

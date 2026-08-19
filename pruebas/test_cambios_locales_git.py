@@ -44,10 +44,16 @@ class ServicioGitEspia:
     def __init__(
         self,
         ruta_cambio="servicio_git.py",
-        fallar_numstat=False
+        fallar_numstat=False,
+        estado_indice="M",
+        estado_trabajo="M",
+        descripcion="Modificado, preparado y vuelto a modificar"
     ):
         self.ruta_cambio = ruta_cambio
         self.fallar_numstat = fallar_numstat
+        self.estado_indice = estado_indice
+        self.estado_trabajo = estado_trabajo
+        self.descripcion = descripcion
         self.llamadas_ejecutar_git = []
 
     def analizar_repositorio(self, ruta_repositorio):
@@ -66,9 +72,9 @@ class ServicioGitEspia:
             cambios=[
                 CambioArchivo(
                     ruta=self.ruta_cambio,
-                    estado_indice="M",
-                    estado_trabajo="M",
-                    descripcion="Modificado, preparado y vuelto a modificar",
+                    estado_indice=self.estado_indice,
+                    estado_trabajo=self.estado_trabajo,
+                    descripcion=self.descripcion,
                     preparado=True,
                     requiere_actualizar_preparado=True
                 )
@@ -747,6 +753,36 @@ class TestCambiosLocalesGit(unittest.TestCase):
             resultado.error
         )
         self.assertIsNone(resultado.detalle)
+
+    def test_conflicto_se_expone_de_forma_estructurada(self):
+        """
+        El conflicto se expone mediante el booleano en_conflicto
+        calculado desde los códigos de git status, nunca desde el
+        texto localizado de descripcion.
+        """
+
+        espia = ServicioGitEspia(
+            estado_indice="U",
+            estado_trabajo="U",
+            descripcion="Estado localizado cualquiera"
+        )
+
+        servicio = ServicioCambiosLocalesGit(
+            espia
+        )
+
+        resultado = servicio.obtener_detalle(
+            "c:/repositorio",
+            "servicio_git.py"
+        )
+
+        self.assertTrue(resultado.exitoso)
+        self.assertIsNotNone(resultado.detalle)
+        self.assertTrue(resultado.detalle.en_conflicto)
+        self.assertNotIn(
+            "conflicto",
+            resultado.detalle.descripcion.lower()
+        )
 
 
 if __name__ == "__main__":

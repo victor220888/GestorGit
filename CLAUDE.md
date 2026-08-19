@@ -128,7 +128,8 @@ Interfaz Tkinter con:
 - estado por enviar/por descargar;
 - historial con filtros y exportación;
 - visor de cambios de un commit (solo lectura);
-- inspector de cambios locales (solo lectura);
+- inspector de cambios locales (inspección + descarte de cambios
+  sin preparar);
 - `threading` + `queue.Queue` para operaciones de red.
 
 ### `ayuda_interfaz.py`
@@ -162,7 +163,8 @@ Modelos del inspector de cambios locales:
 
 - `DetalleCambioLocal` (ruta, descripcion, preparado,
   requiere_actualizar_preparado, diffs, conteos, binarios,
-  nuevo_sin_preparar, hash y mensaje del último commit);
+  nuevo_sin_preparar, en_conflicto, hash y mensaje del
+  último commit);
 - `ResultadoDetalleCambioLocal` (exitoso, detalle, error, mensaje).
 
 ### `servicio_cambios_locales_git.py`
@@ -187,6 +189,37 @@ working tree -> índice y índice -> HEAD.
 - validación propia `_validar_ruta_archivo` (vacía, absoluta,
   `..`, NUL) ANTES de construir/ejecutar cualquier comando:
   sin acoplamiento a métodos privados de `ServicioGit`;
+- `servicio_git.py` NO se modifica.
+
+### `servicio_descarte_cambios_git.py`
+
+`ServicioDescarteCambiosGit` descarta los cambios SIN PREPARAR de
+UN archivo: `git --literal-pathspecs restore --worktree -- <ruta>`.
+
+- sin `--source` explícito, `git restore --worktree` restaura
+  desde el ÍNDICE (no desde HEAD): en un caso MM el working tree
+  vuelve a la versión preparada y el staging queda intacto;
+- reutiliza un `ServicioGit` existente (`ejecutar_git`,
+  `analizar_repositorio`, `obtener_cambios`); nunca duplica
+  subprocess y nunca usa `shell=True`;
+- validación propia de la ruta (None, vacía, solo espacios, NUL
+  antes de construir `Path`, absoluta, `..`); los nombres que
+  empiezan por guión o contienen caracteres especiales son
+  válidos y se protegen con `--literal-pathspecs` y `--`;
+- revalida el estado justo antes del restore (analizar +
+  obtener_cambios) y busca el cambio por ruta explícita; si ya
+  no existe bloquea con "El archivo ya no tiene cambios sin
+  preparar.";
+- regla de estados basada en `estado_indice` / `estado_trabajo`,
+  nunca en la descripción: el working tree debe tener una
+  diferencia real respecto del índice (" M", " D", MM, MD, AM
+  y equivalentes);
+- `??` se rechaza con mensaje educativo (nunca se borra el
+  archivo del disco); los conflictos (DD, AU, UD, UA, DU, AA,
+  UU) se bloquean con helper propio sin acoplarse a métodos
+  privados de `ServicioGit`;
+- devuelve `ResultadoComando`; no crea commits, no modifica HEAD,
+  no toca Fetch/Pull/Push;
 - `servicio_git.py` NO se modifica.
 
 ## Estado funcional validado
@@ -529,7 +562,10 @@ modificado después; el mensaje educativo menciona ahora
 
 ## Inspector de cambios locales
 
-Etapa: inspector de cambios locales (SOLO LECTURA).
+Etapa: inspector de cambios locales. Las CONSULTAS y los visores
+son de SOLO LECTURA; la ventana incorpora además la acción
+destructiva controlada `Descartar cambios sin preparar...`
+(sección siguiente, exclusiva de la pestaña `Sin preparar`).
 VALIDADA MANUALMENTE en Windows.
 
 Se agregó para que un caso real de la práctica
@@ -615,7 +651,17 @@ Seguridad:
   ANTES de construir/ejecutar cualquier diff; helper propio
   `_validar_ruta_archivo`, sin acoplarse a métodos privados de
   `ServicioGit`;
-- ninguna operación destructiva ni remota.
+- `DetalleCambioLocal.en_conflicto` expone de forma estructurada
+  si el par `estado_indice` + `estado_trabajo` corresponde a un
+  conflicto (DD, AU, UD, UA, DU, AA, UU); se calcula con el
+  helper propio `_calcular_en_conflicto`, nunca desde el texto
+  localizado de `descripcion` (la GUI usa el booleano y ya no
+  compara `descripcion == "Conflicto"`);
+- `ServicioCambiosLocalesGit` no ejecuta ninguna operación
+  destructiva ni remota; la acción explícita de descarte se
+  delega exclusivamente a `ServicioDescarteCambiosGit` (la
+  ventana del Inspector sí incorpora el botón
+  `Descartar cambios sin preparar...`, descrito en su sección).
 
 Corrección posterior (cierre documental):
 
@@ -630,9 +676,153 @@ Corrección posterior (cierre documental):
   legítimamente 0 inserciones / 0 eliminaciones;
 - `servicio_git.py` no se modificó.
 
+## Descarte de cambios sin preparar
+
+Etapa: primera acción destructiva controlada de GestorGit, dentro
+de la ventana del Inspector (`Cambios locales - Gestor Git`),
+exclusiva de la pestaña `Sin preparar`.
+
+Estado: ETAPA VALIDADA - PRUEBA MANUAL EN WINDOWS EXITOSA
+(confirmada por el usuario).
+
+Casos confirmados manualmente en Windows:
+
+- caso A (archivo modificado sin preparar): el Inspector muestra
+  el diff, Preparado = No, el botón queda habilitado en
+  `Sin preparar` y deshabilitado en `Preparados`; la confirmación
+  explícita aparece y el descarte funciona; el archivo vuelve a
+  HEAD;
+- caso B (MM): A preparada y B agregada después; estado
+  "Modificado, preparado y vuelto a modificar", Preparado =
+  "Sí (hay cambios nuevos)", `Preparados` muestra A y
+  `Sin preparar` muestra B; el descarte elimina B únicamente, A
+  permanece preparada, `git diff` vuelve a quedar vacío y
+  `git diff --cached` conserva A;
+- caso B extendido: quitar de preparados conserva A en el working
+  tree; un segundo descarte elimina A y servicio_git.py vuelve
+  exactamente a HEAD (`git diff -- servicio_git.py` sin salida);
+- caso C (archivo nuevo ??): estado Nuevo, Preparado No, el botón
+  de descarte deshabilitado desde el primer momento (también en
+  `Preparados`) y el archivo NO fue eliminado (`Test-Path` =
+  True): GestorGit no ejecuta borrados;
+- caso D (archivo solamente preparado): `Sin preparar` vacío y el
+  botón de descarte deshabilitado;
+- caso E (actualización visual): después del descarte el Inspector
+  se actualiza correctamente y cuando ya no quedan cambios muestra
+  "El archivo ya no tiene cambios locales pendientes.";
+- caso F (Fetch simultáneo): NO APLICABLE desde la GUI actual
+  (con el Inspector abierto no fue posible interactuar con el
+  botón Fetch de la ventana principal); se documenta como
+  limitación, no como fallo ni prueba exitosa; la defensa en
+  profundidad del código cubre el escenario.
+
+Objetivo didáctico: restaurar UN archivo para que su working tree
+vuelva a coincidir con la versión actualmente existente en el
+índice (staging):
+
+```text
+HEAD
+  ↓
+Staging        = versión preparada      (se conserva)
+  ↓
+Working tree   = versión preparada      (cambios posteriores eliminados)
+```
+
+En un archivo " M" (sin preparar) el índice coincide con HEAD, por
+lo que el archivo vuelve a la versión del índice/HEAD.
+
+Comando productivo exacto (SIEMPRE lista de argumentos, nunca
+`shell=True`):
+
+```text
+git --literal-pathspecs restore --worktree -- <ruta>
+```
+
+- sin `--source=HEAD`: restaura desde el ÍNDICE; fundamental para
+  que en un caso MM el working tree vuelva a la versión preparada
+  conservando el staging;
+- prohibidos: `--staged`, `restore .`, `checkout`, `checkout --`,
+  `reset`, `reset --hard`, `clean`, `add`, `rm`; nunca se borra
+  un archivo nuevo (??) con `os.remove`, `unlink` ni `clean`.
+
+Ventana e integración en `principal.py`:
+
+- botón `Descartar cambios sin preparar...` junto a
+  `Actualizar` / `Copiar diff` / `Cerrar` (columna 0);
+- habilitado únicamente cuando: existe repositorio, la pestaña
+  activa es `Sin preparar`, el archivo tiene cambios SIN PREPARAR
+  reales, no es nuevo (??) y no está en conflicto; al cambiar de
+  pestaña el botón queda deshabilitado
+  (`<<NotebookTabChanged>>` -> `actualizar_estado_boton_descartar`);
+- la decisión de conflicto usa el booleano estructurado
+  `detalle.en_conflicto` de `DetalleCambioLocal` (calculado en
+  `ServicioCambiosLocalesGit._calcular_en_conflicto` desde
+  `estado_indice` + `estado_trabajo`); NUNCA se compara
+  `descripcion == "Conflicto"` (texto localizado);
+- defensa en profundidad durante operación remota: si
+  `operacion_remota_en_curso` es True,
+  `descartar_cambios_sin_preparar()` se bloquea al principio
+  (mensaje controlado en la barra de estado, sin consulta ni
+  confirmación destructiva, sin llamar al servicio) y
+  `actualizar_controles_operacion_remota()` recalcula el botón
+  de forma segura (`actualizar_estado_boton_descartar` tolera
+  que el Inspector no exista); el caso F manual fue NO
+  APLICABLE por la modalidad de las ventanas, por eso la GUI
+  conserva esta defensa;
+- al pulsarlo: consulta LOCAL fresca del detalle (sin Fetch),
+  actualiza la vista, decide nuevamente si la operación sigue
+  permitida y SOLO después muestra la confirmación;
+- confirmación fuerte (`messagebox.askyesno` con icono de
+  advertencia y `parent` de la ventana del Inspector) que cita la
+  ruta literalmente, explica qué versión quedará (staging, o
+  índice/HEAD si no hay preparados) y que los cambios preparados
+  SE CONSERVAN; nunca lenguaje ambiguo;
+- el servicio revalida el estado otra vez justo antes del restore;
+- tras el éxito: se refresca la tabla principal (`cargar_cambios`)
+  y el Inspector (`actualizar_cambios_locales`), NO se cierra la
+  ventana, NO se hace Fetch y se muestra un mensaje breve de
+  éxito ("Los cambios preparados se conservaron." cuando había
+  preparados);
+- caso MM esperado: queda `Modificado y preparado`, Preparado =
+  `Sí`, `Sin preparar` vacía (0 inserciones · 0 eliminaciones ·
+  "No hay cambios sin preparar.") y `Preparados` con EL MISMO
+  diff de antes;
+- caso " M": el Inspector maneja normalmente "El archivo ya no
+  tiene cambios locales pendientes." y la fila desaparece;
+- `Descartar cambios sin preparar...` nunca se agrega a la
+  pantalla principal (solo al Inspector);
+- el texto de advertencia de la ventana ahora indica que la única
+  acción que modifica el working tree es este botón y que el
+  staging se conserva.
+
+Seguridad (servicio):
+
+- validación de ruta antes de ejecutar Git: None, vacía, solo
+  espacios, NUL (antes de construir `Path`), absoluta, `..`;
+  nombres con guión inicial, `[`, `]`, `*`, `?` son válidos
+  (seguridad mediante `--literal-pathspecs` y `--`);
+- `??` -> mensaje educativo; el descarte de un archivo sin
+  seguimiento significaría borrarlo del disco (FUERA de alcance);
+- conflictos DD/AU/UD/UA/DU/AA/UU -> bloqueo con mensaje
+  educativo (helper privado propio, sin `_es_estado_conflicto`
+  de `ServicioGit`);
+- la regla de estados se basa en `estado_indice` /
+  `estado_trabajo`, nunca en `descripcion`; el working tree debe
+  tener una diferencia real respecto del índice; funcionan
+  " M", " D", MM, MD, AM y equivalentes;
+- staging intacto: `git diff --cached -- <ruta>` antes y después
+  del descarte son IDÉNTICOS (propiedad crítica verificada por
+  pruebas);
+- 100 % local: no Fetch/Pull/Push, no se altera
+  `fetch_exitoso_en_sesion`, no se crean commits, no se modifica
+  HEAD;
+- `servicio_descarte_cambios_git.py` reutiliza el `ServicioGit`
+  existente y NO modifica `servicio_git.py`; no se creó un modelo
+  nuevo (`ResultadoComando` es suficiente).
+
 ## Pruebas
 
-El proyecto tiene actualmente **105 pruebas automatizadas**:
+El proyecto tiene actualmente **123 pruebas automatizadas**:
 
 - 49 pruebas base de operaciones locales/remotas;
 - 11 pruebas del historial;
@@ -642,7 +832,8 @@ El proyecto tiene actualmente **105 pruebas automatizadas**:
 - 6 pruebas del detalle de cambios de un commit;
 - 8 pruebas de la persistencia del último repositorio;
 - 7 pruebas de la actualización de archivos preparados;
-- 11 pruebas del inspector de cambios locales.
+- 12 pruebas del inspector de cambios locales;
+- 17 pruebas del descarte de cambios sin preparar.
 
 Archivos principales de pruebas:
 
@@ -659,12 +850,13 @@ pruebas/test_detalle_commit_git.py
 pruebas/test_configuracion.py
 pruebas/test_actualizacion_preparados.py
 pruebas/test_cambios_locales_git.py
+pruebas/test_descarte_cambios_git.py
 ```
 
 Resultado esperado:
 
 ```text
-Ran 105 tests in ...
+Ran 123 tests in ...
 OK
 ```
 
@@ -974,7 +1166,7 @@ Las 11 pruebas del historial fueron ejecutadas en aislamiento y pasaron correcta
 El conjunto anterior tenía 49 pruebas fuera del historial. A las 11 pruebas del historial se agregan 5 pruebas de exportación, 7 pruebas de configuración del remoto GitHub, 1 prueba del primer Push con remoto no vacío y 6 pruebas del detalle de cambios de un commit. El total esperado en aquella etapa era:
 
 ```text
-Ran 105 tests in ...
+Ran 79 tests in ...
 OK
 ```
 
@@ -982,8 +1174,12 @@ Nota: ese total de 79 es HISTÓRICO, anterior a la etapa de
 persistencia. El total de 94 (49 + 11 + 5 + 7 + 1 + 6 + 8 + 7
 pruebas de la actualización de archivos preparados) es también
 HISTÓRICO (commit 014e3f7). El total de 104 (94 + 10 pruebas del
-inspector) fue el confirmado en el commit c62b0a0. El total ACTUAL
-es 105 (104 + 1 prueba de regresión del error de --numstat).
+inspector) fue el confirmado en el commit c62b0a0. El total de 105
+(104 + 1 prueba de regresión del error de --numstat) fue el
+confirmado en el commit 634a295. El total ACTUAL es 123
+(105 + 17 pruebas del descarte + 1 prueba del conflicto
+estructurado), que vive
+únicamente en el working tree actual.
 
 Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritura y protección contra fórmulas CSV. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
@@ -999,9 +1195,9 @@ Las 7 pruebas de la actualización de archivos preparados validan: detección de
 
 "Actualizar preparados" también fue validado MANUALMENTE en Windows con el caso real MM (archivos preparados y vueltos a modificar). Hechos confirmados visualmente: detección de los 4 archivos MM reales (AGENTS.md, CLAUDE.md, TRABAJO_ACTUAL.md y principal.py), columna Preparado con "Sí (hay cambios nuevos)", habilitación del botón solo con selección que lo requiere, confirmación que enumeró únicamente los 4 archivos que realmente necesitaban actualización (aunque la selección fuera más amplia), archivos que mantuvieron su estado preparado sin "vuelto a modificar" después de aceptar, botón deshabilitado cuando ninguno de los seleccionados requería actualización y ningún commit creado durante la prueba.
 
-Las 11 pruebas del inspector de cambios locales validan: archivo modificado sin preparar (diff en `Sin preparar`, preparado vacío), archivo solamente preparado (a la inversa), caso MM con ambos diffs presentes y distintos, conteos de inserciones/eliminaciones mediante `--numstat`, archivo nuevo sin preparar con bandera educativa, archivo eliminado con diff visible, rechazo de ruta con NUL comprobando que no se ejecuta ningún comando (registro de llamadas vacío), ruta con globs/carácter inicial `-` tratada literalmente (`--literal-pathspecs` y `--`), argumentos seguros de todos los diffs interceptando `ejecutar_git()` con un spy (sin ejecutar Git real ni simulaciones especiales en el código de producción: `--no-color`, `--no-ext-diff`, `--no-textconv`, `--cached` solo en el preparado, sin comandos destructivos), consulta que deja el repositorio intacto (`git status` antes/después idéntico) y regresión del error de `--numstat`: cuando la llamada falla deliberadamente, `obtener_detalle()` devuelve `exitoso=False` con el mensaje controlado y NUNCA un detalle exitoso con 0 inserciones / 0 eliminaciones. Fueron ejecutadas en aislamiento y en la suite completa y pasaron correctamente.
+Las 12 pruebas del inspector de cambios locales validan: archivo modificado sin preparar (diff en `Sin preparar`, preparado vacío), archivo solamente preparado (a la inversa), caso MM con ambos diffs presentes y distintos, conteos de inserciones/eliminaciones mediante `--numstat`, archivo nuevo sin preparar con bandera educativa, archivo eliminado con diff visible, rechazo de ruta con NUL comprobando que no se ejecuta ningún comando (registro de llamadas vacío), ruta con globs/carácter inicial `-` tratada literalmente (`--literal-pathspecs` y `--`), argumentos seguros de todos los diffs interceptando `ejecutar_git()` con un spy (sin ejecutar Git real ni simulaciones especiales en el código de producción: `--no-color`, `--no-ext-diff`, `--no-textconv`, `--cached` solo en el preparado, sin comandos destructivos), consulta que deja el repositorio intacto (`git status` antes/después idéntico), regresión del error de `--numstat`: cuando la llamada falla deliberadamente, `obtener_detalle()` devuelve `exitoso=False` con el mensaje controlado y NUNCA un detalle exitoso con 0 inserciones / 0 eliminaciones; y conflicto expuesto de forma estructurada: con códigos UU y una `descripcion` que NO contiene la palabra "Conflicto", `detalle.en_conflicto` es True (el booleano procede de los códigos de git status, no del texto). Fueron ejecutadas en aislamiento y en la suite completa y pasaron correctamente.
 
-Estado de la etapa inspector de cambios locales: ETAPA VALIDADA MANUALMENTE (prueba manual en Windows EXITOSA, confirmada por el usuario); el inspector forma parte de HEAD desde el commit c62b0a0, con Push confirmado (origin/master apunta a c62b0a0); los cambios de esta tarea de cierre documental y corrección de --numstat viven únicamente en el working tree actual.
+Estado de la etapa inspector de cambios locales: ETAPA VALIDADA MANUALMENTE (prueba manual en Windows EXITOSA, confirmada por el usuario); el inspector forma parte de HEAD desde el commit c62b0a0 (referencia HISTÓRICA) y la corrección del error de --numstat forma parte del commit 634a295 (con Push confirmado; al iniciar la etapa del descarte master == origin/master == 634a295). Los cambios que viven únicamente en el working tree actual son los de la etapa "Descartar cambios sin preparar" y su cierre técnico (booleano `en_conflicto` estructurado, defensa durante operación remota y prueba del conflicto estructurado).
 
 ## Estado consolidado de la etapa actual
 
@@ -1020,8 +1216,9 @@ Primer Push solo con remoto vacío de ramas
 Detalle de cambios de un commit (solo lectura)
 Persistencia del último repositorio (config.json)
 Actualización de archivos preparados
-Inspector de cambios locales (solo lectura)
-105 pruebas OK
+Inspector de cambios locales (solo lectura + descarte de
+cambios sin preparar)
+123 pruebas OK
 ```
 
 El historial se ordena explícitamente por fecha de commit descendente
@@ -1032,9 +1229,7 @@ CSV y TXT exportan exactamente los commits visibles y conservan ese mismo orden.
 
 ## Funcionalidades posteriores
 
-- eventualmente selector/creación segura de ramas;
-- posible etapa futura (NO implementada todavía):
-  "Descartar cambios sin preparar" desde el inspector.
+- eventualmente selector/creación segura de ramas.
 
 ## Validación habitual
 
@@ -1059,26 +1254,29 @@ python -m py_compile .\pruebas\test_detalle_commit_git.py
 python -m py_compile .\pruebas\test_actualizacion_preparados.py
 python -m py_compile .\modelos_cambios_locales.py
 python -m py_compile .\servicio_cambios_locales_git.py
+python -m py_compile .\servicio_descarte_cambios_git.py
 python -m py_compile .\pruebas\test_cambios_locales_git.py
+python -m py_compile .\pruebas\test_descarte_cambios_git.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```
 
-Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio, actualización de archivos preparados e inspector de cambios locales, esperar:
+Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio, actualización de archivos preparados, inspector de cambios locales y descarte de cambios sin preparar, esperar:
 
 ```text
-Ran 105 tests in ...
+Ran 123 tests in ...
 OK
 ```
 
-Si el total no es 105, revisar que estén presentes `pruebas/test_historial_git.py`,
+Si el total no es 123, revisar que estén presentes `pruebas/test_historial_git.py`,
 `pruebas/test_exportacion_historial.py`,
 `pruebas/test_configuracion_remoto_git.py`,
 `pruebas/test_push_git.py`,
 `pruebas/test_detalle_commit_git.py`,
 `pruebas/test_configuracion.py`,
-`pruebas/test_actualizacion_preparados.py` y
-`pruebas/test_cambios_locales_git.py`.
+`pruebas/test_actualizacion_preparados.py`,
+`pruebas/test_cambios_locales_git.py` y
+`pruebas/test_descarte_cambios_git.py`.
 
 ## Notas del entorno
 
@@ -1117,7 +1315,7 @@ python -m unittest discover -s .\pruebas -v
 ```
 
 3. confirmar que cualquier cambio pendiente es conocido y esperado;
-4. confirmar que las 105 pruebas pasan;
+4. confirmar que las 123 pruebas pasan;
 5. confirmar que tooltips/estética, historial, filtros, orden, exportación,
    configuración inicial de GitHub, detalle de cambios de un commit,
    persistencia del último repositorio, actualización de archivos
@@ -1150,7 +1348,7 @@ Reglas obligatorias:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 105 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 123 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check`;
    - `git diff --stat`;

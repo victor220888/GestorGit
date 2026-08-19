@@ -32,6 +32,12 @@ class DetalleCambioLocal:
     # preparado: Git no tiene una versión anterior para comparar.
     nuevo_sin_preparar: bool = False
 
+    # True cuando el par de códigos de git status corresponde a
+    # un conflicto de merge (DD, AU, UD, UA, DU, AA, UU).
+    # Se calcula desde los códigos estructurados, nunca desde
+    # el texto localizado de descripcion.
+    en_conflicto: bool = False
+
     hash_commit: str = ""
     mensaje_commit: str = ""
 
