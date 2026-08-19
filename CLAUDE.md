@@ -130,6 +130,7 @@ Interfaz Tkinter con:
 - visor de cambios de un commit (solo lectura);
 - inspector de cambios locales (inspección + descarte de cambios
   sin preparar);
+- selector y creación segura de ramas locales;
 - `threading` + `queue.Queue` para operaciones de red.
 
 ### `ayuda_interfaz.py`
@@ -221,6 +222,33 @@ UN archivo: `git --literal-pathspecs restore --worktree -- <ruta>`.
 - devuelve `ResultadoComando`; no crea commits, no modifica HEAD,
   no toca Fetch/Pull/Push;
 - `servicio_git.py` NO se modifica.
+
+### `modelos_ramas.py`
+
+`RamaLocal(nombre, actual)` y `ResultadoRamas(exitoso, ramas,
+error, mensaje)` (con `field(default_factory=list)` en `ramas`).
+
+### `servicio_ramas_git.py`
+
+`ServicioRamasGit` trabaja SOLO con ramas locales:
+
+- listar: `git for-each-ref --format=%(refname:short) refs/heads/`;
+  orden: rama actual primero, resto alfabético;
+- rama actual: `git symbolic-ref --quiet --short HEAD` (consulta
+  estructurada; en detached HEAD falla y devuelve cadena vacía);
+- validar nombre: reglas propias + `git check-ref-format
+  refs/heads/<nombre>`;
+- cambiar: `git switch --no-guess <nombre>` (existencia local
+  comprobada antes con `rev-parse --verify --quiet
+  refs/heads/<nombre>`);
+- crear: `git switch -c <nombre>` (nace del HEAD actual, sin
+  start-point); queda LOCAL y sin upstream;
+- precondiciones revalidadas antes de cada operación (repositorio
+  válido, commits, HEAD no separado, sin operación en curso, sin
+  index.lock, working tree/staging/nuevos TOTALMENTE limpios con
+  `exitoso=True` en `obtener_cambios`, sin conflictos);
+- `servicio_git.py` NO se modifica; reutiliza la instancia
+  existente y no duplica `subprocess.run`.
 
 ## Estado funcional validado
 
@@ -820,9 +848,214 @@ Seguridad (servicio):
   existente y NO modifica `servicio_git.py`; no se creó un modelo
   nuevo (`ResultadoComando` es suficiente).
 
+## Selector y creación segura de ramas locales
+
+Estado: ETAPA VALIDADA - PRUEBA MANUAL EN WINDOWS EXITOSA
+(confirmada por el usuario).
+
+Prueba ejecutada en repositorio temporal
+`C:\Users\victo\AppData\Local\Temp\GestorGit-Prueba-Ramas-20260819-151113`
+con rama `prueba-manual-ramas-victor`: creación desde master OK,
+cambio a nueva rama OK, cambio a master BLOQUEADO correctamente
+con `archivo.txt` modificado, limpieza solamente del cambio temporal,
+regreso posterior a master OK, `git branch --show-current` -> master,
+`git status --short` -> sin salida, ambas ramas apuntaban a
+`f9f40c4`, `git remote -v` -> sin salida, rama NO publicada;
+eliminación de ramas permanece fuera del alcance V1.
+
+V1: SOLO ramas locales. Sin borrar, renombrar, publicar, upstream
+automático, Merge, Rebase, Cherry-pick, Checkout, Reset, Force
+Push ni Fetch/Pull/Push automáticos. Una rama nueva queda LOCAL
+(no se publica y no tiene upstream) hasta la etapa posterior
+"Publicar rama".
+
+Comandos productivos exactos (siempre listas de argumentos vía
+`ejecutar_git`, nunca `shell=True`):
+
+```text
+git for-each-ref --format=%(refname:short) refs/heads/
+git check-ref-format refs/heads/<nombre>
+git switch --no-guess <rama>
+git switch -c <rama>      (nace del HEAD actual, sin start-point)
+```
+
+Arquitectura:
+
+- `modelos_ramas.py`: `RamaLocal(nombre, actual)` y
+  `ResultadoRamas(exitoso, ramas, error, mensaje)` con
+  `field(default_factory=list)` en `ramas`;
+- `servicio_ramas_git.py` - `ServicioRamasGit(servicio_git)`
+  reutiliza la instancia existente: toda la Git pasa por su
+  `ejecutar_git`; NO se modifica `servicio_git.py`, NO se duplica
+  `subprocess.run`, 100 % local (nunca Fetch/Pull/Push);
+- `principal.py`: botón `Ramas...` y ventana `Ramas locales -
+  Gestor Git`.
+
+Consultas:
+
+- `obtener_ramas_locales(ruta)` valida el repositorio y lista
+  SOLO `refs/heads/` con `for-each-ref`; la rama actual se
+  determina de forma estructurada con
+  `git symbolic-ref --quiet --short HEAD` (si HEAD está separado,
+  la consulta falla y se obtiene la cadena vacía); orden: rama
+  actual primero, resto alfabético; en detached HEAD listar
+  sigue válido (ninguna rama marcada como actual, `mensaje` lo
+  avisa) pero cambiar y crear quedan bloqueados.
+- distinción estructurada explícita: un repositorio SIN COMMITS
+  NO es un HEAD separado. `ResultadoRamas` expone
+  `tiene_commits: bool = True` y `head_separado: bool = False`;
+  `obtener_ramas_locales()` marca `head_separado=True`
+  únicamente cuando hay commits y `symbolic-ref` falla; un
+  repositorio sin commits devuelve `tiene_commits=False` y
+  `head_separado=False` (con mensaje educativo "Repositorio sin
+  commits todavía"). Nunca se infiere detached por el solo hecho
+  de que la lista de ramas quede vacía o sin rama marcada como
+  actual: ambos estados pueden impedir operaciones, pero por
+  motivos distintos.
+- la diferencia entre ramas locales (`refs/heads/...`) y remotas
+  (`refs/remotes/...`) es explícita: la V1 muestra SOLO locales.
+
+Validación de nombres (`_validar_nombre_rama`):
+
+- reglas propias ANTES de cualquier comando Git: None, no-texto,
+  vacío, solo espacios, espacios iniciales/finales, NUL, inicio
+  `-`, `HEAD`, `@`, sintaxis `@{...}` (p. ej. `@{-1}`);
+- después `git check-ref-format refs/heads/<nombre>` (un solo
+  argumento; nunca se corrige el nombre silenciosamente, nunca se
+  convierten minúsculas ni se quitan espacios);
+- válidos ejemplares: `feature/login`, `fix/error-oracle`,
+  `prueba_2026`; inválidos: `""`, `" rama"`, `"rama "`,
+  `"-rama"`, `"HEAD"`, `"rama..mala"`, `"rama.lock"`,
+  `"rama@{1}"`.
+
+Precondiciones conservadoras (`_validar_precondiciones`),
+revalidadas SIEMPRE antes de cambiar o crear (el servicio decide,
+aunque la GUI haya confirmado):
+
+- repositorio válido (`analizar_repositorio.es_repositorio`);
+- existe al menos un commit (`tiene_commits`);
+- HEAD no separado (`symbolic-ref` propia del servicio, no se
+  depende de cómo `analizar_repositorio` represente el detached);
+- sin operación Git en curso (`detectar_operacion_en_curso`:
+  MERGE_HEAD/CHERRY_PICK_HEAD/REVERT_HEAD/rebase/sequencer);
+- sin `index.lock` (chequeo propio: `git rev-parse --git-dir` y
+  `Path(index.lock).exists()`; NUNCA se borra; si no puede
+  verificarse, bloquea);
+- working tree, staging y archivos nuevos (`??`) TOTALMENTE
+  limpios: `obtener_cambios()` debe devolver `exitoso=True` y sin
+  cambios; un error de consulta BLOQUEA (nunca se interpreta un
+  error como "repositorio limpio");
+- sin conflictos: helper privado propio `_calcular_en_conflicto`
+  (DD/AU/UD/UA/DU/AA/UU), nunca texto localizado; mensaje
+  educativo con conteo de archivos;
+- SEGUNDA revalidación completa (`_validar_precondiciones`
+  ejecutada OTRA vez) inmediatamente antes del `git switch`
+  productivo, en `cambiar_rama()` y en `crear_rama()`: cualquier
+  cambio local creado, modificado o preparado por otra herramienta
+  entre la primera validación y el switch BLOQUEA la operación
+  (defensa en profundidad, reduce la ventana TOCTOU; sin sleeps ni
+  locks artificiales);
+- cambiar: la rama existe LOCALMENTE
+  (`rev-parse --verify --quiet refs/heads/<nombre>`, jamás
+  adivinación) y no es la actual; crear: la rama NO existe aún;
+- nunca se descartan cambios para permitir el switch.
+
+Interfaz:
+
+- botón `Ramas...` en "Información local" (columna 7, junto a
+  `Historial...`); se habilita con repositorio válido y se
+  deshabilita durante operaciones remotas
+  (`actualizar_controles_operacion_remota`);
+- ventana única `Ramas locales - Gestor Git` (se destruye y
+  recrea al abrir de nuevo; Toplevel con `transient`, NO modal —
+  sin `grab_set` ni `wait_window` —; protocolo
+  `WM_DELETE_WINDOW`; se cierra al cambiar de repositorio y en
+  `limpiar_repositorio`);
+- contenido: texto educativo breve, "Rama actual", lista de ramas
+  locales (la actual marcada con " (actual)"), entrada "Nueva
+  rama", botones `Cambiar a seleccionada`, `Crear rama`,
+  `Actualizar`, `Cerrar`; sin Eliminar/Renombrar/Merge/Rebase/
+  Publicar/Push;
+- `Cambiar a seleccionada` y `Crear rama` se recalculan con la
+  selección, el texto de la entrada y `operacion_remota_en_curso`
+  (`actualizar_estado_botones_ventana_ramas`, segura si la ventana
+  no existe: si empieza Fetch/Pull/Push con la ventana abierta,
+  los botones se deshabilitan también dentro de la ventana);
+- confirmaciones explícitas (padre de la ventana) que NO afirman
+  limpieza absoluta: "GestorGit realizará el cambio únicamente si
+  el repositorio continúa limpio; el servicio volverá a
+  comprobarlo antes de ejecutar git switch"; el cambio cita la
+  rama actual y la nueva, la creación cita el nombre y que la
+  rama NO se publicará ni tendrá upstream;
+- tras cambiar o crear: se cierran historial, detalle de commit e
+  Inspector (ventanas dependientes de la rama anterior), se
+  recarga el estado LOCAL con `cargar_repositorio(...,
+  reiniciar_fetch=True)` (actualiza etiqueta Rama, tabla de
+  archivos y sincronización local; invalida
+  `fetch_exitoso_en_sesion`, así Pull/Push quedan deshabilitados
+  hasta un Fetch manual exitoso; Fetch sigue disponible si hay
+  remoto) y la lista de la ventana se refresca; nunca Fetch
+  automático;
+- mensajes: tras cambiar, la barra de estado muestra
+  "Ahora se encuentra en la rama local '<rama>'."; tras crear, un
+  `showinfo` y la barra muestran "La rama se creó solamente en el
+  repositorio local. Todavía no se publicó en el remoto.".
+
+Rama nueva y Push:
+
+- la lógica del primer Push NO se modifica: la protección actual
+  queda intacta; una rama nueva (sin upstream) en un remoto con
+  ramas conocidas bloquea el Push explicando el motivo;
+- la publicación explícita de una rama nueva será la etapa
+  posterior "Publicar rama" con sus propias confirmaciones.
+
+Pruebas (`pruebas/test_ramas_git.py`, 28 pruebas):
+
+- listado con la actual identificada y orden (actual primero);
+- cambio a rama existente y contenido del working tree tras el
+  switch;
+- creación desde HEAD (queda situado, el commit de origen no
+  cambia);
+- rechazos: rama ya existente, rama local inexistente, M sin
+  preparar, staged, `??`, repo sin commits, HEAD separado
+  (listar OK, cambiar/crear bloqueados), index.lock,
+  MERGE_HEAD, repo no válido;
+- regresión: un repositorio SIN COMMITS se reporta con
+  `tiene_commits=False` y `head_separado=False` (nunca se
+  confunde con detached HEAD), mientras que un verdadero
+  `checkout --detach` sí queda identificado con
+  `head_separado=True` (ambas pruebas verifican los campos
+  estructurados directamente);
+- validación de nombres (10 inválidos con subTest + 3 válidos);
+- NUL rechazado SIN ejecutar ningún `switch` (spy);
+- argumentos exactos con spy
+  (`["switch", "--no-guess", nombre]`,
+  `["switch", "-c", nombre]`) y ausencia total de
+  checkout/reset/restore/clean/merge/rebase/fetch/pull/push/
+  branch/-D/--force;
+- error de `obtener_cambios` bloquea (nunca se interpreta como
+  limpio); error de `switch` expuesto;
+- TOCTOU (spy con `secuencia_cambios`): el repositorio estaba
+  limpio en la PRIMERA validación y aparece un cambio en la
+  SEGUNDA, inmediatamente antes del productivo; tanto
+  `cambiar_rama()` como `crear_rama()` devuelven
+  `exitoso=False` con "no está limpio", `obtener_cambios()` se
+  llamó al menos dos veces y NINGÚN `switch` llegó a ejecutarse;
+- crear/cambiar NO modifica ningún remoto (remoto bare local:
+  `git remote` intacto y `refs/remotes/origin/` vacío).
+
+Nota del spy: `ServicioGitEspiaRamas` registra las llamadas y
+responde `rev-parse --git-dir` con `".git"`, `symbolic-ref` con la
+rama configurada y `rev-parse refs/heads/<nombre>` según un
+conjunto de refs existentes. Admite además `secuencia_cambios`:
+cada llamada a `obtener_cambios()` consume la siguiente tupla
+`(exitoso, cambios)` de la secuencia (se usa el comportamiento fijo
+cuando se agota), lo que permite simular que el repositorio se
+ensucia ENTRE dos validaciones sin tocar el código productivo.
+
 ## Pruebas
 
-El proyecto tiene actualmente **123 pruebas automatizadas**:
+El proyecto tiene actualmente **151 pruebas automatizadas**:
 
 - 49 pruebas base de operaciones locales/remotas;
 - 11 pruebas del historial;
@@ -833,7 +1066,8 @@ El proyecto tiene actualmente **123 pruebas automatizadas**:
 - 8 pruebas de la persistencia del último repositorio;
 - 7 pruebas de la actualización de archivos preparados;
 - 12 pruebas del inspector de cambios locales;
-- 17 pruebas del descarte de cambios sin preparar.
+- 17 pruebas del descarte de cambios sin preparar;
+- 28 pruebas de las ramas locales (123 anteriores + 28 nuevas).
 
 Archivos principales de pruebas:
 
@@ -851,12 +1085,13 @@ pruebas/test_configuracion.py
 pruebas/test_actualizacion_preparados.py
 pruebas/test_cambios_locales_git.py
 pruebas/test_descarte_cambios_git.py
+pruebas/test_ramas_git.py
 ```
 
 Resultado esperado:
 
 ```text
-Ran 123 tests in ...
+Ran 151 tests in ...
 OK
 ```
 
@@ -1176,10 +1411,13 @@ pruebas de la actualización de archivos preparados) es también
 HISTÓRICO (commit 014e3f7). El total de 104 (94 + 10 pruebas del
 inspector) fue el confirmado en el commit c62b0a0. El total de 105
 (104 + 1 prueba de regresión del error de --numstat) fue el
-confirmado en el commit 634a295. El total ACTUAL es 123
+confirmado en el commit 634a295. El total de 123
 (105 + 17 pruebas del descarte + 1 prueba del conflicto
-estructurado), que vive
-únicamente en el working tree actual.
+estructurado) fue el confirmado en el commit 3309be7. El total
+ACTUAL es 151 (123 + 28 pruebas de las ramas locales) y forma parte
+de la etapa Ramas Locales V1, ya integrada en el commit local HEAD
+"Agrega selector seguro de ramas locales" (consultar git log -1
+--oneline para conocer el hash vigente). El commit sigue SIN PUSH.
 
 Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritura y protección contra fórmulas CSV. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
@@ -1197,7 +1435,7 @@ Las 7 pruebas de la actualización de archivos preparados validan: detección de
 
 Las 12 pruebas del inspector de cambios locales validan: archivo modificado sin preparar (diff en `Sin preparar`, preparado vacío), archivo solamente preparado (a la inversa), caso MM con ambos diffs presentes y distintos, conteos de inserciones/eliminaciones mediante `--numstat`, archivo nuevo sin preparar con bandera educativa, archivo eliminado con diff visible, rechazo de ruta con NUL comprobando que no se ejecuta ningún comando (registro de llamadas vacío), ruta con globs/carácter inicial `-` tratada literalmente (`--literal-pathspecs` y `--`), argumentos seguros de todos los diffs interceptando `ejecutar_git()` con un spy (sin ejecutar Git real ni simulaciones especiales en el código de producción: `--no-color`, `--no-ext-diff`, `--no-textconv`, `--cached` solo en el preparado, sin comandos destructivos), consulta que deja el repositorio intacto (`git status` antes/después idéntico), regresión del error de `--numstat`: cuando la llamada falla deliberadamente, `obtener_detalle()` devuelve `exitoso=False` con el mensaje controlado y NUNCA un detalle exitoso con 0 inserciones / 0 eliminaciones; y conflicto expuesto de forma estructurada: con códigos UU y una `descripcion` que NO contiene la palabra "Conflicto", `detalle.en_conflicto` es True (el booleano procede de los códigos de git status, no del texto). Fueron ejecutadas en aislamiento y en la suite completa y pasaron correctamente.
 
-Estado de la etapa inspector de cambios locales: ETAPA VALIDADA MANUALMENTE (prueba manual en Windows EXITOSA, confirmada por el usuario); el inspector forma parte de HEAD desde el commit c62b0a0 (referencia HISTÓRICA) y la corrección del error de --numstat forma parte del commit 634a295 (con Push confirmado; al iniciar la etapa del descarte master == origin/master == 634a295). Los cambios que viven únicamente en el working tree actual son los de la etapa "Descartar cambios sin preparar" y su cierre técnico (booleano `en_conflicto` estructurado, defensa durante operación remota y prueba del conflicto estructurado).
+Estado de la etapa inspector de cambios locales: ETAPA VALIDADA MANUALMENTE (prueba manual en Windows EXITOSA, confirmada por el usuario); el inspector forma parte de HEAD desde el commit c62b0a0 (referencia HISTÓRICA) y la corrección del error de --numstat forma parte del commit 634a295 (con Push confirmado; al iniciar la etapa del descarte master == origin/master == 634a295). La etapa "Ramas locales" V1 (con sus microcorrecciones: distinción sin commits / HEAD separado y segunda revalidación TOCTOU; total ACTUAL de 151 pruebas) quedó incorporada al commit local HEAD "Agrega selector seguro de ramas locales" (consultar git log -1 --oneline para el hash vigente; SIN PUSH); la etapa del descarte y su cierre técnico ya viven en el commit 3309be7.
 
 ## Estado consolidado de la etapa actual
 
@@ -1218,7 +1456,8 @@ Persistencia del último repositorio (config.json)
 Actualización de archivos preparados
 Inspector de cambios locales (solo lectura + descarte de
 cambios sin preparar)
-123 pruebas OK
+Selector y creación segura de ramas LOCALES
+151 pruebas OK
 ```
 
 El historial se ordena explícitamente por fecha de commit descendente
@@ -1229,7 +1468,13 @@ CSV y TXT exportan exactamente los commits visibles y conservan ese mismo orden.
 
 ## Funcionalidades posteriores
 
-- eventualmente selector/creación segura de ramas.
+SIGUIENTE ETAPA INMEDIATA: Tooltips Didácticos V1 (NO
+iniciada; orientación: interfaz -> comando Git real ->
+significado -> consecuencia -> riesgo).
+
+La funcionalidad "Publicar rama local" NO se cancela: queda
+documentada como etapa FUTURA separada, fuera del alcance
+actual, con sus propias confirmaciones de seguridad.
 
 ## Validación habitual
 
@@ -1261,22 +1506,23 @@ python -m unittest discover -s .\pruebas -v
 git status
 ```
 
-Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio, actualización de archivos preparados, inspector de cambios locales y descarte de cambios sin preparar, esperar:
+Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio, actualización de archivos preparados, inspector de cambios locales, descarte de cambios sin preparar y ramas locales, esperar:
 
 ```text
-Ran 123 tests in ...
+Ran 151 tests in ...
 OK
 ```
 
-Si el total no es 123, revisar que estén presentes `pruebas/test_historial_git.py`,
+Si el total no es 151, revisar que estén presentes `pruebas/test_historial_git.py`,
 `pruebas/test_exportacion_historial.py`,
 `pruebas/test_configuracion_remoto_git.py`,
 `pruebas/test_push_git.py`,
 `pruebas/test_detalle_commit_git.py`,
 `pruebas/test_configuracion.py`,
 `pruebas/test_actualizacion_preparados.py`,
-`pruebas/test_cambios_locales_git.py` y
-`pruebas/test_descarte_cambios_git.py`.
+`pruebas/test_cambios_locales_git.py`,
+`pruebas/test_descarte_cambios_git.py` y
+`pruebas/test_ramas_git.py`.
 
 ## Notas del entorno
 
@@ -1315,12 +1561,16 @@ python -m unittest discover -s .\pruebas -v
 ```
 
 3. confirmar que cualquier cambio pendiente es conocido y esperado;
-4. confirmar que las 123 pruebas pasan;
+4. confirmar que las 151 pruebas pasan;
 5. confirmar que tooltips/estética, historial, filtros, orden, exportación,
    configuración inicial de GitHub, detalle de cambios de un commit,
    persistencia del último repositorio, actualización de archivos
-   preparados e inspector de cambios locales siguen presentes;
-6. si la etapa actual está estable, continuar con el selector/creación segura de ramas;
+   preparados, inspector de cambios locales, descarte de cambios sin
+   preparar y selector de ramas locales siguen presentes;
+6. si la etapa actual está estable, la SIGUIENTE ETAPA INMEDIATA
+   es Tooltips Didácticos V1 (interfaz -> comando Git real ->
+   significado -> consecuencia -> riesgo); "Publicar rama" queda
+   como etapa FUTURA separada (con sus propias confirmaciones);
 7. mantener todas las reglas de seguridad y coordinación entre agentes.
 
 ## Coordinación entre agentes
@@ -1348,7 +1598,7 @@ Reglas obligatorias:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 123 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 151 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check`;
    - `git diff --stat`;

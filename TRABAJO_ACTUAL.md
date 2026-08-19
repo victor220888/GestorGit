@@ -10,15 +10,15 @@ No sustituye AGENTS.md ni CLAUDE.md.
 
 ## Estado del repositorio
 
-HEAD observado al iniciar la etapa del descarte:
+HEAD observado al iniciar la etapa de las ramas:
 
-634a295 Corrige manejo de errores del inspector
+3309be7 Agrega descarte seguro de cambios sin preparar
 
 El HEAD actual debe consultarse siempre con:
 
 git log -1 --oneline
 
-En el momento de iniciar la etapa: working tree limpio,
+Al iniciar la etapa de las ramas: working tree limpio,
 master sincronizado con origin/master.
 
 Históricos:
@@ -32,14 +32,15 @@ Históricos:
 
 Estado actual:
 
+- etapa ramas locales: ETAPA VALIDADA - PRUEBA MANUAL EN
+  WINDOWS EXITOSA (confirmada por el usuario);
 - etapa descarte de cambios sin preparar: ETAPA VALIDADA -
   PRUEBA MANUAL EXITOSA en Windows (confirmada por el usuario);
 - inspector de cambios locales: ETAPA VALIDADA MANUALMENTE
   (prueba manual EXITOSA confirmada por el usuario);
 - corrección del error silencioso de git diff --numstat:
   commiteada en 634a295;
-- 123 pruebas OK (105 + 17 del descarte + 1 del conflicto
-  estructurado);
+- 151 pruebas OK (123 + 28 de las ramas locales);
 - config.json ignorado y no versionado;
 - .opencode/ sigue sin versionar y NO debe incluirse
   automáticamente.
@@ -70,7 +71,30 @@ Estado actual:
 
 ## Trabajo actual
 
-Estado: TAREA TERMINADA - SIN COMMIT
+Estado: ETAPA VALIDADA - PRUEBA AUTOMATIZADA OK
+(151 tests) - PRUEBA MANUAL EN WINDOWS EXITOSA -
+COMMITEADA LOCALMENTE EN HEAD "Agrega selector seguro
+de ramas locales" - SIN PUSH
+(hash vigente: consultar git log -1 --oneline)
+
+Agente: OpenCode
+Tarea: Selector y creación segura de ramas locales (V1)
+HEAD observado al iniciar la etapa: 3309be7 Agrega descarte
+seguro de cambios sin preparar; working tree limpio;
+master == origin/master; índice limpio confirmado con
+git diff --cached --name-only sin salida.
+Etapa terminada sin tocar: servicio_git.py, servicio_remoto_git.py,
+servicio_descarte_cambios_git.py, modelos_cambios_locales.py,
+servicio_cambios_locales_git.py.
+NO se ejecutó sobre el repositorio real:
+git add / git commit / git fetch / git pull / git push /
+git reset / git restore / git checkout / git clean.
+Los tests sí usaron Git (incluido git checkout --detach e init
+--bare) dentro de carpetas temporales.
+
+Etapa anterior del descarte (commiteada en 3309be7):
+
+Estado (histórico): TAREA TERMINADA - COMMITEADA en 3309be7
 
 Agente: OpenCode
 Tarea: Cierre técnico "Descartar cambios sin preparar" -
@@ -237,6 +261,161 @@ procedimiento y resultados) quedó registrada en la sección
 
 Tarea NUEVA: ninguna pendiente dentro de esta etapa.
 
+## ETAPA RAMAS LOCALES (selector y creación segura, V1)
+
+Trabajo realizado:
+
+- NUEVO modelos_ramas.py: RamaLocal(nombre, actual) y
+  ResultadoRamas(exitoso, ramas, error, mensaje) con
+  field(default_factory=list) en ramas;
+- NUEVO servicio_ramas_git.py (ServicioRamasGit reutiliza la
+  instancia existente de ServicioGit/ServicioRemotoGit):
+  - listar SOLO refs locales:
+    git for-each-ref --format=%(refname:short) refs/heads/
+    (rama actual primero, resto alfabético);
+  - rama actual consulta propia y estructurada:
+    git symbolic-ref --quiet --short HEAD (vacía en detached;
+    listar sigue válido, cambiar/crear bloquean);
+  - validar nombre: reglas propias (None, vacío, solo espacios,
+    espacios iniciales/finales, NUL, inicio -, HEAD, @, @{...})
+    + git check-ref-format refs/heads/<nombre>; sin corregir
+    silenciosamente;
+  - cambiar: git switch --no-guess <rama> (existencia local
+    previa con rev-parse --verify --quiet refs/heads/<rama>);
+  - crear: git switch -c <rama> (desde HEAD actual, sin
+    start-point); mensaje: "La rama se creó solamente en el
+    repositorio local. Todavía no se publicó en el remoto.";
+  - precondiciones revalidadas siempre: repo válido, tiene
+    commits, HEAD no separado, sin operación Git en curso
+    (detectar_operacion_en_curso), sin index.lock (chequeo
+    propio con rev-parse --git-dir; nunca se borra), working
+    tree/staging/nuevos ?? TOTALMENTE limpios (obtener_cambios
+    con exitoso=True; un error de consulta BLOQUEA y nunca se
+    interpreta como limpio), sin conflictos (helper propio
+    DD/AU/UD/UA/DU/AA/UU); nunca se descartan cambios;
+  - sin changes en servicio_git.py ni subprocess duplicado;
+- NUEVO pruebas/test_ramas_git.py: 25 pruebas OK (Git real en
+  TemporaryDirectory + spy ServicioGitEspiaRamas): listado con
+  actual, varias ramas, switch y working tree, creación desde
+  HEAD sin mover el commit origen, rechazos (ya existe, no
+  existe, M, staged, ??, sin commits, detached, index.lock,
+  MERGE_HEAD, repo no válido), nombres inválidos (10) y válidos
+  (3), NUL sin ejecutar switch, argumentos exactos
+  (["switch", "--no-guess", x] y ["switch", "-c", x]), verbos
+  prohibidos ausentes, error de obtener_cambios bloquea, error
+  de switch expuesto, remotos intactos con bare local;
+- principal.py: import + self.servicio_ramas (reutiliza
+  self.servicio_git); botón "Ramas..." en Información local
+  (columna 7, junto a Historial...; se deshabilita durante
+  operaciones remotas y sin repositorio); ventana única
+  "Ramas locales - Gestor Git" (transient, se destruye y recrea,
+  se cierra al cambiar de repositorio y en limpiar_repositorio):
+  texto educativo, rama actual, tabla de ramas con "(actual)",
+  entrada "Nueva rama", botones Cambiar a seleccionada / Crear
+  rama / Actualizar / Cerrar; sin Eliminar/Renombrar/Merge/
+  Rebase/Publicar/Push; guard en confirmaciones si
+  operacion_remota_en_curso (mensaje controlado); durante
+  Fetch/Pull/Push los botones de la ventana se deshabilitan
+  (actualizar_estado_botones_ventana_ramas, segura sin ventana);
+  confirmaciones que NO afirman limpieza absoluta ("...continúa
+  limpio; el servicio volverá a comprobarlo antes de ejecutar
+  git switch"); tras cambiar o crear: cerrar historial, detalle
+  e Inspector, cargar_repositorio(reiniciar_fetch=True) y
+  refresco de la lista; nunca Fetch automático;
+- Push intacto: la rama nueva queda LOCAL sin upstream; la
+  protección del primer Push no cambia; "Publicar rama" será una
+  etapa posterior con sus propias confirmaciones.
+
+MICROCORRECCIÓN ANTES DE LA PRUEBA MANUAL (histórico, aplicada):
+
+- ResultadoRamas nuevo campo estructurado: tiene_commits
+  (default True) y head_separado (default False);
+- obtener_ramas_locales() distingue: con commits y symbolic-ref
+  fallida -> head_separado=True (mensaje detached); sin commits
+  -> tiene_commits=False y head_separado=False (mensaje
+  "Repositorio sin commits todavía..."); nunca se infiere
+  detached de una lista de ramas vacía o sin rama actual;
+- GUI (cargar_lista_ramas): "Repositorio sin commits todavía"
+  frente a "HEAD separado (no se encuentra en ninguna rama)";
+  fallback "No determinada";
+- NUEVA prueba test_repositorio_sin_commits_no_se_marca_como_
+  head_separado (resultado exitoso, ramas vacías,
+  tiene_commits False, head_separado False); la prueba del
+  verdadero checkout --detach ahora también comprueba
+  tiene_commits True y head_separado True;
+- sin cambios en servicio_git.py; sin Fetch; sin commits
+  automáticos; prueba manual sigue PENDIENTE.
+
+CIERRE TÉCNICO ANTES DE LA PRUEBA MANUAL (tarea actual):
+
+- SEGUNDA revalidación de precondiciones: cambiar_rama() y
+  crear_rama() conservan la primera _validar_precondiciones()
+  y ejecutan OTRA _validar_precondiciones(ruta_repositorio)
+  INMEDIATAMENTE antes del ejecutar_git() productivo que
+  contiene "switch" (tras todas las demás comprobaciones de
+  existencia/rama actual); si falla, devuelven
+  ResultadoRamas(exitoso=False, error=...) sin ejecutar el
+  switch; sin sleeps ni locks artificiales (defensa TOCTOU);
+- spy: ServicioGitEspiaRamas acepta secuencia_cambios (tuplas
+  (exitoso, cambios) consumidas una por llamada a
+  obtener_cambios) y cuenta llamadas_obtener_cambios; el spy
+  se adaptó al servicio, no al revés;
+- DOS NUEVAS pruebas: test_cambiar_rama_revalida_limpieza_
+  justo_antes_del_switch y test_crear_rama_revalida_limpieza_
+  justo_antes_del_switch: primera consulta limpia, segunda con
+  cambio (tracked M en una, ?? en la otra), exitoso=False con
+  "no está limpio", obtener_cambios llamado >= 2 veces y
+  ningún switch ejecutado;
+- principal.py: docstring de crear_ventana_ramas corregido
+  ("Crea la ventana de ramas locales."); la ventana es NO
+  MODAL (Toplevel + transient sin grab_set ni wait_window) y
+  así queda documentado;
+- documentación: AGENTS.md (ventana no modal + doble
+  revalidación), CLAUDE.md (funcionalidad en la lista de
+  principal.py, "si Empieza" -> "si empieza", ventana no modal,
+  doble revalidación en precondiciones, spy con secuencias) y
+  este documento; encabezado corregido: "HEAD observado al
+  iniciar la etapa de las ramas:";
+
+Validación:
+
+- pruebas de ramas: Ran 28 tests OK (26 + 2 TOCTOU);
+- suite completa: Ran 151 tests OK (123 + 28 de las ramas);
+- py_compile modelos_ramas.py, servicio_ramas_git.py,
+  principal.py y pruebas/test_ramas_git.py: OK;
+- git diff --check: SIN avisos;
+- git diff --cached --check: sin avisos (nada preparado);
+- git diff --cached --name-only: sin salida (índice limpio);
+- git status --short final:
+  M AGENTS.md;
+  M CLAUDE.md;
+  M TRABAJO_ACTUAL.md;
+  M principal.py;
+  ?? modelos_ramas.py (nuevo);
+  ?? servicio_ramas_git.py (nuevo);
+  ?? pruebas/test_ramas_git.py (nuevo);
+  (estado observado antes del commit; no es un HEAD futuro);
+- git diff -- servicio_git.py: VACÍO (sin cambios);
+- config.json intacto;
+- no se ejecutó add/commit/fetch/pull/push.
+
+PRUEBA MANUAL EN WINDOWS: EXITOSA (confirmada por el usuario).
+Prueba ejecutada en repositorio temporal
+`C:\Users\victo\AppData\Local\Temp\GestorGit-Prueba-Ramas-20260819-151113`
+con rama `prueba-manual-ramas-victor`: creación desde master OK,
+cambio a nueva rama OK, cambio a master BLOQUEADO correctamente
+con `archivo.txt` modificado, limpieza solamente del cambio temporal,
+regreso posterior a master OK, `git branch --show-current` -> master,
+`git status --short` -> sin salida, ambas ramas apuntaban a
+`f9f40c4`, `git remote -v` -> sin salida, rama NO publicada;
+eliminación de ramas permanece fuera del alcance V1.
+
+Tarea NUEVA: ninguna pendiente dentro de esta etapa. La
+publicación de una rama local sigue siendo una etapa FUTURA
+separada. SIGUIENTE ETAPA INMEDIATA decidida por el usuario:
+Tooltips Didácticos V1 (interfaz -> comando Git real ->
+significado -> consecuencia -> riesgo); NO iniciada.
+
 ## Regla para reservar archivos
 
 Antes de comenzar una tarea, el agente debe actualizar esta sección indicando:
@@ -255,6 +434,22 @@ Archivos:
 - servicio_configuracion.py
 - pruebas/test_configuracion.py
 Estado: EN CURSO
+
+Reserva activa:
+
+OpenCode:
+Tarea: cierre técnico antes de la prueba manual de la etapa
+  ramas locales V1 (segunda revalidación TOCTOU, pruebas, docs)
+Archivos:
+- servicio_ramas_git.py
+- pruebas/test_ramas_git.py
+- principal.py
+- AGENTS.md
+- CLAUDE.md
+- TRABAJO_ACTUAL.md (este documento)
+Estado: TERMINADO - PRUEBA MANUAL EXITOSA - COMMITEADO
+LOCALMENTE EN HEAD - SIN PUSH
+(hash vigente: consultar git log -1 --oneline)
 
 Mientras una tarea figure EN CURSO, el otro agente NO debe modificar esos
 archivos sin coordinación explícita.

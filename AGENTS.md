@@ -73,7 +73,7 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 123 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 151 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
      en líneas CRLF añadidas: causa conocida y documentada);
@@ -115,7 +115,9 @@ El historial debe conservar estas características:
 - `modelos_cambios_locales.py` — modelos del inspector de cambios locales: `DetalleCambioLocal`, `ResultadoDetalleCambioLocal`.
 - `servicio_cambios_locales_git.py` — solo lectura: diffs sin preparar y preparados de UN archivo (`--literal-pathspecs`, `--no-color`, `--no-ext-diff`, `--no-textconv`, `--unified=3`), resúmenes `--numstat`, último commit local. Reutiliza un `ServicioGit` existente; validación propia de la ruta relativa.
 - `servicio_descarte_cambios_git.py` — descarta los cambios SIN PREPARAR de UN archivo con `git --literal-pathspecs restore --worktree -- <ruta>` (restaura desde el ÍNDICE, no desde HEAD). Conserva el staging, revalida el estado antes del restore y nunca ejecuta operaciones remotas.
-- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales (incluido el botón `Descartar cambios sin preparar...`), carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red.
+- `modelos_ramas.py` — modelos de ramas locales: `RamaLocal`, `ResultadoRamas`.
+- `servicio_ramas_git.py` — ramas LOCALES: listar (`git for-each-ref --format=%(refname:short) refs/heads/`), identificar la rama actual (`git symbolic-ref --quiet --short HEAD`), cambiar (`git switch --no-guess <rama>`) y crear desde HEAD (`git switch -c <rama>`). Exige repositorio totalmente limpio, valida nombres (propias + `git check-ref-format refs/heads/<nombre>`) y nunca ejecuta Fetch/Pull/Push/Merge/Rebase; una rama nueva queda solo en el local y sin upstream.
+- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales (incluido el botón `Descartar cambios sin preparar...`), selector de ramas locales (botón `Ramas...` y ventana `Ramas locales - Gestor Git`), carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red.
 - `ayuda_interfaz.py` — ayuda visual: `AyudaEmergente` y `configurar_estilos`. Sin lógica Git.
 
 ## Seguridad
@@ -496,9 +498,104 @@ Comportamiento:
   aparece como pathspec—, otro archivo sin seleccionar conserva
   cambios y conflicto UU).
 
+## Ramas locales (selector y creación segura)
+
+V1: SOLO ramas locales. Sin borrar, renombrar, publicar, upstream
+automático, Merge, Rebase, Cherry-pick, Checkout, Reset, Force
+Push ni Fetch/Pull/Push automáticos. Una rama nueva queda LOCAL
+hasta una etapa posterior de "Publicar rama".
+
+Comandos productivos exactos (siempre listas de argumentos vía
+`ejecutar_git`, nunca `shell=True`):
+
+```text
+git for-each-ref --format=%(refname:short) refs/heads/
+git check-ref-format refs/heads/<nombre>
+git switch --no-guess <rama>
+git switch -c <rama>      (nace del HEAD actual, sin start-point)
+```
+
+`ServicioRamasGit(servicio_git)` reutiliza la instancia existente;
+`servicio_git.py` no se modifica y no se duplica `subprocess.run`.
+
+Precondiciones conservadoras revalidadas ANTES de cambiar o crear:
+
+- repositorio válido;
+- existe al menos un commit;
+- HEAD no está separado (`git symbolic-ref --quiet --short HEAD`
+  falla en detached: listar sigue válido, cambiar/crear bloquean);
+- distinción explícita en `ResultadoRamas` (`tiene_commits`,
+  `head_separado`): un repositorio sin commits NO es un HEAD
+  separado; `head_separado=True` solo cuando hay commits y
+  `symbolic-ref` falla (la GUI muestra "Repositorio sin commits
+  todavía" frente a "HEAD separado...");
+- sin operación Git en curso ni `MERGE_HEAD`/`CHERRY_PICK_HEAD`/
+  `REVERT_HEAD`/rebase/sequencer;
+- sin `index.lock` (nunca se borra);
+- working tree, staging y archivos nuevos (`??`) TOTALMENTE
+  limpios — `obtener_cambios()` debe devolver `exitoso=True` y sin
+  cambios; un error de consulta bloquea, nunca se interpreta como
+  limpio;
+- sin conflictos (códigos DD/AU/UD/UA/DU/AA/UU con helper propio,
+  nunca texto localizado);
+- cambiar: la rama existe LOCALMENTE (`rev-parse --verify --quiet
+  refs/heads/<nombre>`) y no es la actual; crear: la rama NO
+  existe aún;
+- nunca se descartan cambios para permitir el switch;
+- además de la validación de entrada, el servicio revalida TODAS
+  las precondiciones DOS veces en cambiar_rama() y crear_rama():
+  la primera al inicio y la SEGUNDA inmediatamente antes del
+  `git switch` productivo (defensa en profundidad: reduce la
+  ventana TOCTOU; cualquier cambio local aparecido entre ambas
+  consultas bloquea la operación antes de ejecutar switch).
+
+Validación del nombre (no se corrige silenciosamente, no se
+convierte a minúsculas, no se quitan espacios): rechaza None,
+vacío, solo espacios, espacios iniciales/finales, NUL, inicio
+`-`, `HEAD`, `@`, sintaxis `@{...}` (p. ej. `@{-1}`); después
+`git check-ref-format refs/heads/<nombre>`. Válidos ejemplares:
+`feature/login`, `fix/error-oracle`, `prueba_2026`; inválidos:
+`""`, `" rama"`, `"rama "`, `"-rama"`, `"HEAD"`, `"rama..mala"`,
+`"rama.lock"`, `"rama@{1}"`.
+
+Interfaz: botón `Ramas...` en "Información local" (junto a
+`Historial...`, se deshabilita durante operaciones remotas);
+ventana única `Ramas locales - Gestor Git` (Toplevel con
+`transient`, NO modal — sin `grab_set` ni `wait_window` —, se
+cierra al cambiar de repositorio) con texto educativo, rama
+actual, lista de ramas locales (rama actual marcada), entrada
+"Nueva rama" y botones `Cambiar a seleccionada`, `Crear rama`,
+`Actualizar`, `Cerrar`. Confirmaciones explícitas antes de operar
+que NO afirman limpieza absoluta: "GestorGit realizará el cambio
+únicamente si el repositorio continúa limpio; el servicio volverá
+a comprobarlo antes de ejecutar git switch". Durante Fetch/Pull/
+Push los botones de la ventana de ramas se deshabilitan. Tras
+cambiar o crear: se cierran historial, detalle de commit e
+Inspector; se recarga el estado LOCAL con
+`cargar_repositorio(..., reiniciar_fetch=True)` (invalida
+`fetch_exitoso_en_sesion`: Pull/Push quedan deshabilitados hasta
+un Fetch nuevo; Fetch sigue disponible si hay remoto); nunca Fetch
+automático; la lista de ramas se refresca.
+
+Push intacto: la protección del primer Push no cambia; una rama
+nueva (sin upstream) en un remoto con ramas conocidas bloquea el
+Push explicando el motivo — la publicación explícita será la
+etapa "Publicar rama" con sus propias confirmaciones.
+
+PRUEBA MANUAL EN WINDOWS: EXITOSA (confirmada por el usuario).
+Prueba ejecutada en repositorio temporal
+`C:\Users\victo\AppData\Local\Temp\GestorGit-Prueba-Ramas-20260819-151113`
+con rama `prueba-manual-ramas-victor`: creación desde master OK,
+cambio a nueva rama OK, cambio a master BLOQUEADO correctamente
+con `archivo.txt` modificado, limpieza solamente del cambio temporal,
+regreso posterior a master OK, `git branch --show-current` -> master,
+`git status --short` -> sin salida, ambas ramas apuntaban a
+`f9f40c4`, `git remote -v` -> sin salida, rama NO publicada;
+eliminación de ramas permanece fuera del alcance V1.
+
 ## Pruebas
 
-123 pruebas automatizadas en `pruebas/`. Ejecutar:
+151 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -507,7 +604,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 123 tests in ...
+Ran 151 tests in ...
 OK
 ```
 
@@ -537,6 +634,9 @@ python -m py_compile .\servicio_cambios_locales_git.py
 python -m py_compile .\servicio_descarte_cambios_git.py
 python -m py_compile .\pruebas\test_cambios_locales_git.py
 python -m py_compile .\pruebas\test_descarte_cambios_git.py
+python -m py_compile .\modelos_ramas.py
+python -m py_compile .\servicio_ramas_git.py
+python -m py_compile .\pruebas\test_ramas_git.py
 python -m unittest discover -s .\pruebas -v
 git status
 ```
@@ -545,7 +645,13 @@ Nota: PowerShell puede mostrar mojibake (p. ej. `aplicaciÃ³n`); Tkinter muestr
 
 ## Siguiente etapa
 
-- eventualmente: selector/creación segura de ramas.
+SIGUIENTE ETAPA INMEDIATA: Tooltips Didácticos V1 (NO
+iniciada; orientación: interfaz -> comando Git real ->
+significado -> consecuencia -> riesgo).
+
+La funcionalidad "Publicar rama local" NO se cancela: queda
+documentada como etapa FUTURA separada, fuera del alcance
+actual, con sus propias confirmaciones de seguridad.
 
 ## Filosofía
 

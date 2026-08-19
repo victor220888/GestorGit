@@ -14,6 +14,7 @@ from servicio_configuracion import ServicioConfiguracion
 from servicio_descarte_cambios_git import ServicioDescarteCambiosGit
 from servicio_exportacion_historial import ServicioExportacionHistorial
 from servicio_historial_git import ServicioHistorialGit
+from servicio_ramas_git import ServicioRamasGit
 from servicio_remoto_git import ServicioRemotoGit
 
 
@@ -72,6 +73,14 @@ class AplicacionGit:
             self.servicio_git
         )
 
+        # Servicio de ramas LOCALES: listar, identificar la rama
+        # actual, cambiar a una rama existente y crear una rama
+        # desde HEAD. 100 % local: nunca Fetch/Pull/Push y una
+        # rama nueva queda sin publicar y sin upstream.
+        self.servicio_ramas = ServicioRamasGit(
+            self.servicio_git
+        )
+
         # La ventana de historial se crea únicamente cuando el usuario
         # la solicita y se reutiliza mientras permanezca abierta.
         self.ventana_historial = None
@@ -114,6 +123,18 @@ class AplicacionGit:
         # Botón destructivo controlado del Inspector: descarta los
         # cambios sin preparar de UN archivo conservando el staging.
         self.boton_descartar_sin_preparar = None
+
+        # Ventana única de ramas locales. Se cierra al cambiar de
+        # repositorio y no ejecuta operaciones remotas.
+        self.ventana_ramas = None
+        self.tabla_ramas = None
+        self.variable_estado_ramas = None
+        self.variable_rama_actual_ventana = None
+        self.variable_nueva_rama = None
+        self.entrada_nueva_rama = None
+        self.boton_cambiar_rama = None
+        self.boton_crear_rama = None
+        self.rama_actual_ventana_actual = ""
 
         # Límite visual del diff mostrado en la ventana de detalle.
         # La truncación es solamente visual: no modifica el repositorio.
@@ -424,6 +445,21 @@ class AplicacionGit:
             column=6,
             sticky="e",
             padx=(30, 0)
+        )
+
+        self.boton_ramas = ttk.Button(
+            marco_informacion,
+            text="Ramas...",
+            command=self.abrir_ventana_ramas,
+            state=tk.DISABLED,
+            style="Accion.TButton"
+        )
+
+        self.boton_ramas.grid(
+            row=0,
+            column=7,
+            sticky="e",
+            padx=(10, 0)
         )
 
         # ---------------------------------------------------------
@@ -1399,6 +1435,7 @@ class AplicacionGit:
             self.cerrar_configuracion_github()
             self.cerrar_detalle_commit()
             self.cerrar_cambios_locales()
+            self.cerrar_ventana_ramas()
 
         self.ruta_repositorio = estado.ruta_raiz
 
@@ -1439,6 +1476,10 @@ class AplicacionGit:
         )
 
         self.boton_historial.config(
+            state=tk.NORMAL
+        )
+
+        self.boton_ramas.config(
             state=tk.NORMAL
         )
 
@@ -1660,6 +1701,644 @@ class AplicacionGit:
             self.ruta_repositorio,
             reiniciar_fetch=False
         )
+
+    # =============================================================
+    # RAMAS LOCALES
+    # =============================================================
+
+    def abrir_ventana_ramas(self):
+        """
+        Abre la ventana única de ramas locales.
+
+        Si ya existe una abierta, se destruye y se recrea.
+        Todos los chequeos son locales: nunca Fetch/Pull/Push.
+        """
+
+        if not self.ruta_repositorio:
+            return
+
+        if (
+            self.ventana_ramas is not None
+            and self.ventana_ramas.winfo_exists()
+        ):
+            self.cerrar_ventana_ramas()
+
+        self.crear_ventana_ramas()
+
+    def crear_ventana_ramas(self):
+        """
+        Crea la ventana de ramas locales.
+        """
+
+        self.ventana_ramas = tk.Toplevel(
+            self.ventana_principal
+        )
+
+        self.ventana_ramas.title(
+            "Ramas locales - Gestor Git"
+        )
+
+        self.ventana_ramas.geometry(
+            "580x520"
+        )
+
+        self.ventana_ramas.minsize(
+            480,
+            380
+        )
+
+        self.ventana_ramas.transient(
+            self.ventana_principal
+        )
+
+        self.ventana_ramas.protocol(
+            "WM_DELETE_WINDOW",
+            self.cerrar_ventana_ramas
+        )
+
+        marco_ramas = ttk.Frame(
+            self.ventana_ramas,
+            padding=15
+        )
+
+        marco_ramas.pack(
+            fill=tk.BOTH,
+            expand=True
+        )
+
+        marco_ramas.columnconfigure(
+            0,
+            weight=1
+        )
+
+        ttk.Label(
+            marco_ramas,
+            text=(
+                "GestorGit trabaja con ramas LOCALES.\n\n"
+                "Cambiar de rama actualiza los archivos del "
+                "working tree. Solo es posible cuando el "
+                "repositorio está completamente limpio (sin "
+                "cambios, sin archivos preparados y sin archivos "
+                "nuevos).\n\n"
+                "Crear una rama la crea DESDE el commit actual "
+                "y GestorGit cambia a ella. La rama nueva "
+                "SOLO vive en este repositorio local: no se "
+                "publica en GitHub ni recibe upstream.\n\n"
+                "No se ejecuta Fetch, Pull, Push, Merge ni "
+                "Rebase desde esta ventana."
+            ),
+            wraplength=540,
+            justify="left"
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            pady=(0, 10)
+        )
+
+        ttk.Label(
+            marco_ramas,
+            text="Rama actual:"
+        ).grid(
+            row=1,
+            column=0,
+            sticky="w"
+        )
+
+        self.variable_rama_actual_ventana = tk.StringVar(
+            value="Consultando..."
+        )
+
+        ttk.Label(
+            marco_ramas,
+            textvariable=self.variable_rama_actual_ventana
+        ).grid(
+            row=2,
+            column=0,
+            sticky="w",
+            pady=(0, 8)
+        )
+
+        marco_tabla = ttk.Frame(
+            marco_ramas
+        )
+
+        marco_tabla.grid(
+            row=3,
+            column=0,
+            sticky="nsew"
+        )
+
+        marco_tabla.columnconfigure(
+            0,
+            weight=1
+        )
+
+        marco_tabla.rowconfigure(
+            0,
+            weight=1
+        )
+
+        self.tabla_ramas = ttk.Treeview(
+            marco_tabla,
+            columns=("rama",),
+            show="headings",
+            selectmode="browse",
+            height=7
+        )
+
+        self.tabla_ramas.heading(
+            "rama",
+            text="Rama local"
+        )
+
+        self.tabla_ramas.column(
+            "rama",
+            anchor="w",
+            width=420
+        )
+
+        self.tabla_ramas.grid(
+            row=0,
+            column=0,
+            sticky="nsew"
+        )
+
+        desplazamiento_ramas = ttk.Scrollbar(
+            marco_tabla,
+            orient="vertical",
+            command=self.tabla_ramas.yview
+        )
+
+        desplazamiento_ramas.grid(
+            row=0,
+            column=1,
+            sticky="ns"
+        )
+
+        self.tabla_ramas.configure(
+            yscrollcommand=desplazamiento_ramas.set
+        )
+
+        self.tabla_ramas.bind(
+            "<<TreeviewSelect>>",
+            self.actualizar_estado_botones_ventana_ramas
+        )
+
+        self.variable_estado_ramas = tk.StringVar(
+            value=""
+        )
+
+        ttk.Label(
+            marco_ramas,
+            textvariable=self.variable_estado_ramas,
+            wraplength=540,
+            justify="left"
+        ).grid(
+            row=4,
+            column=0,
+            sticky="w",
+            pady=(6, 0)
+        )
+
+        marco_nueva = ttk.Frame(
+            marco_ramas
+        )
+
+        marco_nueva.grid(
+            row=5,
+            column=0,
+            sticky="ew",
+            pady=(12, 0)
+        )
+
+        marco_nueva.columnconfigure(
+            1,
+            weight=1
+        )
+
+        ttk.Label(
+            marco_nueva,
+            text="Nueva rama:"
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(0, 6)
+        )
+
+        self.variable_nueva_rama = tk.StringVar(
+            value=""
+        )
+
+        self.entrada_nueva_rama = ttk.Entry(
+            marco_nueva,
+            textvariable=self.variable_nueva_rama
+        )
+
+        self.entrada_nueva_rama.grid(
+            row=0,
+            column=1,
+            sticky="ew",
+            padx=(0, 8)
+        )
+
+        self.boton_crear_rama = ttk.Button(
+            marco_nueva,
+            text="Crear rama",
+            command=self.confirmar_creacion_rama,
+            state=tk.DISABLED
+        )
+
+        self.boton_crear_rama.grid(
+            row=0,
+            column=2,
+            sticky="e"
+        )
+
+        self.variable_nueva_rama.trace_add(
+            "write",
+            lambda *_cambios: (
+                self.actualizar_estado_botones_ventana_ramas()
+            )
+        )
+
+        marco_acciones = ttk.Frame(
+            marco_ramas
+        )
+
+        marco_acciones.grid(
+            row=6,
+            column=0,
+            sticky="ew",
+            pady=(12, 0)
+        )
+
+        self.boton_cambiar_rama = ttk.Button(
+            marco_acciones,
+            text="Cambiar a seleccionada",
+            command=self.confirmar_cambio_rama,
+            state=tk.DISABLED
+        )
+
+        self.boton_cambiar_rama.grid(
+            row=0,
+            column=0,
+            sticky="w"
+        )
+
+        ttk.Button(
+            marco_acciones,
+            text="Actualizar",
+            command=self.cargar_lista_ramas
+        ).grid(
+            row=0,
+            column=1,
+            sticky="w",
+            padx=(10, 0)
+        )
+
+        ttk.Button(
+            marco_acciones,
+            text="Cerrar",
+            command=self.cerrar_ventana_ramas
+        ).grid(
+            row=0,
+            column=2,
+            sticky="w",
+            padx=(10, 0)
+        )
+
+        self.cargar_lista_ramas()
+
+    def cargar_lista_ramas(self):
+        """
+        Consulta las ramas locales y refresca la ventana.
+
+        Consulta 100 % local: nunca Fetch ni Internet.
+        """
+
+        if not self.ruta_repositorio:
+            return
+
+        if (
+            self.ventana_ramas is None
+            or not self.ventana_ramas.winfo_exists()
+        ):
+            return
+
+        resultado = self.servicio_ramas.obtener_ramas_locales(
+            self.ruta_repositorio
+        )
+
+        self.tabla_ramas.delete(
+            *self.tabla_ramas.get_children()
+        )
+
+        self.variable_estado_ramas.set(
+            ""
+        )
+
+        if not resultado.exitoso:
+            self.variable_estado_ramas.set(
+                resultado.error
+            )
+
+            self.rama_actual_ventana_actual = ""
+
+            self.variable_rama_actual_ventana.set(
+                "No determinada"
+            )
+
+            self.actualizar_estado_botones_ventana_ramas()
+
+            return
+
+        rama_actual = ""
+
+        for rama in resultado.ramas:
+            texto = rama.nombre
+
+            if rama.actual:
+                texto += "  (actual)"
+                rama_actual = rama.nombre
+
+            self.tabla_ramas.insert(
+                "",
+                tk.END,
+                iid=rama.nombre,
+                values=(texto,)
+            )
+
+        self.rama_actual_ventana_actual = rama_actual
+
+        if rama_actual:
+            self.variable_rama_actual_ventana.set(
+                rama_actual
+            )
+        elif not resultado.tiene_commits:
+            self.variable_rama_actual_ventana.set(
+                "Repositorio sin commits todavía"
+            )
+        elif resultado.head_separado:
+            self.variable_rama_actual_ventana.set(
+                "HEAD separado (no se encuentra en ninguna rama)"
+            )
+        else:
+            self.variable_rama_actual_ventana.set(
+                "No determinada"
+            )
+
+        if resultado.mensaje:
+            self.variable_estado_ramas.set(
+                resultado.mensaje
+            )
+
+        self.actualizar_estado_botones_ventana_ramas()
+
+    def actualizar_estado_botones_ventana_ramas(self, _evento=None):
+        """
+        Habilita Cambiar/Crear según la selección, el texto de
+        la entrada y las operaciones remotas en curso.
+
+        Segura si la ventana de ramas no existe.
+        """
+
+        if (
+            self.ventana_ramas is None
+            or not self.ventana_ramas.winfo_exists()
+        ):
+            return
+
+        if self.operacion_remota_en_curso:
+            self.boton_cambiar_rama.config(
+                state=tk.DISABLED
+            )
+
+            self.boton_crear_rama.config(
+                state=tk.DISABLED
+            )
+
+            return
+
+        seleccion = self.tabla_ramas.selection()
+
+        puede_cambiar = False
+
+        if seleccion:
+            nombre_seleccionada = seleccion[0]
+
+            puede_cambiar = (
+                nombre_seleccionada
+                and nombre_seleccionada
+                != self.rama_actual_ventana_actual
+            )
+
+        self.boton_cambiar_rama.config(
+            state=(
+                tk.NORMAL
+                if puede_cambiar
+                else tk.DISABLED
+            )
+        )
+
+        tiene_nombre = bool(
+            self.variable_nueva_rama.get()
+        )
+
+        self.boton_crear_rama.config(
+            state=(
+                tk.NORMAL
+                if tiene_nombre
+                else tk.DISABLED
+            )
+        )
+
+    def confirmar_cambio_rama(self):
+        """
+        Confirma y ejecuta el cambio a la rama seleccionada.
+        """
+
+        if self.operacion_remota_en_curso:
+            self.variable_estado.set(
+                "Espere a que termine la operación remota en "
+                "curso antes de cambiar de rama."
+            )
+
+            return
+
+        if not self.ruta_repositorio:
+            return
+
+        seleccion = self.tabla_ramas.selection()
+
+        if not seleccion:
+            return
+
+        nombre_rama = seleccion[0]
+
+        rama_actual_mostrada = (
+            self.rama_actual_ventana_actual
+            or "HEAD separado"
+        )
+
+        confirmado = messagebox.askyesno(
+            "Cambiar de rama",
+            (
+                "Cambiar de rama actualizará los archivos del "
+                "working tree para que coincidan con la rama "
+                "seleccionada.\n\n"
+                f"Rama actual: {rama_actual_mostrada}\n"
+                f"Nueva rama: {nombre_rama}\n\n"
+                "GestorGit realizará el cambio únicamente si el "
+                "repositorio continúa limpio; el servicio volverá "
+                "a comprobarlo antes de ejecutar git switch.\n\n"
+                "No se ejecutará Fetch, Pull, Push, Merge ni "
+                "Rebase."
+            ),
+            parent=self.ventana_ramas
+        )
+
+        if not confirmado:
+            return
+
+        resultado = self.servicio_ramas.cambiar_rama(
+            self.ruta_repositorio,
+            nombre_rama
+        )
+
+        if not resultado.exitoso:
+            messagebox.showerror(
+                "Cambio de rama bloqueado",
+                resultado.error,
+                parent=self.ventana_ramas
+            )
+
+            self.cargar_lista_ramas()
+
+            return
+
+        self.refrescar_despues_de_ramas()
+
+        self.variable_estado.set(
+            resultado.mensaje
+        )
+
+    def confirmar_creacion_rama(self):
+        """
+        Confirma y ejecuta la creación de una rama local.
+        """
+
+        if self.operacion_remota_en_curso:
+            self.variable_estado.set(
+                "Espere a que termine la operación remota en "
+                "curso antes de crear una rama."
+            )
+
+            return
+
+        if not self.ruta_repositorio:
+            return
+
+        nombre_rama = self.variable_nueva_rama.get()
+
+        if not nombre_rama:
+            return
+
+        confirmado = messagebox.askyesno(
+            "Crear rama local",
+            (
+                "Se creará la rama local:\n\n"
+                f"{nombre_rama}\n\n"
+                "desde el commit actual y GestorGit cambiará "
+                "a ella.\n\n"
+                "La rama NO se publicará en GitHub y no tendrá "
+                "upstream hasta que se implemente o ejecute "
+                "explícitamente la publicación de ramas.\n\n"
+                "GestorGit realizará la creación únicamente si "
+                "el repositorio continúa limpio; el servicio "
+                "volverá a comprobarlo antes de ejecutar "
+                "git switch."
+            ),
+            parent=self.ventana_ramas
+        )
+
+        if not confirmado:
+            return
+
+        resultado = self.servicio_ramas.crear_rama(
+            self.ruta_repositorio,
+            nombre_rama
+        )
+
+        if not resultado.exitoso:
+            messagebox.showerror(
+                "Creación de rama bloqueada",
+                resultado.error,
+                parent=self.ventana_ramas
+            )
+
+            self.cargar_lista_ramas()
+
+            return
+
+        self.variable_nueva_rama.set("")
+
+        self.refrescar_despues_de_ramas()
+
+        messagebox.showinfo(
+            "Rama local creada",
+            resultado.mensaje,
+            parent=self.ventana_ramas
+        )
+
+        self.variable_estado.set(
+            resultado.mensaje
+        )
+
+    def refrescar_despues_de_ramas(self):
+        """
+        Recarga el estado LOCAL tras cambiar o crear una rama.
+
+        Cierra las ventanas auxiliares que podrían contener
+        información de la rama anterior, exige un Fetch nuevo
+        (el contexto remoto pudo cambiar) y recarga la lista.
+        Nunca ejecuta Fetch automáticamente.
+        """
+
+        self.cerrar_historial()
+        self.cerrar_detalle_commit()
+        self.cerrar_cambios_locales()
+
+        self.cargar_repositorio(
+            self.ruta_repositorio,
+            reiniciar_fetch=True
+        )
+
+        self.cargar_lista_ramas()
+
+    def cerrar_ventana_ramas(self):
+        """
+        Cierra la ventana de ramas y libera sus referencias.
+        """
+
+        ventana = self.ventana_ramas
+
+        self.ventana_ramas = None
+        self.tabla_ramas = None
+        self.variable_estado_ramas = None
+        self.variable_rama_actual_ventana = None
+        self.variable_nueva_rama = None
+        self.entrada_nueva_rama = None
+        self.boton_cambiar_rama = None
+        self.boton_crear_rama = None
+        self.rama_actual_ventana_actual = ""
+
+        if (
+            ventana is not None
+            and ventana.winfo_exists()
+        ):
+            ventana.destroy()
 
     # =============================================================
     # HISTORIAL DE COMMITS
@@ -5103,6 +5782,10 @@ class AplicacionGit:
                 state=tk.DISABLED
             )
 
+            self.boton_ramas.config(
+                state=tk.DISABLED
+            )
+
             self.boton_fetch.config(
                 state=tk.DISABLED
             )
@@ -5123,6 +5806,10 @@ class AplicacionGit:
             # durante la operación remota; segura si no existe.
             self.actualizar_estado_boton_descartar()
 
+            # Los botones de la ventana de ramas se bloquean
+            # igualmente; segura si la ventana no existe.
+            self.actualizar_estado_botones_ventana_ramas()
+
             return
 
         self.boton_seleccionar.config(
@@ -5138,6 +5825,14 @@ class AplicacionGit:
         )
 
         self.boton_historial.config(
+            state=(
+                tk.NORMAL
+                if self.ruta_repositorio
+                else tk.DISABLED
+            )
+        )
+
+        self.boton_ramas.config(
             state=(
                 tk.NORMAL
                 if self.ruta_repositorio
@@ -5172,6 +5867,9 @@ class AplicacionGit:
         # Al terminar la operación remota el botón de descarte del
         # Inspector vuelve a recalcularse; segura si no existe.
         self.actualizar_estado_boton_descartar()
+
+        # Lo mismo para los botones de la ventana de ramas.
+        self.actualizar_estado_botones_ventana_ramas()
 
     def actualizar_estado_botones_sincronizacion(self):
         """
@@ -6235,6 +6933,10 @@ class AplicacionGit:
             state=tk.DISABLED
         )
 
+        self.boton_ramas.config(
+            state=tk.DISABLED
+        )
+
         self.boton_fetch.config(
             state=tk.DISABLED
         )
@@ -6262,6 +6964,8 @@ class AplicacionGit:
         self.cerrar_historial()
 
         self.cerrar_detalle_commit()
+
+        self.cerrar_ventana_ramas()
 
     # =============================================================
     # MENSAJES DE CONFIRMACIÓN
