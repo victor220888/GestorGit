@@ -73,7 +73,7 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 151 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 209 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
      en líneas CRLF añadidas: causa conocida y documentada);
@@ -595,7 +595,7 @@ eliminación de ramas permanece fuera del alcance V1.
 
 ## Pruebas
 
-151 pruebas automatizadas en `pruebas/`. Ejecutar:
+209 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -604,7 +604,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 151 tests in ...
+Ran 209 tests in ...
 OK
 ```
 
@@ -645,9 +645,17 @@ Nota: PowerShell puede mostrar mojibake (p. ej. `aplicaciÃ³n`); Tkinter muestr
 
 ## Siguiente etapa
 
-SIGUIENTE ETAPA INMEDIATA: Tooltips Didácticos V1 (NO
-iniciada; orientación: interfaz -> comando Git real ->
-significado -> consecuencia -> riesgo).
+TOOLTIPS DIDÁCTICOS V1 — FASE 2A (P0/P1): IMPLEMENTADA.
+
+- 13 tooltips críticos (diccionario `TEXTOS_AYUDA_GIT_V1` en
+  `principal.py`, consumido por `AyudaEmergente`);
+- 58 pruebas específicas en `pruebas/test_ayuda_tooltips_v1.py`;
+- 209 pruebas totales OK;
+- PRUEBA MANUAL WINDOWS: PENDIENTE;
+- SIN COMMIT.
+
+SIGUIENTE ETAPA: Tooltips Didácticos V1 — Fase 2B (ayudas
+secundarias P2/P3). NO iniciada.
 
 La funcionalidad "Publicar rama local" NO se cancela: queda
 documentada como etapa FUTURA separada, fuera del alcance

@@ -1055,7 +1055,7 @@ ensucia ENTRE dos validaciones sin tocar el código productivo.
 
 ## Pruebas
 
-El proyecto tiene actualmente **151 pruebas automatizadas**:
+El proyecto tiene actualmente **209 pruebas automatizadas**:
 
 - 49 pruebas base de operaciones locales/remotas;
 - 11 pruebas del historial;
@@ -1067,7 +1067,8 @@ El proyecto tiene actualmente **151 pruebas automatizadas**:
 - 7 pruebas de la actualización de archivos preparados;
 - 12 pruebas del inspector de cambios locales;
 - 17 pruebas del descarte de cambios sin preparar;
-- 28 pruebas de las ramas locales (123 anteriores + 28 nuevas).
+- 28 pruebas de las ramas locales (123 anteriores + 28 nuevas);
+- 58 pruebas de los tooltips didácticos V1 (Fase 2A, P0/P1).
 
 Archivos principales de pruebas:
 
@@ -1086,12 +1087,13 @@ pruebas/test_actualizacion_preparados.py
 pruebas/test_cambios_locales_git.py
 pruebas/test_descarte_cambios_git.py
 pruebas/test_ramas_git.py
+pruebas/test_ayuda_tooltips_v1.py
 ```
 
 Resultado esperado:
 
 ```text
-Ran 151 tests in ...
+Ran 209 tests in ...
 OK
 ```
 
@@ -1413,11 +1415,15 @@ inspector) fue el confirmado en el commit c62b0a0. El total de 105
 (104 + 1 prueba de regresión del error de --numstat) fue el
 confirmado en el commit 634a295. El total de 123
 (105 + 17 pruebas del descarte + 1 prueba del conflicto
-estructurado) fue el confirmado en el commit 3309be7. El total
-ACTUAL es 151 (123 + 28 pruebas de las ramas locales) y forma parte
-de la etapa Ramas Locales V1, ya integrada en el commit local HEAD
-"Agrega selector seguro de ramas locales" (consultar git log -1
---oneline para conocer el hash vigente). El commit sigue SIN PUSH.
+estructurado) fue el confirmado en el commit 3309be7. El total de
+151 (123 + 28 de las ramas locales) corresponde al estado
+consolidado HASTA Ramas Locales V1 y está integrado en el commit
+local HEAD "Agrega selector seguro de ramas locales" (consultar
+git log -1 --oneline para conocer el hash vigente; SIN PUSH). Las
+58 pruebas adicionales pertenecen a Tooltips Didácticos V1 —
+Fase 2A (P0/P1): el total ACTUAL del working tree es 209, esa
+etapa sigue SIN COMMIT y su prueba manual en Windows está
+PENDIENTE.
 
 Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritura y protección contra fórmulas CSV. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
@@ -1435,7 +1441,7 @@ Las 7 pruebas de la actualización de archivos preparados validan: detección de
 
 Las 12 pruebas del inspector de cambios locales validan: archivo modificado sin preparar (diff en `Sin preparar`, preparado vacío), archivo solamente preparado (a la inversa), caso MM con ambos diffs presentes y distintos, conteos de inserciones/eliminaciones mediante `--numstat`, archivo nuevo sin preparar con bandera educativa, archivo eliminado con diff visible, rechazo de ruta con NUL comprobando que no se ejecuta ningún comando (registro de llamadas vacío), ruta con globs/carácter inicial `-` tratada literalmente (`--literal-pathspecs` y `--`), argumentos seguros de todos los diffs interceptando `ejecutar_git()` con un spy (sin ejecutar Git real ni simulaciones especiales en el código de producción: `--no-color`, `--no-ext-diff`, `--no-textconv`, `--cached` solo en el preparado, sin comandos destructivos), consulta que deja el repositorio intacto (`git status` antes/después idéntico), regresión del error de `--numstat`: cuando la llamada falla deliberadamente, `obtener_detalle()` devuelve `exitoso=False` con el mensaje controlado y NUNCA un detalle exitoso con 0 inserciones / 0 eliminaciones; y conflicto expuesto de forma estructurada: con códigos UU y una `descripcion` que NO contiene la palabra "Conflicto", `detalle.en_conflicto` es True (el booleano procede de los códigos de git status, no del texto). Fueron ejecutadas en aislamiento y en la suite completa y pasaron correctamente.
 
-Estado de la etapa inspector de cambios locales: ETAPA VALIDADA MANUALMENTE (prueba manual en Windows EXITOSA, confirmada por el usuario); el inspector forma parte de HEAD desde el commit c62b0a0 (referencia HISTÓRICA) y la corrección del error de --numstat forma parte del commit 634a295 (con Push confirmado; al iniciar la etapa del descarte master == origin/master == 634a295). La etapa "Ramas locales" V1 (con sus microcorrecciones: distinción sin commits / HEAD separado y segunda revalidación TOCTOU; total ACTUAL de 151 pruebas) quedó incorporada al commit local HEAD "Agrega selector seguro de ramas locales" (consultar git log -1 --oneline para el hash vigente; SIN PUSH); la etapa del descarte y su cierre técnico ya viven en el commit 3309be7.
+Estado de la etapa inspector de cambios locales: ETAPA VALIDADA MANUALMENTE (prueba manual en Windows EXITOSA, confirmada por el usuario); el inspector forma parte de HEAD desde el commit c62b0a0 (referencia HISTÓRICA) y la corrección del error de --numstat forma parte del commit 634a295 (con Push confirmado; al iniciar la etapa del descarte master == origin/master == 634a295). La etapa "Ramas locales" V1 (con sus microcorrecciones: distinción sin commits / HEAD separado y segunda revalidación TOCTOU; total de 151 pruebas en su momento) quedó incorporada al commit local HEAD "Agrega selector seguro de ramas locales" (consultar git log -1 --oneline para el hash vigente; SIN PUSH). La etapa "Tooltips Didácticos V1 — Fase 2A" (P0/P1; 58 pruebas nuevas; total ACTUAL 209) NO tiene commit todavía y su prueba manual en Windows está PENDIENTE. La etapa del descarte y su cierre técnico ya viven en el commit 3309be7.
 
 ## Estado consolidado de la etapa actual
 
@@ -1457,7 +1463,8 @@ Actualización de archivos preparados
 Inspector de cambios locales (solo lectura + descarte de
 cambios sin preparar)
 Selector y creación segura de ramas LOCALES
-151 pruebas OK
+Tooltips didácticos V1 (Fase 2A P0/P1; 58 pruebas nuevas)
+209 pruebas OK
 ```
 
 El historial se ordena explícitamente por fecha de commit descendente
@@ -1468,9 +1475,55 @@ CSV y TXT exportan exactamente los commits visibles y conservan ese mismo orden.
 
 ## Funcionalidades posteriores
 
-SIGUIENTE ETAPA INMEDIATA: Tooltips Didácticos V1 (NO
-iniciada; orientación: interfaz -> comando Git real ->
-significado -> consecuencia -> riesgo).
+TOOLTIPS DIDÁCTICOS V1 — FASE 2A IMPLEMENTADA (P0/P1). Esta
+fase cubre únicamente los tooltips de las acciones Git más
+críticas y de mayor riesgo, sin tocar la lógica Git productiva
+ni los servicios. Los textos se almacenan en el diccionario
+`TEXTOS_AYUDA_GIT_V1` de `principal.py` (no en un módulo nuevo)
+para poder probarlos sin abrir una ventana Tkinter real.
+
+Alcance P0/P1 (13 controles):
+- `Fetch` (botón principal) — `git fetch --prune <remoto>`;
+- `Pull` (botón principal) — `git pull --ff-only <remoto> <rama-remota>`;
+- `Push` (botón principal) — `git push --porcelain [--set-upstream] ...`;
+- `Preparar seleccionados` — `git --literal-pathspecs add -- <rutas>`;
+- `Actualizar preparados` — `git --literal-pathspecs add -- <rutas>`;
+- `Quitar de preparados` — `git --literal-pathspecs restore --staged --` (o `rm --cached` sin commits);
+- `Crear commit` — `git commit -m "<mensaje>"`;
+- `Descartar cambios sin preparar...` (inspector) — `git --literal-pathspecs restore --worktree -- <ruta>`;
+- `Cambiar a seleccionada` (ventana de ramas) — `git switch --no-guess <rama>`;
+- `Crear rama` (ventana de ramas) — `git switch -c <nombre>`;
+- `Ramas...` (botón principal) — `git for-each-ref` + `git symbolic-ref`;
+- `Configurar GitHub...` (botón principal) — flujo educativo, sin credenciales;
+- `Agregar origin` (ventana de configuración) — `git remote add origin <url>`.
+
+Cada tooltip didáctico enseña: COMANDO real -> CONCEPTO
+(HEAD/working tree/índice/refs remotas) -> QUÉ CAMBIA -> NO HACE ->
+REQUISITOS/SEGURIDAD. Los textos no mencionan `git reset --hard`,
+`git clean`, `git push --force`, `git merge`, `git rebase` ni
+`git cherry-pick` como operaciones a ejecutar (las menciones
+legítimas de "no se usa --force" son didácticas y correctas).
+
+Arquitectura de los textos: diccionario `TEXTOS_AYUDA_GIT_V1` en
+`principal.py`, consumido por `AyudaEmergente` con `ancho_texto=620`
+para los didácticos largos. `ayuda_interfaz.py` NO se modificó (ya
+soportaba `ancho_texto` configurable y los textos largos se
+renderizan legiblemente). Los 24 tooltips anteriores (Historial,
+detalle de commit, inspector P3, filtros, exportaciones, Cerrar,
+Copiar diff, etc.) siguen inline y sin cambios: son Fase 2B
+pendiente.
+
+Pruebas: 58 pruebas nuevas en
+`pruebas/test_ayuda_tooltips_v1.py` verifican fragmentos, comandos
+reales y ausencia de operaciones prohibidas sin mover el ratón
+(prueban el diccionario, equivalente a probar el contenido del
+tooltip). Suite completa: 209 tests OK (151 anteriores + 58 V1).
+PRUEBA MANUAL EN WINDOWS: PENDIENTE. SIN COMMIT.
+
+SIGUIENTE ETAPA: Tooltips Didácticos V1 — Fase 2B (ayudas
+secundarias P2/P3: Cerrar, Copiar diff, filtros del historial,
+exportaciones, Actualizar, controles puramente visuales). NO
+iniciada.
 
 La funcionalidad "Publicar rama local" NO se cancela: queda
 documentada como etapa FUTURA separada, fuera del alcance
@@ -1506,14 +1559,14 @@ python -m unittest discover -s .\pruebas -v
 git status
 ```
 
-Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio, actualización de archivos preparados, inspector de cambios locales, descarte de cambios sin preparar y ramas locales, esperar:
+Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio, actualización de archivos preparados, inspector de cambios locales, descarte de cambios sin preparar, ramas locales y tooltips didácticos V1 Fase 2A, esperar:
 
 ```text
-Ran 151 tests in ...
+Ran 209 tests in ...
 OK
 ```
 
-Si el total no es 151, revisar que estén presentes `pruebas/test_historial_git.py`,
+Si el total no es 209, revisar que estén presentes `pruebas/test_historial_git.py`,
 `pruebas/test_exportacion_historial.py`,
 `pruebas/test_configuracion_remoto_git.py`,
 `pruebas/test_push_git.py`,
@@ -1521,8 +1574,9 @@ Si el total no es 151, revisar que estén presentes `pruebas/test_historial_git.
 `pruebas/test_configuracion.py`,
 `pruebas/test_actualizacion_preparados.py`,
 `pruebas/test_cambios_locales_git.py`,
-`pruebas/test_descarte_cambios_git.py` y
-`pruebas/test_ramas_git.py`.
+`pruebas/test_descarte_cambios_git.py`,
+`pruebas/test_ramas_git.py` y
+`pruebas/test_ayuda_tooltips_v1.py`.
 
 ## Notas del entorno
 
@@ -1561,15 +1615,17 @@ python -m unittest discover -s .\pruebas -v
 ```
 
 3. confirmar que cualquier cambio pendiente es conocido y esperado;
-4. confirmar que las 151 pruebas pasan;
+4. confirmar que las 209 pruebas pasan;
 5. confirmar que tooltips/estética, historial, filtros, orden, exportación,
    configuración inicial de GitHub, detalle de cambios de un commit,
    persistencia del último repositorio, actualización de archivos
    preparados, inspector de cambios locales, descarte de cambios sin
    preparar y selector de ramas locales siguen presentes;
-6. si la etapa actual está estable, la SIGUIENTE ETAPA INMEDIATA
-   es Tooltips Didácticos V1 (interfaz -> comando Git real ->
-   significado -> consecuencia -> riesgo); "Publicar rama" queda
+6. la Fase 2A de Tooltips Didácticos V1 ya está implementada
+   (P0/P1, 58 pruebas, sin commit, prueba manual pendiente); la
+   SIGUIENTE ETAPA INMEDIATA es la Fase 2B (tooltips secundarios
+   P2/P3: Cerrar, Copiar diff, filtros del historial, exportaciones,
+   Actualizar, controles puramente visuales); "Publicar rama" queda
    como etapa FUTURA separada (con sus propias confirmaciones);
 7. mantener todas las reglas de seguridad y coordinación entre agentes.
 
@@ -1598,7 +1654,7 @@ Reglas obligatorias:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 151 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 209 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check`;
    - `git diff --stat`;

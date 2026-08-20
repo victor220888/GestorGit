@@ -416,6 +416,107 @@ separada. SIGUIENTE ETAPA INMEDIATA decidida por el usuario:
 Tooltips Didácticos V1 (interfaz -> comando Git real ->
 significado -> consecuencia -> riesgo); NO iniciada.
 
+## ETAPA TOOLTIPS DIDÁCTICOS V1 — FASE 2A (P0/P1)
+
+Tarea: Tooltips Didácticos V1 — Fase 2A (prioridades P0/P1) —
+implementación y microcierre documental final.
+
+Estado:
+
+IMPLEMENTACIÓN TERMINADA
+PRUEBAS ESPECÍFICAS: 58/58 OK
+SUITE COMPLETA: 209/209 OK
+PRUEBA MANUAL WINDOWS: PENDIENTE
+SIN COMMIT
+
+Archivos funcionales:
+
+- principal.py — diccionario TEXTOS_AYUDA_GIT_V1 con las 13
+  claves P0/P1, consumido por AyudaEmergente;
+- pruebas/test_ayuda_tooltips_v1.py — NUEVO, 58 pruebas.
+
+Documentación:
+
+- AGENTS.md
+- CLAUDE.md
+- TRABAJO_ACTUAL.md (este documento)
+
+ayuda_interfaz.py:
+
+INTACTO (los textos largos se renderizan con ancho_texto=620).
+
+Servicios Git:
+
+INTACTOS (servicio_git.py, servicio_remoto_git.py,
+servicio_ramas_git.py, servicio_descarte_cambios_git.py y
+servicio_cambios_locales_git.py sin cambios).
+
+Fase 2B (tooltips P2/P3):
+
+NO iniciada.
+
+Publicar rama local:
+
+FUTURA y separada.
+
+HEAD observado al iniciar la etapa: eece381 Agrega selector
+seguro de ramas locales; índice limpio.
+
+Detalles de implementación:
+
+- 4 tooltips NUEVOS: Ramas..., Cambiar a seleccionada, Crear
+  rama, Agregar origin;
+- 9 tooltips REESCRITOS: Fetch, Pull, Push, Configurar GitHub...,
+  Preparar seleccionados, Actualizar preparados, Quitar de
+  preparados, Crear commit, Descartar cambios sin preparar...;
+- cada texto enseña: comando Git real -> concepto (HEAD/working
+  tree/índice/refs) -> qué cambia -> no hace -> requisitos/
+  seguridad; sin operaciones prohibidas;
+- microcorrecciones didácticas de este cierre: Pull explica que
+  el flujo puede actualizar las refs LOCALES de seguimiento
+  refs/remotes/... al obtener información del remoto (antes
+  afirmaba "no modifica refs remotas"); Preparar explica que
+  "registra/copia en el índice la versión actual de los archivos
+  seleccionados" y que el working tree conserva sus cambios
+  (antes decía "Preparar mueve cambios del working tree al
+  índice");
+- pruebas: 2 pruebas sustituidas por 2 nuevas que protegen esas
+  correcciones (pull con refs/remotes y no hace Push; preparar
+  con copia al índice y ausencia de la frase incorrecta),
+  manteniendo el total en 58;
+- NO se ejecutó sobre el repositorio real:
+  git add / git commit / git fetch / git pull / git push /
+  git reset / git restore / git checkout / git clean.
+
+MICROCORRECCIÓN DIDÁCTICA DE TEXTOS (solo tooltips, SIN lógica):
+
+- Fetch: eliminada la frase "no descarga commits a tu rama"
+  (inducía a creer que Fetch no descarga); ahora explica que
+  Fetch trae al repositorio local información y commits nuevos
+  del remoto y actualiza refs/remotes/..., pero NO los integra
+  en la rama local actual (no modifica HEAD, working tree ni
+  índice, no crea merge);
+- Push: eliminada "El primer Push solo se permite si el remoto
+  está vacío de ramas conocidas". Lógica real verificada en
+  servicio_remoto_git.py (ejecutar_push_seguro +
+  _calcular_sin_upstream): si la rama remota YA EXISTE, el
+  primer Push la actualiza y configura upstream con
+  --set-upstream; solo si NO existe y habría que CREARLA se
+  exige remoto vacío de otras ramas conocidas, y se bloquea si
+  no puede verificarse;
+- Commit: "no toca el working tree" -> "no incorpora
+  automáticamente los cambios del working tree que no estén
+  preparados" (usa lo preparado);
+- Descartar: "archivos nuevos (??)" -> "archivos nuevos/no
+  rastreados (marcados ?? por git status)";
+- pruebas: test_push_explica_set_upstream_solo_primer_push
+  renombrada a test_push_explica_set_upstream_y_rama_remota;
+  asserts ampliados en fetch/commit/descartar; total mantenido
+  en 58; suite completa 209;
+- NO se modificó lógica Git; ayuda_interfaz.py y servicios
+  INTACTOS; staging vacío; SIN commit; PRUEBA MANUAL WINDOWS
+  de los 4 tooltips modificados PENDIENTE.
+
 ## Regla para reservar archivos
 
 Antes de comenzar una tarea, el agente debe actualizar esta sección indicando:
@@ -438,18 +539,17 @@ Estado: EN CURSO
 Reserva activa:
 
 OpenCode:
-Tarea: cierre técnico antes de la prueba manual de la etapa
-  ramas locales V1 (segunda revalidación TOCTOU, pruebas, docs)
+Tarea: Tooltips Didácticos V1 — Fase 2A (P0/P1) — implementación
+  y microcierre documental final (13 tooltips, 58 pruebas)
 Archivos:
-- servicio_ramas_git.py
-- pruebas/test_ramas_git.py
 - principal.py
+- pruebas/test_ayuda_tooltips_v1.py
 - AGENTS.md
 - CLAUDE.md
 - TRABAJO_ACTUAL.md (este documento)
-Estado: TERMINADO - PRUEBA MANUAL EXITOSA - COMMITEADO
-LOCALMENTE EN HEAD - SIN PUSH
-(hash vigente: consultar git log -1 --oneline)
+Estado: MICROCORRECCIÓN DIDÁCTICA TERMINADA - 58/58 PRUEBAS
+  ESPECÍFICAS OK - 209/209 SUITE COMPLETA OK - PRUEBA MANUAL
+  WINDOWS DE LOS 4 TOOLTIPS MODIFICADOS PENDIENTE - SIN COMMIT
 
 Mientras una tarea figure EN CURSO, el otro agente NO debe modificar esos
 archivos sin coordinación explícita.

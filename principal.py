@@ -18,6 +18,322 @@ from servicio_ramas_git import ServicioRamasGit
 from servicio_remoto_git import ServicioRemotoGit
 
 
+# Textos didácticos V1 para las acciones Git más críticas.
+#
+# Cada texto enseña, de forma compacta:
+#   - el comando Git real que ejecuta el servicio subyacente;
+#   - el concepto (HEAD / working tree / índice / refs remotas);
+#   - qué cambia y qué NO cambia;
+#   - requisitos o bloqueos de seguridad.
+#
+# Los textos se almacenan aquí (en lugar de inline) para poder
+# probarlos sin abrir una ventana Tkinter real: las pruebas en
+# pruebas/test_ayuda_tooltips_v1.py verifican que contienen los
+# fragmentos y comandos esperados y que NO mencionan operaciones
+# prohibidas (git reset --hard, git clean, git push --force, etc.).
+# La interfaz los consume desde este diccionario mediante
+# AyudaEmergente; ayuda_interfaz.py NO se modificó (sus textos ya
+# admiten ancho configurable y no necesitan cambios).
+#
+# El diccionario se mantiene pequeño y enfocado en P0/P1.
+# Los tooltips menores (Cerrar, Copiar diff, filtros del historial,
+# exportaciones, etc.) son Fase 2B y no viven aquí todavía.
+
+TEXTOS_AYUDA_GIT_V1 = {
+    "fetch": (
+        "Fetch\n\n"
+        "Comando:\n"
+        "git fetch --prune <remoto>\n\n"
+        "Qué hace:\n"
+        "Consulta el remoto y trae a tu repositorio local la "
+        "información y los commits nuevos que todavía no tienes, "
+        "actualizando las referencias locales de seguimiento "
+        "(refs/remotes/...).\n\n"
+        "Concepto:\n"
+        "Las refs remotas son la memoria de GestorGit sobre lo que "
+        "existe en el remoto; no son los archivos del working tree.\n\n"
+        "Qué cambia:\n"
+        "Solo refs remotas locales. --prune elimina refs remotas "
+        "obsoletas en tu carpeta .git (no borra ramas del servidor "
+        "ni ramas locales).\n\n"
+        "No hace:\n"
+        "No integra esos commits en tu rama local actual: no "
+        "modifica HEAD, no toca el working tree ni el índice y "
+        "no crea merge.\n\n"
+        "Requisitos / seguridad:\n"
+        "Requiere remoto configurado y conexión. Sin Fetch previo, "
+        "Pull y Push permanecen deshabilitados."
+    ),
+    "pull": (
+        "Pull\n\n"
+        "Comando:\n"
+        "git pull --ff-only <remoto> <rama-remota>\n\n"
+        "Qué hace:\n"
+        "Descarga commits remotos pendientes y avanza la rama local "
+        "mediante fast-forward.\n\n"
+        "Concepto:\n"
+        "--ff-only permite ÚNICAMENTE avance fast-forward: la rama "
+        "local avanza sobre los commits nuevos del remoto.\n\n"
+        "Qué cambia:\n"
+        "HEAD avanza al nuevo commit y el working tree se actualiza "
+        "con los archivos de ese commit.\n\n"
+        "No hace:\n"
+        "No crea merge automático, no ejecuta Rebase y no hace Push: "
+        "el flujo de Pull no modifica la rama del servidor. Sí puede "
+        "actualizar las refs LOCALES de seguimiento (refs/remotes/...)\n"
+        "al obtener información del remoto, igual que Fetch: son "
+        "memoria local sobre el remoto, no los archivos. No es "
+        "'simplemente un Fetch': Fetch no toca HEAD y Pull sí.\n\n"
+        "Requisitos / seguridad:\n"
+        "Requiere repositorio limpio, upstream configurado, sin "
+        "commits por enviar, sin divergencia ni operación Git en "
+        "curso. GestorGit consulta el remoto antes de descargar."
+    ),
+    "push": (
+        "Push\n\n"
+        "Comando:\n"
+        "git push --porcelain <remoto> <rama-local>:refs/heads/<rama-remota>\n\n"
+        "Primer Push (sin upstream):\n"
+        "git push --porcelain --set-upstream <remoto> <rama-local>:refs/heads/<rama-local>\n\n"
+        "Qué hace:\n"
+        "Envía al remoto los commits que existen únicamente en tu "
+        "rama local.\n\n"
+        "Concepto:\n"
+        "--set-upstream aparece SOLO en el primer Push permitido "
+        "para vincular la rama local con la remota; --porcelain da "
+        "una salida estable que GestorGit interpreta.\n\n"
+        "Primer Push (sin upstream):\n"
+        "Si la rama remota con el mismo nombre YA EXISTE, "
+        "GestorGit puede actualizarla y configurar el upstream "
+        "con --set-upstream. Si NO existe, GestorGit tendría que "
+        "CREARLA: esa creación automática solo se permite cuando "
+        "el remoto está vacío de otras ramas conocidas; si no "
+        "puede verificarlo, bloquea el Push.\n\n"
+        "Qué cambia:\n"
+        "Crea o actualiza refs/heads/ en el remoto y, en el primer "
+        "Push, configura el upstream local.\n\n"
+        "No hace:\n"
+        "No crea commits, no mueve HEAD local y NUNCA usa --force ni "
+        "--force-with-lease.\n\n"
+        "Requisitos / seguridad:\n"
+        "Repositorio limpio, sin conflictos, sin divergencia y sin "
+        "commits remotos pendientes. GestorGit ejecuta Fetch previo "
+        "y vuelve a comprobar la sincronización antes de enviar."
+    ),
+    "preparar": (
+        "Preparar seleccionados\n\n"
+        "Comando:\n"
+        "git --literal-pathspecs add -- <rutas>\n\n"
+        "Qué hace:\n"
+        "Copia la versión actual de los archivos seleccionados al "
+        "índice/staging para que entren en el próximo commit.\n\n"
+        "Concepto:\n"
+        "Working tree -> Índice -> Commit -> HEAD.\n"
+        "Preparar registra/copia en el índice la versión actual de "
+        "los archivos seleccionados: el working tree conserva sus\n"
+        "cambios, no es un movimiento destructivo.\n\n"
+        "Qué cambia:\n"
+        "Solo el índice (staging).\n\n"
+        "No hace:\n"
+        "No crea commit, no mueve HEAD, no hace Push, no descarta "
+        "los cambios del working tree.\n\n"
+        "Requisitos / seguridad:\n"
+        "--literal-pathspecs trata la ruta literalmente; -- marca "
+        "el final de las opciones y protege rutas que podrían "
+        "parecer opciones Git. GestorGit usa rutas explícitas: "
+        "nunca git add . ni git add -A."
+    ),
+    "actualizar_preparados": (
+        "Actualizar preparados\n\n"
+        "Comando:\n"
+        "git --literal-pathspecs add -- <rutas>\n\n"
+        "Qué hace:\n"
+        "Repite git add sobre archivos que ya estaban preparados y "
+        "fueron modificados de nuevo después (estado 'preparado y "
+        "vuelto a modificar').\n\n"
+        "Concepto:\n"
+        "Vuelve a copiar la versión actual completa al índice, "
+        "reemplazando la versión preparada anterior.\n\n"
+        "Qué cambia:\n"
+        "Solo el índice: la versión preparada queda alineada con el "
+        "working tree.\n\n"
+        "No hace:\n"
+        "No modifica el archivo del disco, no descarta cambios, no "
+        "crea commit ni hace Push.\n\n"
+        "Requisitos / seguridad:\n"
+        "GestorGit revalida el estado de cada archivo antes de "
+        "ejecutar: solo actualiza archivos que siguen preparados, "
+        "con cambios nuevos fuera del índice y sin conflicto."
+    ),
+    "quitar_preparados": (
+        "Quitar de preparados\n\n"
+        "Comando:\n"
+        "git --literal-pathspecs restore --staged -- <rutas>\n\n"
+        "Sin commits previos (primer commit):\n"
+        "git --literal-pathspecs rm --cached -- <rutas>\n\n"
+        "Qué hace:\n"
+        "Saca los archivos seleccionados del índice/staging.\n\n"
+        "Concepto:\n"
+        "--staged actúa sobre el índice, no sobre el working tree.\n\n"
+        "Qué cambia:\n"
+        "Solo el índice: el archivo deja de prepararse para el "
+        "próximo commit.\n\n"
+        "No hace:\n"
+        "NO elimina el archivo del disco, NO descarta sus "
+        "modificaciones del working tree y NO es equivalente a "
+        "Descartar cambios sin preparar.\n\n"
+        "Requisitos / seguridad:\n"
+        "Rutas explícitas con --literal-pathspecs y --."
+    ),
+    "commit": (
+        "Crear commit\n\n"
+        "Comando:\n"
+        "git commit -m \"<mensaje>\"\n\n"
+        "Qué hace:\n"
+        "Crea un nuevo commit con los archivos que están en el "
+        "índice y avanza la rama/HEAD a ese commit.\n\n"
+        "Concepto:\n"
+        "El commit queda en la rama local. Para los archivos "
+        "incluidos, el índice queda alineado con el nuevo HEAD.\n\n"
+        "Qué cambia:\n"
+        "Crea un commit nuevo y mueve HEAD (y la rama actual) a él. "
+        "El índice no se borra: queda alineado con el nuevo HEAD.\n\n"
+        "No hace:\n"
+        "No hace Push y no publica nada en el remoto. El commit "
+        "usa lo que está preparado: no incorpora automáticamente "
+        "los cambios del working tree que no estén preparados.\n\n"
+        "Requisitos / seguridad:\n"
+        "Requiere identidad Git válida (user.name y user.email). "
+        "GestorGit bloquea el commit si hay conflictos, operación "
+        "Git en curso o archivos preparados modificados después "
+        "(usa Actualizar preparados primero)."
+    ),
+    "descartar_sin_preparar": (
+        "Descartar cambios sin preparar...\n\n"
+        "Comando:\n"
+        "git --literal-pathspecs restore --worktree -- <ruta>\n\n"
+        "Qué hace:\n"
+        "Operación DESTRUCTIVA: descarta únicamente los cambios SIN "
+        "PREPARAR de un archivo, restaurando el working tree desde "
+        "el índice.\n\n"
+        "Concepto:\n"
+        "Sin --source, git restore restaura desde el ÍNDICE (no "
+        "desde HEAD). Si el archivo estaba preparado (caso MM), los "
+        "cambios preparados se CONSERVAN; solo se pierden los "
+        "cambios posteriores no preparados.\n\n"
+        "Qué cambia:\n"
+        "El working tree del archivo seleccionado.\n\n"
+        "No hace:\n"
+        "No usa --staged, no crea commit, no hace Push y no toca el "
+        "índice. No borra archivos nuevos/no rastreados (marcados ?? "
+        "por git status) y no ejecuta git clean.\n\n"
+        "Requisitos / seguridad:\n"
+        "Solo disponible en la pestaña 'Sin preparar' con cambios "
+        "reales y sin conflictos. Pide confirmación explícita. "
+        "Bloqueado durante operaciones remotas en curso."
+    ),
+    "cambiar_rama": (
+        "Cambiar a seleccionada\n\n"
+        "Comando:\n"
+        "git switch --no-guess <rama>\n\n"
+        "Qué hace:\n"
+        "Cambia HEAD a otra rama LOCAL existente y actualiza el "
+        "working tree para reflejarla.\n\n"
+        "Concepto:\n"
+        "--no-guess impide que Git adivine o cree seguimiento de "
+        "una rama remota. GestorGit solo trabaja con ramas locales.\n\n"
+        "Qué cambia:\n"
+        "HEAD y, normalmente, el contenido del working tree.\n\n"
+        "No hace:\n"
+        "No descarta cambios, no hace Fetch, no hace Pull, no hace "
+        "Push, no publica ni crea ramas.\n\n"
+        "Requisitos / seguridad:\n"
+        "Requiere repositorio completamente limpio (sin cambios, sin "
+        "preparados, sin archivos nuevos). El servicio vuelve a "
+        "comprobarlo justo antes de ejecutar git switch."
+    ),
+    "crear_rama": (
+        "Crear rama\n\n"
+        "Comando:\n"
+        "git switch -c <nombre>\n\n"
+        "Qué hace:\n"
+        "Crea una rama LOCAL nueva y cambia HEAD a ella.\n\n"
+        "Concepto:\n"
+        "-c crea la rama y mueve HEAD en un mismo paso. Nace del "
+        "commit actual (HEAD), sin start-point distinto. Aparece "
+        "una nueva refs/heads/<nombre>; los archivos suelen quedar "
+        "iguales porque se parte del mismo commit.\n\n"
+        "Qué cambia:\n"
+        "Crea refs/heads/<nombre> y mueve HEAD a ella.\n\n"
+        "No hace:\n"
+        "No crea upstream, no hace Push, no publica la rama en el "
+        "remoto y no toca los commits existentes.\n\n"
+        "Requisitos / seguridad:\n"
+        "Requiere repositorio limpio. El nombre se valida con "
+        "git check-ref-format antes de crearla."
+    ),
+    "ramas": (
+        "Ramas...\n\n"
+        "Comando:\n"
+        "git for-each-ref --format=%(refname:short) refs/heads/\n"
+        "git symbolic-ref --quiet --short HEAD\n\n"
+        "Qué hace:\n"
+        "Abre la gestión de ramas LOCALES. Listar ramas es solo "
+        "lectura y no consulta el remoto.\n\n"
+        "Concepto:\n"
+        "refs/heads/ son las ramas locales. symbolic-ref determina "
+        "la rama actual (o HEAD separado).\n\n"
+        "Qué cambia:\n"
+        "Nada: solo consulta local.\n\n"
+        "No hace:\n"
+        "No hace Fetch, no hace Pull, no hace Push, no publica ramas "
+        "y no cambia de rama al abrir la ventana.\n\n"
+        "Requisitos / seguridad:\n"
+        "Operación de solo lectura. Cambiar o crear rama tienen sus "
+        "propios tooltips y confirmaciones."
+    ),
+    "configurar_github": (
+        "Configurar GitHub...\n\n"
+        "Qué hace:\n"
+        "Abre el flujo educativo para configurar el PRIMER remoto "
+        "origin de este repositorio local.\n\n"
+        "Concepto:\n"
+        "Un remoto es una URL asociada a tu repositorio local en "
+        ".git/config.\n\n"
+        "Qué cambia:\n"
+        "Todavía nada: este botón abre una ventana. La configuración "
+        "real se hace con Agregar origin (git remote add).\n\n"
+        "No hace:\n"
+        "No crea la cuenta ni el repositorio en GitHub. Puede abrir "
+        "github.com/new en el navegador. GestorGit no recibe ni guarda "
+        "credenciales (usuario, contraseña ni PAT).\n\n"
+        "Requisitos / seguridad:\n"
+        "Solo disponible si el repositorio no tiene NINGÚN remoto "
+        "configurado."
+    ),
+    "agregar_origin": (
+        "Agregar origin\n\n"
+        "Comando:\n"
+        "git remote add origin <url>\n\n"
+        "Qué hace:\n"
+        "Registra origin como remoto del repositorio local.\n\n"
+        "Concepto:\n"
+        "Solo modifica .git/config; no conecta con Internet durante "
+        "el comando.\n\n"
+        "Qué cambia:\n"
+        "Agrega una entrada de remoto en .git/config.\n\n"
+        "No hace:\n"
+        "No hace Fetch, no hace Push, no modifica el working tree, "
+        "no modifica HEAD y no sustituye ni elimina remotos "
+        "existentes.\n\n"
+        "Requisitos / seguridad:\n"
+        "Solo si no existe ningún remoto. Solo URL HTTPS de "
+        "github.com válida, sin credenciales embebidas. Después de "
+        "Agregar origin debes ejecutar Fetch manualmente."
+    ),
+}
+
+
 class AplicacionGit:
     """
     Ventana principal de la aplicación Gestor Git.
@@ -460,6 +776,12 @@ class AplicacionGit:
             column=7,
             sticky="e",
             padx=(10, 0)
+        )
+
+        AyudaEmergente(
+            self.boton_ramas,
+            TEXTOS_AYUDA_GIT_V1["ramas"],
+            ancho_texto=620
         )
 
         # ---------------------------------------------------------
@@ -1073,54 +1395,26 @@ class AplicacionGit:
 
             AyudaEmergente(
                 self.boton_fetch,
-                (
-                    "Fetch\n\n"
-                    "Consulta el repositorio remoto y actualiza la información "
-                    "que Git conoce sobre sus ramas.\n\n"
-                    "Fetch NO modifica tus archivos de trabajo.\n\n"
-                    "Después de Fetch, Gestor Git puede saber si existen "
-                    "commits por enviar o por descargar."
-                )
+                TEXTOS_AYUDA_GIT_V1["fetch"],
+                ancho_texto=620
             ),
 
             AyudaEmergente(
                 self.boton_pull,
-                (
-                    "Pull\n\n"
-                    "Descarga commits que existen en el remoto y que todavía "
-                    "no tienes localmente.\n\n"
-                    "Gestor Git solamente permite Pull mediante fast-forward "
-                    "(--ff-only).\n\n"
-                    "No crea Merge automático y no realiza Rebase automático."
-                )
+                TEXTOS_AYUDA_GIT_V1["pull"],
+                ancho_texto=620
             ),
 
             AyudaEmergente(
                 self.boton_push,
-                (
-                    "Push\n\n"
-                    "Envía al repositorio remoto los commits que existen "
-                    "solamente en tu repositorio local.\n\n"
-                    "Antes de enviar, Gestor Git ejecuta Fetch nuevamente "
-                    "para comprobar que el remoto no haya cambiado.\n\n"
-                    "Nunca utiliza Push forzado."
-                )
+                TEXTOS_AYUDA_GIT_V1["push"],
+                ancho_texto=620
             ),
 
             AyudaEmergente(
                 self.boton_configurar_github,
-                (
-                    "Configurar GitHub\n\n"
-                    "Conecta este repositorio local con un repositorio "
-                    "vacío de GitHub configurando el remoto origin.\n\n"
-                    "Esta operación solamente modifica la configuración "
-                    "local de Git.\n\n"
-                    "No envía commits.\n"
-                    "No descarga commits.\n"
-                    "No almacena credenciales.\n\n"
-                    "Después debes ejecutar Fetch y posteriormente "
-                    "Push cuando sea seguro."
-                )
+                TEXTOS_AYUDA_GIT_V1["configurar_github"],
+                ancho_texto=620
             ),
 
             AyudaEmergente(
@@ -1135,40 +1429,20 @@ class AplicacionGit:
 
             AyudaEmergente(
                 self.boton_preparar,
-                (
-                    "Preparar seleccionados\n\n"
-                    "Equivale conceptualmente a usar git add.\n\n"
-                    "Los cambios seleccionados pasan al área preparada "
-                    "(staging/index) y quedarán incluidos en el próximo commit.\n\n"
-                    "Todavía no se crea ningún commit."
-                )
+                TEXTOS_AYUDA_GIT_V1["preparar"],
+                ancho_texto=620
             ),
 
             AyudaEmergente(
                 self.boton_actualizar_preparados,
-                (
-                    "Actualizar preparados\n\n"
-                    "Actualiza el área preparada con la versión actual "
-                    "completa de los archivos seleccionados.\n\n"
-                    "Úsalo cuando un archivo aparece como:\n"
-                    "'preparado y vuelto a modificar'.\n\n"
-                    "Equivale a volver a ejecutar git add sobre ese archivo.\n\n"
-                    "No modifica ni elimina el archivo del disco.\n"
-                    "No crea un commit.\n\n"
-                    "Si preparaste solamente parte del archivo utilizando "
-                    "otra herramienta, esta acción incluirá también los "
-                    "cambios restantes de la versión actual."
-                )
+                TEXTOS_AYUDA_GIT_V1["actualizar_preparados"],
+                ancho_texto=620
             ),
 
             AyudaEmergente(
                 self.boton_quitar_preparados,
-                (
-                    "Quitar de preparados\n\n"
-                    "Saca los archivos seleccionados del área preparada.\n\n"
-                    "NO elimina los archivos y NO descarta sus modificaciones.\n\n"
-                    "Simplemente deja esos cambios fuera del próximo commit."
-                )
+                TEXTOS_AYUDA_GIT_V1["quitar_preparados"],
+                ancho_texto=620
             ),
 
             AyudaEmergente(
@@ -1195,13 +1469,8 @@ class AplicacionGit:
 
             AyudaEmergente(
                 self.boton_crear_commit,
-                (
-                    "Crear commit\n\n"
-                    "Guarda una instantánea local de todos los cambios "
-                    "que están preparados.\n\n"
-                    "Un commit pertenece primero a tu repositorio local.\n\n"
-                    "Crear commit NO envía nada al remoto. Para eso existe Push."
-                )
+                TEXTOS_AYUDA_GIT_V1["commit"],
+                ancho_texto=620
             )
         ]
 
@@ -1956,6 +2225,12 @@ class AplicacionGit:
             sticky="e"
         )
 
+        AyudaEmergente(
+            self.boton_crear_rama,
+            TEXTOS_AYUDA_GIT_V1["crear_rama"],
+            ancho_texto=620
+        )
+
         self.variable_nueva_rama.trace_add(
             "write",
             lambda *_cambios: (
@@ -1985,6 +2260,12 @@ class AplicacionGit:
             row=0,
             column=0,
             sticky="w"
+        )
+
+        AyudaEmergente(
+            self.boton_cambiar_rama,
+            TEXTOS_AYUDA_GIT_V1["cambiar_rama"],
+            ancho_texto=620
         )
 
         ttk.Button(
@@ -4193,13 +4474,8 @@ class AplicacionGit:
 
         AyudaEmergente(
             self.boton_descartar_sin_preparar,
-            (
-                "Descartar cambios sin preparar...\n\n"
-                "Descarta únicamente los cambios que todavía NO están "
-                "preparados de este archivo. Si ya existen cambios "
-                "preparados, se conservan.\n\n"
-                "No está disponible para archivos nuevos ni conflictos."
-            )
+            TEXTOS_AYUDA_GIT_V1["descartar_sin_preparar"],
+            ancho_texto=620
         )
 
         ttk.Button(
@@ -6127,6 +6403,12 @@ class AplicacionGit:
 
         self.boton_agregar_origin.pack(
             side=tk.LEFT
+        )
+
+        AyudaEmergente(
+            self.boton_agregar_origin,
+            TEXTOS_AYUDA_GIT_V1["agregar_origin"],
+            ancho_texto=620
         )
 
         self.boton_cancelar_configuracion = ttk.Button(
