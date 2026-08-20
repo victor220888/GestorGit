@@ -1421,9 +1421,11 @@ consolidado HASTA Ramas Locales V1 y está integrado en el commit
 local HEAD "Agrega selector seguro de ramas locales" (consultar
 git log -1 --oneline para conocer el hash vigente; SIN PUSH). Las
 58 pruebas adicionales pertenecen a Tooltips Didácticos V1 —
-Fase 2A (P0/P1): el total ACTUAL del working tree es 209, esa
-etapa sigue SIN COMMIT y su prueba manual en Windows está
-PENDIENTE.
+Fase 2A (P0/P1): el total ACTUAL es 209 (58/58 específicas OK y
+209/209 suite completa OK). La etapa está CERRADA: la prueba
+visual Windows final fue EXITOSA y quedó commiteada localmente
+en bc57772 (implementación) y 82a32d1 (microcorrección de Fetch
+y primer Push, hijo de bc57772); SIN PUSH.
 
 Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritura y protección contra fórmulas CSV. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
@@ -1441,7 +1443,7 @@ Las 7 pruebas de la actualización de archivos preparados validan: detección de
 
 Las 12 pruebas del inspector de cambios locales validan: archivo modificado sin preparar (diff en `Sin preparar`, preparado vacío), archivo solamente preparado (a la inversa), caso MM con ambos diffs presentes y distintos, conteos de inserciones/eliminaciones mediante `--numstat`, archivo nuevo sin preparar con bandera educativa, archivo eliminado con diff visible, rechazo de ruta con NUL comprobando que no se ejecuta ningún comando (registro de llamadas vacío), ruta con globs/carácter inicial `-` tratada literalmente (`--literal-pathspecs` y `--`), argumentos seguros de todos los diffs interceptando `ejecutar_git()` con un spy (sin ejecutar Git real ni simulaciones especiales en el código de producción: `--no-color`, `--no-ext-diff`, `--no-textconv`, `--cached` solo en el preparado, sin comandos destructivos), consulta que deja el repositorio intacto (`git status` antes/después idéntico), regresión del error de `--numstat`: cuando la llamada falla deliberadamente, `obtener_detalle()` devuelve `exitoso=False` con el mensaje controlado y NUNCA un detalle exitoso con 0 inserciones / 0 eliminaciones; y conflicto expuesto de forma estructurada: con códigos UU y una `descripcion` que NO contiene la palabra "Conflicto", `detalle.en_conflicto` es True (el booleano procede de los códigos de git status, no del texto). Fueron ejecutadas en aislamiento y en la suite completa y pasaron correctamente.
 
-Estado de la etapa inspector de cambios locales: ETAPA VALIDADA MANUALMENTE (prueba manual en Windows EXITOSA, confirmada por el usuario); el inspector forma parte de HEAD desde el commit c62b0a0 (referencia HISTÓRICA) y la corrección del error de --numstat forma parte del commit 634a295 (con Push confirmado; al iniciar la etapa del descarte master == origin/master == 634a295). La etapa "Ramas locales" V1 (con sus microcorrecciones: distinción sin commits / HEAD separado y segunda revalidación TOCTOU; total de 151 pruebas en su momento) quedó incorporada al commit local HEAD "Agrega selector seguro de ramas locales" (consultar git log -1 --oneline para el hash vigente; SIN PUSH). La etapa "Tooltips Didácticos V1 — Fase 2A" (P0/P1; 58 pruebas nuevas; total ACTUAL 209) NO tiene commit todavía y su prueba manual en Windows está PENDIENTE. La etapa del descarte y su cierre técnico ya viven en el commit 3309be7.
+Estado de la etapa inspector de cambios locales: ETAPA VALIDADA MANUALMENTE (prueba manual en Windows EXITOSA, confirmada por el usuario); el inspector forma parte de HEAD desde el commit c62b0a0 (referencia HISTÓRICA) y la corrección del error de --numstat forma parte del commit 634a295 (con Push confirmado; al iniciar la etapa del descarte master == origin/master == 634a295). La etapa "Ramas locales" V1 (con sus microcorrecciones: distinción sin commits / HEAD separado y segunda revalidación TOCTOU; total de 151 pruebas en su momento) quedó incorporada al commit local HEAD "Agrega selector seguro de ramas locales" (consultar git log -1 --oneline para el hash vigente; SIN PUSH). La etapa "Tooltips Didácticos V1 — Fase 2A" (P0/P1; 58 pruebas nuevas; total ACTUAL 209) está CERRADA: prueba visual Windows final EXITOSA, commits LOCALES bc57772 (implementación) y 82a32d1 (microcorrección de Fetch y primer Push, hijo de bc57772); SIN PUSH. La etapa del descarte y su cierre técnico ya viven en el commit 3309be7.
 
 ## Estado consolidado de la etapa actual
 
@@ -1518,7 +1520,10 @@ Pruebas: 58 pruebas nuevas en
 reales y ausencia de operaciones prohibidas sin mover el ratón
 (prueban el diccionario, equivalente a probar el contenido del
 tooltip). Suite completa: 209 tests OK (151 anteriores + 58 V1).
-PRUEBA MANUAL EN WINDOWS: PENDIENTE. SIN COMMIT.
+PRUEBA MANUAL EN WINDOWS FINAL: EXITOSA (confirmada por el
+usuario). Fase 2A CERRADA: commits LOCALES bc57772
+(implementación) y 82a32d1 (microcorrección de Fetch y primer
+Push, hijo de bc57772); SIN PUSH.
 
 SIGUIENTE ETAPA: Tooltips Didácticos V1 — Fase 2B (ayudas
 secundarias P2/P3: Cerrar, Copiar diff, filtros del historial,
@@ -1621,8 +1626,10 @@ python -m unittest discover -s .\pruebas -v
    persistencia del último repositorio, actualización de archivos
    preparados, inspector de cambios locales, descarte de cambios sin
    preparar y selector de ramas locales siguen presentes;
-6. la Fase 2A de Tooltips Didácticos V1 ya está implementada
-   (P0/P1, 58 pruebas, sin commit, prueba manual pendiente); la
+6. la Fase 2A de Tooltips Didácticos V1 está CERRADA (P0/P1, 58
+   pruebas, 209 suite completa, prueba visual Windows final
+   EXITOSA, commits locales bc57772 y 82a32d1, hijo del primero,
+   SIN PUSH); la
    SIGUIENTE ETAPA INMEDIATA es la Fase 2B (tooltips secundarios
    P2/P3: Cerrar, Copiar diff, filtros del historial, exportaciones,
    Actualizar, controles puramente visuales); "Publicar rama" queda

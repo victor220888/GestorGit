@@ -40,7 +40,17 @@ Estado actual:
   (prueba manual EXITOSA confirmada por el usuario);
 - corrección del error silencioso de git diff --numstat:
   commiteada en 634a295;
-- 151 pruebas OK (123 + 28 de las ramas locales);
+- 151 pruebas OK (123 + 28 de las ramas locales): dato
+  HISTÓRICO del estado HASTA Ramas Locales V1, no el total
+  actual del proyecto;
+- Tooltips Didácticos V1 — Fase 2A: CERRADA;
+- 13 tooltips P0/P1 validados;
+- 58/58 pruebas específicas OK;
+- 209/209 suite completa OK;
+- revisión visual Windows final: EXITOSA;
+- commits locales bc57772 y 82a32d1 (hijo del primero);
+- SIN PUSH;
+- Fase 2B: NO iniciada;
 - config.json ignorado y no versionado;
 - .opencode/ sigue sin versionar y NO debe incluirse
   automáticamente.
@@ -71,7 +81,7 @@ Estado actual:
 - inspector de cambios locales (solo lectura + descarte de
   cambios sin preparar).
 
-## Trabajo actual
+## Histórico — cierre de la etapa de ramas locales
 
 Estado: ETAPA VALIDADA - PRUEBA AUTOMATIZADA OK
 (151 tests) - PRUEBA MANUAL EN WINDOWS EXITOSA -
@@ -425,11 +435,15 @@ implementación y microcierre documental final.
 
 Estado:
 
-IMPLEMENTACIÓN TERMINADA
+FASE CERRADA
 PRUEBAS ESPECÍFICAS: 58/58 OK
 SUITE COMPLETA: 209/209 OK
-PRUEBA MANUAL WINDOWS: PENDIENTE
-SIN COMMIT
+PRUEBA MANUAL WINDOWS FINAL DE LOS 4 TOOLTIPS CORREGIDOS
+(Fetch, Push, Crear commit, Descartar cambios sin preparar...):
+EXITOSA (confirmada por el usuario)
+LOS 13 TOOLTIPS P0/P1 QUEDAN VALIDADOS
+COMMITS LOCALES: bc57772 y 82a32d1 (hijo del primero)
+SIN PUSH
 
 Archivos funcionales:
 
@@ -463,6 +477,16 @@ FUTURA y separada.
 
 HEAD observado al iniciar la etapa: eece381 Agrega selector
 seguro de ramas locales; índice limpio.
+
+Cierre de la fase (ambos commits LOCALES, NO hubo Push):
+
+- bc57772 Mejora tooltips didacticos de Git — implementación y
+  documentación de los 13 tooltips P0/P1;
+- 82a32d1 Corrige precision didactica de Fetch y primer Push —
+  HIJO de bc57772; microcorrecciones residuales de Fetch
+  (``Qué cambia`` deja de afirmar ``Solo refs remotas locales``)
+  y de primer Push (distingue rama remota existente de creación
+  de rama remota nueva).
 
 Detalles de implementación:
 
@@ -516,8 +540,9 @@ MICROCORRECCIÓN DIDÁCTICA DE TEXTOS (solo tooltips, SIN lógica):
   asserts ampliados en fetch/commit/descartar; total mantenido
   en 58; suite completa 209;
 - NO se modificó lógica Git; ayuda_interfaz.py y servicios
-  INTACTOS; staging vacío; SIN commit; PRUEBA MANUAL WINDOWS
-  de los 4 tooltips modificados PENDIENTE.
+  INTACTOS; ambos commits (bc57772 y 82a32d1) son locales y
+  SIN Push; revisión visual Windows final de los 4 tooltips:
+  EXITOSA.
 
 ## Regla para reservar archivos
 
@@ -540,18 +565,10 @@ Estado: EN CURSO
 
 Reserva activa:
 
-OpenCode:
-Tarea: Tooltips Didácticos V1 — Fase 2A (P0/P1) — implementación
-  y microcierre documental final (13 tooltips, 58 pruebas)
-Archivos:
-- principal.py
-- pruebas/test_ayuda_tooltips_v1.py
-- AGENTS.md
-- CLAUDE.md
-- TRABAJO_ACTUAL.md (este documento)
-Estado: MICROCORRECCIÓN DIDÁCTICA TERMINADA - 58/58 PRUEBAS
-  ESPECÍFICAS OK - 209/209 SUITE COMPLETA OK - PRUEBA MANUAL
-  WINDOWS DE LOS 4 TOOLTIPS MODIFICADOS PENDIENTE - SIN COMMIT
+SIN TAREA ACTIVA — Tooltips Didácticos V1 — Fase 2A: TERMINADA
+(cierre documentado arriba: commits locales bc57772 y 82a32d1,
+PRUEBA MANUAL WINDOWS EXITOSA, SIN PUSH).
+Siguiente etapa: Tooltips Didácticos V1 — Fase 2B (NO iniciada).
 
 Mientras una tarea figure EN CURSO, el otro agente NO debe modificar esos
 archivos sin coordinación explícita.

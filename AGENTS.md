@@ -645,14 +645,17 @@ Nota: PowerShell puede mostrar mojibake (p. ej. `aplicaciÃ³n`); Tkinter muestr
 
 ## Siguiente etapa
 
-TOOLTIPS DIDÁCTICOS V1 — FASE 2A (P0/P1): IMPLEMENTADA.
+TOOLTIPS DIDÁCTICOS V1 — FASE 2A (P0/P1): CERRADA.
 
-- 13 tooltips críticos (diccionario `TEXTOS_AYUDA_GIT_V1` en
-  `principal.py`, consumido por `AyudaEmergente`);
+- 13 tooltips P0/P1 validados (diccionario `TEXTOS_AYUDA_GIT_V1`
+  en `principal.py`, consumido por `AyudaEmergente`);
 - 58 pruebas específicas en `pruebas/test_ayuda_tooltips_v1.py`;
 - 209 pruebas totales OK;
-- PRUEBA MANUAL WINDOWS: PENDIENTE;
-- SIN COMMIT.
+- PRUEBA VISUAL WINDOWS FINAL: EXITOSA (confirmada por el usuario);
+- commits LOCALES: `bc57772 Mejora tooltips didacticos de Git`
+  y `82a32d1 Corrige precision didactica de Fetch y primer Push`
+  (82a32d1 es hijo de bc57772);
+- SIN PUSH.
 
 SIGUIENTE ETAPA: Tooltips Didácticos V1 — Fase 2B (ayudas
 secundarias P2/P3). NO iniciada.
