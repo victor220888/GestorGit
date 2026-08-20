@@ -62,7 +62,9 @@ Estado actual:
 - exportación CSV;
 - exportación TXT;
 - configuración inicial de GitHub (primer remoto origin);
-- primer Push solo con remoto vacío de ramas;
+- primer Push seguro: si la rama remota ya existe puede configurar
+  upstream; si hay que crearla, solo se permite con remoto vacío
+  de otras ramas conocidas;
 - detalle de cambios de un commit (solo lectura);
 - persistencia del último repositorio (config.json);
 - actualización de archivos preparados;

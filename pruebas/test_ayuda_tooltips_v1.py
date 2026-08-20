@@ -52,6 +52,10 @@ class TestTextosTooltipsV1(unittest.TestCase):
     def test_fetch_actualiza_refs_remotas(self):
         t = texto("fetch")
         self.assertIn("refs/remotes/", t)
+        # Fetch no cambia ÚNICAMENTE refs remotas: también incorpora
+        # datos/objetos de los commits obtenidos e información interna.
+        self.assertIn("información interna del repositorio local", t)
+        self.assertNotIn("Solo refs remotas locales", t)
 
     def test_fetch_no_cambia_working_tree_ni_head(self):
         t = texto("fetch")
