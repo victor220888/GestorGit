@@ -73,7 +73,7 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 209 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 255 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
      en líneas CRLF añadidas: causa conocida y documentada);
@@ -117,7 +117,7 @@ El historial debe conservar estas características:
 - `servicio_descarte_cambios_git.py` — descarta los cambios SIN PREPARAR de UN archivo con `git --literal-pathspecs restore --worktree -- <ruta>` (restaura desde el ÍNDICE, no desde HEAD). Conserva el staging, revalida el estado antes del restore y nunca ejecuta operaciones remotas.
 - `modelos_ramas.py` — modelos de ramas locales: `RamaLocal`, `ResultadoRamas`.
 - `servicio_ramas_git.py` — ramas LOCALES: listar (`git for-each-ref --format=%(refname:short) refs/heads/`), identificar la rama actual (`git symbolic-ref --quiet --short HEAD`), cambiar (`git switch --no-guess <rama>`) y crear desde HEAD (`git switch -c <rama>`). Exige repositorio totalmente limpio, valida nombres (propias + `git check-ref-format refs/heads/<nombre>`) y nunca ejecuta Fetch/Pull/Push/Merge/Rebase; una rama nueva queda solo en el local y sin upstream.
-- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales (incluido el botón `Descartar cambios sin preparar...`), selector de ramas locales (botón `Ramas...` y ventana `Ramas locales - Gestor Git`), carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red.
+- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales (incluido el botón `Descartar cambios sin preparar...`), selector de ramas locales (botón `Ramas...` y ventana `Ramas locales - Gestor Git`), carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red. Contiene además `TEXTOS_AYUDA_GIT_V1`: los 37 tooltips didácticos (13 P0/P1 + 24 P2/P3) centralizados en un único diccionario.
 - `ayuda_interfaz.py` — ayuda visual: `AyudaEmergente` y `configurar_estilos`. Sin lógica Git.
 
 ## Seguridad
@@ -595,7 +595,7 @@ eliminación de ramas permanece fuera del alcance V1.
 
 ## Pruebas
 
-209 pruebas automatizadas en `pruebas/`. Ejecutar:
+255 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -604,7 +604,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 209 tests in ...
+Ran 255 tests in ...
 OK
 ```
 
@@ -645,24 +645,59 @@ Nota: PowerShell puede mostrar mojibake (p. ej. `aplicaciÃ³n`); Tkinter muestr
 
 ## Siguiente etapa
 
-TOOLTIPS DIDÁCTICOS V1 — FASE 2A (P0/P1): CERRADA.
+TOOLTIPS DIDÁCTICOS V1: CERRADO (Fase 2A + Fase 2B).
 
-- 13 tooltips P0/P1 validados (diccionario `TEXTOS_AYUDA_GIT_V1`
-  en `principal.py`, consumido por `AyudaEmergente`);
-- 58 pruebas específicas en `pruebas/test_ayuda_tooltips_v1.py`;
-- 209 pruebas totales OK;
-- PRUEBA VISUAL WINDOWS FINAL: EXITOSA (confirmada por el usuario);
-- commits LOCALES: `bc57772 Mejora tooltips didacticos de Git`
-  y `82a32d1 Corrige precision didactica de Fetch y primer Push`
-  (82a32d1 es hijo de bc57772);
+- 37 tooltips totales: 13 P0/P1 (Fase 2A, largos,
+  `ancho_texto=620`) + 24 P2/P3 (Fase 2B, breves, ancho por
+  defecto);
+- todos los textos centralizados en `TEXTOS_AYUDA_GIT_V1`
+  (diccionario único en `principal.py`, consumido por
+  `AyudaEmergente`); 0 textos literales inline en llamadas a
+  `AyudaEmergente`;
+- pruebas estáticas con `ast` en
+  `pruebas/test_ayuda_tooltips_v1.py` garantizan: 0 textos
+  inline; total de llamadas == total de claves del diccionario
+  (37); cada clave conectada exactamente una vez; biyección
+  claves usadas <-> diccionario;
+- los 24 tooltips 2B incluyen: 14 tooltips secundarios que
+  estaban inline (5 ventana principal + 9 historial)
+  centralizados; 4 ayudas de acciones nuevas (Actualizar y
+  Copiar diff del Inspector; Actualizar de ramas; Copiar diff
+  del detalle de commit); 6 conceptos de sincronización sobre
+  las etiquetas Upstream, Rama remota, Por enviar, Por
+  descargar, Estado y Última consulta;
+- los conceptos de sincronización enseñan información remota
+  CONOCIDA localmente, no un estado vivo del servidor:
+  "Rama remota" es la rama de seguimiento conocida localmente;
+  "Estado" compara con lo último conocido (Fetch reciente), no
+  es monitorización en tiempo real; "Última consulta" puede
+  reflejar operaciones remotas exitosas o fallidas y una
+  operación fallida no implica información actualizada;
+- "Por enviar" / "Por descargar" cuentan COMMITS, no archivos;
+- los cuatro botones "Actualizar" (estado local, historial,
+  Inspector, ramas) tienen semánticas y textos distintos
+  (consultas LOCALES, no Fetch); exportaciones CSV/TXT escriben
+  informes y no modifican Git; Copiar diff es solo portapapeles;
+  Upstream no implica estar sincronizado; historial y filtros
+  son consultas LOCALES;
+- 104 pruebas específicas en `pruebas/test_ayuda_tooltips_v1.py`
+  (58 Fase 2A + 46 Fase 2B); 255 pruebas totales OK;
+- PRUEBA VISUAL WINDOWS FINAL: EXITOSA en ambas fases
+  (2A confirmada en commits locales `bc57772` y `82a32d1`;
+  2B confirmada por el usuario y commiteada en
+  "Cierra tooltips didacticos V1", hijo de 0413697);
 - SIN PUSH.
 
-SIGUIENTE ETAPA: Tooltips Didácticos V1 — Fase 2B (ayudas
-secundarias P2/P3). NO iniciada.
+Etapas FUTURAS (documentadas, sin implementar):
 
-La funcionalidad "Publicar rama local" NO se cancela: queda
-documentada como etapa FUTURA separada, fuera del alcance
-actual, con sus propias confirmaciones de seguridad.
+1. Leyenda/ayuda contextual de estados Git para la tabla de
+   cambios que enseñe working tree, staging/índice, HEAD,
+   `??`, `M`, `MM`, preparado, preparado y vuelto a modificar y
+   conflictos. La tabla de cambios quedó deliberadamente SIN
+   tooltip general en Fase 2B.
+2. La funcionalidad "Publicar rama local" NO se cancela: queda
+   documentada como etapa FUTURA separada, fuera del alcance
+   actual, con sus propias confirmaciones de seguridad.
 
 ## Filosofía
 

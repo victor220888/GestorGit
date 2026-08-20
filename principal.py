@@ -35,9 +35,15 @@ from servicio_remoto_git import ServicioRemotoGit
 # AyudaEmergente; ayuda_interfaz.py NO se modificó (sus textos ya
 # admiten ancho configurable y no necesitan cambios).
 #
-# El diccionario se mantiene pequeño y enfocado en P0/P1.
-# Los tooltips menores (Cerrar, Copiar diff, filtros del historial,
-# exportaciones, etc.) son Fase 2B y no viven aquí todavía.
+# El diccionario agrupa hoy dos conjuntos:
+#   - Fase 2A (P0/P1): 13 textos largos que enseñan comando Git real
+#     -> concepto -> qué cambia -> no hace -> seguridad;
+#   - Fase 2B (P2/P3): 24 textos breves de acciones secundarias y
+#     conceptos de sincronización (ventana principal, historial,
+#     Inspector, ramas, detalle de commit y etiquetas de estado).
+#
+# Todos los tooltips de la interfaz viven aquí; no queda ningún
+# texto literal de tooltip inline en las llamadas a AyudaEmergente.
 
 TEXTOS_AYUDA_GIT_V1 = {
     "fetch": (
@@ -332,6 +338,210 @@ TEXTOS_AYUDA_GIT_V1 = {
         "Solo si no existe ningún remoto. Solo URL HTTPS de "
         "github.com válida, sin credenciales embebidas. Después de "
         "Agregar origin debes ejecutar Fetch manualmente."
+    ),
+
+    # =============================================================
+    # FASE 2B (P2/P3): textos breves y concisos
+    # =============================================================
+
+    "seleccionar_repositorio": (
+        "Seleccionar repositorio\n\n"
+        "Elige una carpeta que contenga un repositorio Git.\n\n"
+        "La aplicación solamente analizará esa carpeta. "
+        "Seleccionarla no modifica archivos ni ejecuta Fetch, "
+        "Pull o Push."
+    ),
+    "actualizar_estado_local": (
+        "Actualizar estado local\n\n"
+        "Vuelve a leer el estado LOCAL del repositorio "
+        "desde tu disco.\n\n"
+        "No equivale a Fetch: no consulta el remoto, "
+        "no descarga ni sube nada."
+    ),
+    "historial": (
+        "Historial de commits\n\n"
+        "Muestra los commits más recientes del historial LOCAL.\n\n"
+        "Es una consulta de SOLO LECTURA: abrirla no modifica "
+        "archivos, ramas, commits ni el repositorio remoto.\n\n"
+        "También permite filtrar y exportar los resultados "
+        "visibles a CSV o TXT."
+    ),
+    "seleccionar_todo": (
+        "Seleccionar todo\n\n"
+        "Selecciona todas las filas visibles de la tabla.\n\n"
+        "Solo cambia la selección visual: no prepara nada "
+        "por sí mismo.\n\n"
+        "Esa selección será la entrada de acciones como "
+        "Preparar, Actualizar preparados o Quitar de "
+        "preparados según proceda."
+    ),
+    "ver_cambios_locales": (
+        "Ver cambios locales...\n\n"
+        "Abre una ventana para inspeccionar los cambios "
+        "del archivo seleccionado.\n\n"
+        "Consultar, Actualizar y Copiar diff son operaciones "
+        "de solo lectura.\n\n"
+        "Desde la pestaña 'Sin preparar' existe una acción "
+        "separada: 'Descartar cambios sin preparar...', que "
+        "puede eliminar cambios del working tree después de "
+        "una confirmación explícita.\n\n"
+        "La pestaña 'Sin preparar' muestra los cambios todavía "
+        "no preparados (working tree -> índice).\n\n"
+        "La pestaña 'Preparados' muestra los cambios ya "
+        "listos para el commit (índice -> HEAD).\n\n"
+        "Útil para entender el flujo:\n"
+        "Working tree -> Preparar -> Staging -> Commit -> HEAD.\n\n"
+        "No ejecuta Fetch, Pull ni Push."
+    ),
+    "historial_filtro_archivo": (
+        "Filtro por archivo\n\n"
+        "Escribe todo o parte del nombre de un archivo.\n\n"
+        "Por ejemplo: FINI004, .pls o Paquetes.\n\n"
+        "La búsqueda no distingue mayúsculas de minúsculas "
+        "y solamente muestra commits que modificaron archivos "
+        "cuyo nombre o ruta contiene ese texto.\n\n"
+        "Vuelve a consultar git log LOCAL: no consulta el remoto."
+    ),
+    "historial_fecha_desde": (
+        "Fecha Desde\n\n"
+        "Muestra commits a partir de esta fecha, "
+        "incluyéndola.\n\n"
+        "Se refiere a la FECHA DEL COMMIT.\n\n"
+        "Formato: dd/mm/aaaa.\n"
+        "Puedes dejarla vacía."
+    ),
+    "historial_fecha_hasta": (
+        "Fecha Hasta\n\n"
+        "Muestra commits hasta esta fecha, "
+        "incluyéndola.\n\n"
+        "Se refiere a la FECHA DEL COMMIT.\n\n"
+        "Formato: dd/mm/aaaa.\n"
+        "Puedes dejarla vacía."
+    ),
+    "historial_aplicar_filtros": (
+        "Aplicar filtros\n\n"
+        "Consulta nuevamente el historial LOCAL utilizando "
+        "el archivo y las fechas indicadas.\n\n"
+        "Los filtros se combinan: si completas varios, "
+        "el commit debe cumplirlos todos.\n\n"
+        "No consulta el remoto."
+    ),
+    "historial_limpiar_filtros": (
+        "Limpiar filtros\n\n"
+        "Vacía Archivo, Desde y Hasta y vuelve a mostrar "
+        "el historial LOCAL sin filtros.\n\n"
+        "No cambia commits: solo modifica la vista."
+    ),
+    "historial_ver_cambios": (
+        "Ver cambios...\n\n"
+        "Muestra los cambios de archivos introducidos "
+        "por el commit seleccionado (consulta local).\n\n"
+        "Es una vista de SOLO LECTURA: no hace checkout, "
+        "reset ni restauración. No modifica archivos, "
+        "commits ni ramas y no consulta el remoto."
+    ),
+    "exportar_historial_csv": (
+        "Exportar CSV\n\n"
+        "Guarda exactamente los commits visibles en un archivo CSV "
+        "en tu disco.\n\n"
+        "Incluye hash completo, hash corto, fecha ISO, autor, correo "
+        "y mensaje.\n\n"
+        "Se utiliza UTF-8 y un formato amigable para Excel en Windows.\n\n"
+        "Escribe un archivo de informe: no modifica el repositorio, "
+        "no cambia commits y no consulta el remoto."
+    ),
+    "exportar_historial_txt": (
+        "Exportar TXT\n\n"
+        "Guarda exactamente los commits visibles en un archivo de "
+        "texto en tu disco.\n\n"
+        "Además deja registrados el repositorio y los filtros "
+        "aplicados para facilitar análisis o documentación posterior.\n\n"
+        "Escribe un archivo de informe: no modifica el repositorio, "
+        "no cambia commits y no consulta el remoto."
+    ),
+    "actualizar_historial": (
+        "Actualizar historial\n\n"
+        "Vuelve a ejecutar la consulta de git log LOCAL "
+        "conservando los filtros actuales.\n\n"
+        "No equivale a Fetch y no consulta el remoto."
+    ),
+    "actualizar_inspector": (
+        "Actualizar\n\n"
+        "Vuelve a consultar el estado y los diffs LOCALES "
+        "del archivo inspeccionado.\n\n"
+        "No hace Fetch, no modifica el archivo, "
+        "el staging ni los commits."
+    ),
+    "actualizar_ramas": (
+        "Actualizar\n\n"
+        "Vuelve a listar las ramas LOCALES del repositorio.\n\n"
+        "No hace Fetch: no verás ramas nuevas del servidor. "
+        "Tampoco cambia de rama."
+    ),
+    "copiar_diff_inspector": (
+        "Copiar diff\n\n"
+        "Copia al portapapeles el diff VISIBLE de la pestaña "
+        "activa (Sin preparar o Preparados).\n\n"
+        "No modifica archivos: no prepara ni descarta "
+        "y no modifica Git."
+    ),
+    "copiar_diff_commit": (
+        "Copiar diff\n\n"
+        "Copia al portapapeles el diff VISIBLE mostrado "
+        "para el commit seleccionado.\n\n"
+        "No copia ni ejecuta un commit: no modifica el "
+        "working tree, el staging ni el historial."
+    ),
+    "concepto_upstream": (
+        "Upstream\n\n"
+        "Es la rama de seguimiento asociada a la rama local "
+        "(habitual: origin/master).\n\n"
+        "Sirve como referencia para comparar Pull/Push.\n\n"
+        "La etiqueta solo indica si está CONFIGURADO o no: "
+        "tener upstream no significa estar sincronizado ahora mismo."
+    ),
+    "concepto_rama_remota": (
+        "Rama remota\n\n"
+        "Es la rama de seguimiento que Git conoce localmente "
+        "(p. ej. origin/master).\n\n"
+        "Fetch actualiza esa información al consultar el remoto.\n\n"
+        "No es una consulta en vivo al servidor. "
+        "Si la rama no existe, se indica '(no existe)'."
+    ),
+    "concepto_por_enviar": (
+        "Por enviar\n\n"
+        "Cuenta COMMITS, no archivos.\n\n"
+        "Son commits de la rama local que la referencia "
+        "upstream CONOCIDA no contiene.\n\n"
+        "Depende de la información remota conocida localmente: "
+        "un Fetch reciente actualiza esa referencia.\n\n"
+        "No significa que se haya hecho Push."
+    ),
+    "concepto_por_descargar": (
+        "Por descargar\n\n"
+        "Cuenta COMMITS, no archivos.\n\n"
+        "Son commits conocidos en la rama de seguimiento remota "
+        "que la rama local aún no contiene.\n\n"
+        "Se calcula con la información conocida tras consultar "
+        "el remoto (Fetch).\n\n"
+        "No significa que esos commits ya estén integrados con Pull."
+    ),
+    "concepto_estado_sincronizacion": (
+        "Estado de sincronización\n\n"
+        "Describe la comparación entre la rama LOCAL y la "
+        "referencia remota CONOCIDA (por enviar / por descargar).\n\n"
+        "No es monitorización en tiempo real del servidor: "
+        "se calcula con la información de la última consulta."
+    ),
+    "concepto_ultima_consulta": (
+        "Última consulta\n\n"
+        "Muestra el último estado conocido relacionado con una "
+        "consulta u operación remota.\n\n"
+        "GestorGit no vigila continuamente el servidor: la "
+        "información remota se actualiza al ejecutar Fetch "
+        "(y en el flujo actual, también Pull o Push).\n\n"
+        "Una operación fallida no significa que la información "
+        "remota se haya actualizado."
     ),
 }
 
@@ -832,10 +1042,12 @@ class AplicacionGit:
             value="Todavía no se ejecutó Fetch en esta sesión."
         )
 
-        ttk.Label(
+        self.etiqueta_upstream = ttk.Label(
             marco_sincronizacion,
             text="Upstream:"
-        ).grid(
+        )
+
+        self.etiqueta_upstream.grid(
             row=0,
             column=0,
             sticky="w",
@@ -852,10 +1064,12 @@ class AplicacionGit:
             padx=(0, 25)
         )
 
-        ttk.Label(
+        self.etiqueta_rama_remota = ttk.Label(
             marco_sincronizacion,
             text="Rama remota:"
-        ).grid(
+        )
+
+        self.etiqueta_rama_remota.grid(
             row=0,
             column=2,
             sticky="w",
@@ -872,10 +1086,12 @@ class AplicacionGit:
             padx=(0, 25)
         )
 
-        ttk.Label(
+        self.etiqueta_por_enviar = ttk.Label(
             marco_sincronizacion,
             text="Por enviar:"
-        ).grid(
+        )
+
+        self.etiqueta_por_enviar.grid(
             row=0,
             column=4,
             sticky="w",
@@ -892,10 +1108,12 @@ class AplicacionGit:
             padx=(0, 25)
         )
 
-        ttk.Label(
+        self.etiqueta_por_descargar = ttk.Label(
             marco_sincronizacion,
             text="Por descargar:"
-        ).grid(
+        )
+
+        self.etiqueta_por_descargar.grid(
             row=0,
             column=6,
             sticky="w",
@@ -911,10 +1129,12 @@ class AplicacionGit:
             sticky="w"
         )
 
-        ttk.Label(
+        self.etiqueta_estado = ttk.Label(
             marco_sincronizacion,
             text="Estado:"
-        ).grid(
+        )
+
+        self.etiqueta_estado.grid(
             row=1,
             column=0,
             sticky="nw",
@@ -1004,10 +1224,12 @@ class AplicacionGit:
             padx=(10, 0)
         )
 
-        ttk.Label(
+        self.etiqueta_ultima_consulta = ttk.Label(
             marco_sincronizacion,
             textvariable=self.variable_ultima_consulta
-        ).grid(
+        )
+
+        self.etiqueta_ultima_consulta.grid(
             row=2,
             column=0,
             columnspan=8,
@@ -1363,36 +1585,17 @@ class AplicacionGit:
         self.ayudas_emergentes = [
             AyudaEmergente(
                 self.boton_seleccionar,
-                (
-                    "Seleccionar repositorio\n\n"
-                    "Elige una carpeta que contenga un repositorio Git.\n\n"
-                    "La aplicación solamente analizará esa carpeta. "
-                    "Seleccionarla no modifica archivos ni ejecuta Fetch, "
-                    "Pull o Push."
-                )
+                TEXTOS_AYUDA_GIT_V1["seleccionar_repositorio"]
             ),
 
             AyudaEmergente(
                 self.boton_actualizar,
-                (
-                    "Actualizar estado local\n\n"
-                    "Vuelve a leer el estado del repositorio desde tu disco.\n\n"
-                    "Sirve para detectar archivos modificados, preparados "
-                    "o nuevos commits locales.\n\n"
-                    "No consulta Internet ni el repositorio remoto."
-                )
+                TEXTOS_AYUDA_GIT_V1["actualizar_estado_local"]
             ),
 
             AyudaEmergente(
                 self.boton_historial,
-                (
-                    "Historial de commits\n\n"
-                    "Muestra los commits más recientes del repositorio local.\n\n"
-                    "Es una consulta de SOLO LECTURA: no cambia archivos, "
-                    "ramas, commits ni el repositorio remoto.\n\n"
-                    "También permite filtrar y exportar los resultados "
-                    "visibles a CSV o TXT."
-                )
+                TEXTOS_AYUDA_GIT_V1["historial"]
             ),
 
             AyudaEmergente(
@@ -1421,12 +1624,7 @@ class AplicacionGit:
 
             AyudaEmergente(
                 self.boton_seleccionar_todo,
-                (
-                    "Seleccionar todo\n\n"
-                    "Selecciona todas las filas visibles de la tabla.\n\n"
-                    "Todavía no modifica Git. Solo cambia la selección "
-                    "visual de archivos."
-                )
+                TEXTOS_AYUDA_GIT_V1["seleccionar_todo"]
             ),
 
             AyudaEmergente(
@@ -1449,30 +1647,42 @@ class AplicacionGit:
 
             AyudaEmergente(
                 self.boton_ver_cambios_locales,
-                (
-                    "Ver cambios locales...\n\n"
-                    "Abre una ventana para inspeccionar los cambios "
-                    "del archivo seleccionado.\n\n"
-                    "Consultar, Actualizar y Copiar diff son operaciones "
-                    "de solo lectura.\n\n"
-                    "Desde la pestaña 'Sin preparar' existe una acción "
-                    "separada: 'Descartar cambios sin preparar...', que "
-                    "puede eliminar cambios del working tree después de "
-                    "una confirmación explícita.\n\n"
-                    "La pestaña 'Sin preparar' muestra los cambios todavía "
-                    "no preparados (working tree -> índice).\n\n"
-                    "La pestaña 'Preparados' muestra los cambios ya "
-                    "listos para el commit (índice -> HEAD).\n\n"
-                    "Útil para entender el flujo:\n"
-                    "Working tree -> Preparar -> Staging -> Commit -> HEAD.\n\n"
-                    "No ejecuta Fetch, Pull ni Push."
-                )
+                TEXTOS_AYUDA_GIT_V1["ver_cambios_locales"]
             ),
 
             AyudaEmergente(
                 self.boton_crear_commit,
                 TEXTOS_AYUDA_GIT_V1["commit"],
                 ancho_texto=620
+            )
+        ]
+
+        # Conceptos de sincronización: las etiquetas existen desde
+        # el __init__, por lo que aquí solo se agregan las ayudas.
+        self.ayudas_conceptos_sincronizacion = [
+            AyudaEmergente(
+                self.etiqueta_upstream,
+                TEXTOS_AYUDA_GIT_V1["concepto_upstream"]
+            ),
+            AyudaEmergente(
+                self.etiqueta_rama_remota,
+                TEXTOS_AYUDA_GIT_V1["concepto_rama_remota"]
+            ),
+            AyudaEmergente(
+                self.etiqueta_por_enviar,
+                TEXTOS_AYUDA_GIT_V1["concepto_por_enviar"]
+            ),
+            AyudaEmergente(
+                self.etiqueta_por_descargar,
+                TEXTOS_AYUDA_GIT_V1["concepto_por_descargar"]
+            ),
+            AyudaEmergente(
+                self.etiqueta_estado,
+                TEXTOS_AYUDA_GIT_V1["concepto_estado_sincronizacion"]
+            ),
+            AyudaEmergente(
+                self.etiqueta_ultima_consulta,
+                TEXTOS_AYUDA_GIT_V1["concepto_ultima_consulta"]
             )
         ]
 
@@ -2270,15 +2480,22 @@ class AplicacionGit:
             ancho_texto=620
         )
 
-        ttk.Button(
+        self.boton_actualizar_ramas = ttk.Button(
             marco_acciones,
             text="Actualizar",
             command=self.cargar_lista_ramas
-        ).grid(
+        )
+
+        self.boton_actualizar_ramas.grid(
             row=0,
             column=1,
             sticky="w",
             padx=(10, 0)
+        )
+
+        AyudaEmergente(
+            self.boton_actualizar_ramas,
+            TEXTOS_AYUDA_GIT_V1["actualizar_ramas"]
         )
 
         ttk.Button(
@@ -2880,56 +3097,27 @@ class AplicacionGit:
 
         self.ayuda_filtro_archivo_historial = AyudaEmergente(
             self.entrada_filtro_archivo_historial,
-            (
-                "Filtro por archivo\n\n"
-                "Escribe todo o parte del nombre de un archivo.\n\n"
-                "Por ejemplo: FINI004, .pls o Paquetes.\n\n"
-                "La búsqueda no distingue mayúsculas de minúsculas "
-                "y solamente muestra commits que modificaron archivos "
-                "cuyo nombre o ruta contiene ese texto."
-            )
+            TEXTOS_AYUDA_GIT_V1["historial_filtro_archivo"]
         )
 
         self.ayuda_fecha_desde_historial = AyudaEmergente(
             self.entrada_fecha_desde_historial,
-            (
-                "Fecha Desde\n\n"
-                "Muestra commits realizados a partir de esta fecha, "
-                "incluyéndola.\n\n"
-                "Formato: dd/mm/aaaa.\n"
-                "Puedes dejarla vacía."
-            )
+            TEXTOS_AYUDA_GIT_V1["historial_fecha_desde"]
         )
 
         self.ayuda_fecha_hasta_historial = AyudaEmergente(
             self.entrada_fecha_hasta_historial,
-            (
-                "Fecha Hasta\n\n"
-                "Muestra commits realizados hasta esta fecha, "
-                "incluyéndola.\n\n"
-                "Formato: dd/mm/aaaa.\n"
-                "Puedes dejarla vacía."
-            )
+            TEXTOS_AYUDA_GIT_V1["historial_fecha_hasta"]
         )
 
         self.ayuda_aplicar_filtros_historial = AyudaEmergente(
             self.boton_aplicar_filtros_historial,
-            (
-                "Aplicar filtros\n\n"
-                "Consulta nuevamente el historial local utilizando "
-                "el archivo y las fechas indicadas.\n\n"
-                "Los filtros se combinan: si completas varios, "
-                "el commit debe cumplirlos todos."
-            )
+            TEXTOS_AYUDA_GIT_V1["historial_aplicar_filtros"]
         )
 
         self.ayuda_limpiar_filtros_historial = AyudaEmergente(
             self.boton_limpiar_filtros_historial,
-            (
-                "Limpiar filtros\n\n"
-                "Vacía Archivo, Desde y Hasta y vuelve a mostrar "
-                "el historial sin filtros."
-            )
+            TEXTOS_AYUDA_GIT_V1["historial_limpiar_filtros"]
         )
 
         # ---------------------------------------------------------
@@ -3151,44 +3339,22 @@ class AplicacionGit:
 
         self.ayuda_ver_cambios_historial = AyudaEmergente(
             self.boton_ver_cambios_historial,
-            (
-                "Ver cambios...\n\n"
-                "Muestra los cambios de archivos introducidos "
-                "por el commit seleccionado.\n\n"
-                "Es una vista de solo lectura: no modifica archivos, "
-                "commits ni ramas, y no consulta el remoto."
-            )
+            TEXTOS_AYUDA_GIT_V1["historial_ver_cambios"]
         )
 
         self.ayuda_exportar_csv_historial = AyudaEmergente(
             self.boton_exportar_csv_historial,
-            (
-                "Exportar CSV\n\n"
-                "Guarda exactamente los commits visibles en un archivo CSV.\n\n"
-                "Incluye hash completo, hash corto, fecha ISO, autor, correo "
-                "y mensaje.\n\n"
-                "Se utiliza UTF-8 y un formato amigable para Excel en Windows."
-            )
+            TEXTOS_AYUDA_GIT_V1["exportar_historial_csv"]
         )
 
         self.ayuda_exportar_txt_historial = AyudaEmergente(
             self.boton_exportar_txt_historial,
-            (
-                "Exportar TXT\n\n"
-                "Guarda exactamente los commits visibles en un archivo de texto.\n\n"
-                "Además deja registrados el repositorio y los filtros aplicados "
-                "para facilitar análisis o documentación posterior."
-            )
+            TEXTOS_AYUDA_GIT_V1["exportar_historial_txt"]
         )
 
         self.ayuda_actualizar_historial = AyudaEmergente(
             self.boton_actualizar_historial,
-            (
-                "Actualizar historial\n\n"
-                "Vuelve a ejecutar la consulta local manteniendo "
-                "los filtros actuales.\n\n"
-                "No consulta el remoto y no modifica el repositorio."
-            )
+            TEXTOS_AYUDA_GIT_V1["actualizar_historial"]
         )
 
         self.entrada_filtro_archivo_historial.focus_set()
@@ -4038,16 +4204,23 @@ class AplicacionGit:
             pady=(10, 0)
         )
 
-        ttk.Button(
+        self.boton_copiar_diff_commit = ttk.Button(
             marco_botones_detalle,
             text="Copiar diff",
             command=self.copiar_diff_commit,
             style="Accion.TButton"
-        ).grid(
+        )
+
+        self.boton_copiar_diff_commit.grid(
             row=0,
             column=0,
             sticky="e",
             padx=(0, 8)
+        )
+
+        AyudaEmergente(
+            self.boton_copiar_diff_commit,
+            TEXTOS_AYUDA_GIT_V1["copiar_diff_commit"]
         )
 
         ttk.Button(
@@ -4480,26 +4653,40 @@ class AplicacionGit:
             ancho_texto=620
         )
 
-        ttk.Button(
+        self.boton_actualizar_cambios_locales = ttk.Button(
             marco_botones_inspector,
             text="Actualizar",
             command=self.actualizar_cambios_locales,
             style="Accion.TButton"
-        ).grid(
+        )
+
+        self.boton_actualizar_cambios_locales.grid(
             row=0,
             column=1,
             padx=(0, 8)
         )
 
-        ttk.Button(
+        AyudaEmergente(
+            self.boton_actualizar_cambios_locales,
+            TEXTOS_AYUDA_GIT_V1["actualizar_inspector"]
+        )
+
+        self.boton_copiar_diff_cambios_locales = ttk.Button(
             marco_botones_inspector,
             text="Copiar diff",
             command=self.copiar_diff_cambios_locales,
             style="Accion.TButton"
-        ).grid(
+        )
+
+        self.boton_copiar_diff_cambios_locales.grid(
             row=0,
             column=2,
             padx=(0, 8)
+        )
+
+        AyudaEmergente(
+            self.boton_copiar_diff_cambios_locales,
+            TEXTOS_AYUDA_GIT_V1["copiar_diff_inspector"]
         )
 
         ttk.Button(

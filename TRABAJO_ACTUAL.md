@@ -45,12 +45,15 @@ Estado actual:
   actual del proyecto;
 - Tooltips Didácticos V1 — Fase 2A: CERRADA;
 - 13 tooltips P0/P1 validados;
-- 58/58 pruebas específicas OK;
-- 209/209 suite completa OK;
-- revisión visual Windows final: EXITOSA;
+- 58/58 pruebas específicas OK (Fase 2A);
 - commits locales bc57772 y 82a32d1 (hijo del primero);
 - SIN PUSH;
-- Fase 2B: NO iniciada;
+- Tooltips Didácticos V1 — Fase 2B: CERRADA
+  (104/104 específicas, 255/255 suite; prueba manual Windows
+  EXITOSA; commit "Cierra tooltips didacticos V1", hijo de
+  0413697; SIN PUSH);
+- Tooltips Didácticos V1 completos: 37 tooltips (13 P0/P1 +
+  24 P2/P3) centralizados en TEXTOS_AYUDA_GIT_V1, 0 inline;
 - config.json ignorado y no versionado;
 - .opencode/ sigue sin versionar y NO debe incluirse
   automáticamente.
@@ -469,7 +472,8 @@ servicio_cambios_locales_git.py sin cambios).
 
 Fase 2B (tooltips P2/P3):
 
-NO iniciada.
+NO iniciada en aquel momento (HISTÓRICO; la Fase 2B quedó CERRADA
+posteriormente — ver sección Fase 2B más abajo).
 
 Publicar rama local:
 
@@ -544,6 +548,148 @@ MICROCORRECCIÓN DIDÁCTICA DE TEXTOS (solo tooltips, SIN lógica):
   SIN Push; revisión visual Windows final de los 4 tooltips:
   EXITOSA.
 
+## ETAPA TOOLTIPS DIDÁCTICOS V1 — FASE 2B (P2/P3)
+
+Tarea: Tooltips Didácticos V1 — Fase 2B (P2/P3): centralización de los
+14 tooltips inline existentes, nuevos tooltips de acciones y
+conceptos de sincronización, con pruebas estáticas de cableado.
+
+Estado: FASE CERRADA
+
+PRUEBAS ESPECÍFICAS:
+104/104 OK (58 de Fase 2A + 46 nuevas de 2B)
+
+SUITE COMPLETA:
+255/255 OK (209 + 46)
+
+PRUEBA MANUAL WINDOWS:
+EXITOSA — confirmada por el usuario
+
+TOOLTIPS:
+13 P0/P1 + 24 P2/P3 = 37 total
+
+COMMIT:
+"Cierra tooltips didacticos V1" (completado al final de ESTA
+tarea; hijo de 0413697; SIN PUSH)
+
+HEAD observado al iniciar: 0413697 Corrige cierre documental de
+tooltips V1; working tree limpio; staging vacío; rama master.
+
+Archivos modificados:
+
+- principal.py — diccionario TEXTOS_AYUDA_GIT_V1 pasa de 13 a 37
+  claves (24 nuevas 2B); los 14 tooltips inline se centralizan en el
+  diccionario (quedan 0 textos inline en llamadas a AyudaEmergente);
+  10 llamadas nuevas de AyudaEmergente: Inspector (Actualizar y
+  Copiar diff), ventana de ramas (Actualizar), detalle de commit
+  (Copiar diff) y 6 conceptos de sincronización sobre las etiquetas
+  Upstream, Rama remota, Por enviar, Por descargar, Estado y Última
+  consulta (las etiquetas pasan a atributos self.etiqueta_*);
+- pruebas/test_ayuda_tooltips_v1.py — CLAVES_2B_ESPERADAS (24),
+  clases nuevas: completitud, seguridad (OPERACIONES_PROHIBIDAS
+  sobre 2B; permite mención educativa de comandos para explicar que
+  no se usan), semántica de los 4 botones
+  Actualizar (textos distintos), exportaciones CSV/TXT, Copiar diff
+  (inspector pestaña activa frente a detalle del commit),
+  sincronización (commits, no archivos; sin monitorización continua;
+  upstream no implica sincronizado; operación fallida no actualiza),
+  filtros locales con fecha de commit, y CABLEADO ESTÁTICO con ast
+  (sin textos literales inline; nº llamadas == nº claves == 37;
+  cada clave 2B conectada exactamente una vez; biyección
+  claves usadas <-> diccionario);
+- TRABAJO_ACTUAL.md (este documento).
+- AGENTS.md y CLAUDE.md (cierre documental de ESTA tarea: Fase 2B
+  CERRADA, 37 tooltips, 0 inline, 104/104 y 255/255, referencia
+  histórica "24 tooltips anteriores inline" corregida).
+
+intactos (git diff VACÍO confirmado):
+
+- ayuda_interfaz.py;
+- todos los servicios Git (servicio_git.py, servicio_remoto_git.py,
+  servicio_historial_git.py, servicio_exportacion_historial.py,
+  servicio_cambios_locales_git.py, servicio_descarte_cambios_git.py,
+  servicio_ramas_git.py);
+- modelos*.py, config.json.
+
+Sin cambios de comportamiento: la información mostrada por las
+etiquetas de sincronización y los cálculos NO cambian; no se ejecuta
+Fetch automático; ancho_texto=620 solo en los 13 textos P0/P1
+existentes (los 2B usan el ancho por defecto).
+
+Semántica verificada y reflejada en los conceptos:
+
+- Rama remota: nombre de la rama de seguimiento CONOCIDA
+  localmente (ref remota) con "(no existe)" cuando no existe;
+  no es una consulta en vivo al servidor;
+- Estado de sincronización: mensaje calculado comparando la rama
+  local con la referencia remota conocida (rev-list
+  --left-right --count en el servicio), nunca monitorización en
+  tiempo real;
+- Última consulta: último estado conocido de una consulta u
+  operación remota (Fetch/Pull/Push exitosos o fallidos) o aviso
+  de que solo hay información local; una operación fallida no
+  significa que la información remota se haya actualizado.
+
+NO se ejecutó sobre el repositorio real:
+
+git add / git commit / git fetch / git pull / git push /
+git reset / git restore / git checkout / git clean.
+
+MICROCORRECCIÓN ANTES DE LA PRUEBA MANUAL (aplicada, solo pruebas):
+
+- ELIMINADO el test genérico
+  test_textos_2b_no_recomiendan_git_destructivo (comprobaba la
+  ausencia de "git reset" y "git clean" en todas las claves 2B).
+  Motivo: era demasiado amplio y contradecía el criterio didáctico:
+  GestorGit puede mencionar legítimamente un comando peligroso para
+  explicar que NO lo utiliza; la seguridad protege contra operaciones
+  PELIGROSAS CONCRETAS recomendadas/introducidas, no contra su
+  mención educativa. Ya existían TestTooltipsV1SinOperacionesProhibidas
+  (recorre TODO el diccionario) y
+  test_ningun_texto_2b_contiene_operaciones_prohibidas
+  (OPERACIONES_PROHIBIDAS sobre las claves 2B) — ambos se mantienen.
+  No se sustituyó por ningún assert genérico contra reset/clean/
+  merge/etc.; OPERACIONES_PROHIBIDAS conserva los comandos completos.
+- NO se modificó ningún texto de tooltip ni principal.py.
+- Nuevos totales (fuente de verdad: ejecución real): específicas
+  104/104 (58 + 46), suite 255/255 (209 + 46); la clase
+  TestTooltipsV2BSeguridad queda con una sola prueba
+  (test_ningun_texto_2b_contiene_operaciones_prohibidas).
+
+Pendiente: NADA pendiente dentro de esta etapa (prueba manual
+Windows EXITOSA; commit realizado al cierre de esta tarea).
+La referencia "24 tooltips anteriores" de CLAUDE.md quedó
+corregida en este cierre documental.
+
+El usuario validó visualmente en Windows:
+
+- ventana principal: Seleccionar, Actualizar, Historial,
+  Seleccionar todo, Ver cambios locales;
+- conceptos de sincronización: Upstream, Rama remota, Por
+  enviar, Por descargar, Estado, Última consulta;
+- Historial: filtros, Desde/Hasta, Aplicar, Limpiar, Ver
+  cambios, CSV, TXT, Actualizar historial;
+- detalle de commit: Copiar diff;
+- Inspector: Actualizar y Copiar diff;
+- Ramas: Actualizar;
+- controles deliberadamente excluidos (Cerrar/Cancelar/etc.) sin
+  nuevos tooltips;
+- tabla de cambios sin tooltip general;
+- tooltips P0/P1 anteriores sin regresión visual;
+- acentos, tamaño, legibilidad, aparición/desaparición y
+  comportamiento visual: OK;
+- ningún tooltip pegado, cortado o fuera de pantalla.
+
+Etapas FUTURAS (registradas, NO implementadas):
+
+1. Leyenda/ayuda contextual de estados Git para la tabla de
+   cambios que enseñe working tree, staging/índice, HEAD, ??,
+   M, MM, preparado, preparado y vuelto a modificar y
+   conflictos. La tabla de cambios quedó deliberadamente SIN
+   tooltip general en Fase 2B.
+2. "Publicar rama local" se conserva como etapa FUTURA separada,
+   con sus propias confirmaciones de seguridad.
+
 ## Regla para reservar archivos
 
 Antes de comenzar una tarea, el agente debe actualizar esta sección indicando:
@@ -565,10 +711,10 @@ Estado: EN CURSO
 
 Reserva activa:
 
-SIN TAREA ACTIVA — Tooltips Didácticos V1 — Fase 2A: TERMINADA
-(cierre documentado arriba: commits locales bc57772 y 82a32d1,
-PRUEBA MANUAL WINDOWS EXITOSA, SIN PUSH).
-Siguiente etapa: Tooltips Didácticos V1 — Fase 2B (NO iniciada).
+Agente: OpenCode
+Tarea: Cierre formal de Tooltips Didácticos V1 — Fase 2B
+Estado: SIN TAREA ACTIVA (tarea de cierre TERMINADA; Fase 2B
+CERRADA; commit "Cierra tooltips didacticos V1" realizado)
 
 Mientras una tarea figure EN CURSO, el otro agente NO debe modificar esos
 archivos sin coordinación explícita.

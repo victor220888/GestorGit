@@ -1,5 +1,5 @@
 """
-Pruebas de los textos didácticos V1 (Fase 2A P0/P1).
+Pruebas de los textos didácticos V1 (Fase 2A P0/P1 y Fase 2B P2/P3).
 
 Estas pruebas NO dependen de un display gráfico real ni de mover el
 ratón: verifican que el diccionario TEXTOS_AYUDA_GIT_V1 de
@@ -8,10 +8,15 @@ didácticos esperados, y que NO menciona operaciones prohibidas.
 
 La interfaz consume los textos desde ese diccionario mediante
 AyudaEmergente, por lo que probar el diccionario equivale a probar
-el contenido de los tooltips.
+el contenido de los tooltips. Además, unas pruebas con ast verifican
+el cableado estático: toda llamada a AyudaEmergente en principal.py
+debe consumir una clave del diccionario (sin textos literales
+inline) y cada clave debe conectarse exactamente una vez.
 """
 
+import ast
 import unittest
+from pathlib import Path
 
 import principal
 
@@ -424,6 +429,465 @@ class TestTooltipsV1Completitud(unittest.TestCase):
                 t.strip(),
                 f"El texto V1 '{clave}' está vacío."
             )
+
+
+# =================================================================
+# FASE 2B (P2/P3): 24 claves definidas en la tarea.
+# =================================================================
+
+CLAVES_2B_ESPERADAS = {
+    # Acciones de la ventana principal (antes estaban inline).
+    "seleccionar_repositorio",
+    "actualizar_estado_local",
+    "historial",
+    "seleccionar_todo",
+    "ver_cambios_locales",
+    # Historial y exportaciones (antes estaban inline).
+    "historial_filtro_archivo",
+    "historial_fecha_desde",
+    "historial_fecha_hasta",
+    "historial_aplicar_filtros",
+    "historial_limpiar_filtros",
+    "historial_ver_cambios",
+    "exportar_historial_csv",
+    "exportar_historial_txt",
+    "actualizar_historial",
+    # Acciones secundarias nuevas.
+    "actualizar_inspector",
+    "actualizar_ramas",
+    "copiar_diff_inspector",
+    "copiar_diff_commit",
+    # Conceptos de sincronización.
+    "concepto_upstream",
+    "concepto_rama_remota",
+    "concepto_por_enviar",
+    "concepto_por_descargar",
+    "concepto_estado_sincronizacion",
+    "concepto_ultima_consulta",
+}
+
+# Total de claves del diccionario tras Fase 2B: 13 (P0/P1) + 24 (P2/P3).
+CLAVES_TOTALES_ESPERADAS = 37
+
+
+class TestTooltipsV2BCompletitud(unittest.TestCase):
+    """Garantiza que las 24 claves 2B existen y no están vacías."""
+
+    def test_son_exactamente_24_claves_2b(self):
+        self.assertEqual(len(CLAVES_2B_ESPERADAS), 24)
+
+    def test_todas_las_claves_2b_existen(self):
+        faltantes = CLAVES_2B_ESPERADAS - set(
+            principal.TEXTOS_AYUDA_GIT_V1.keys()
+        )
+
+        self.assertEqual(
+            faltantes,
+            set(),
+            f"Faltan claves 2B: {faltantes}"
+        )
+
+    def test_ningun_texto_2b_es_vacio(self):
+        for clave in CLAVES_2B_ESPERADAS:
+            t = texto(clave)
+            self.assertIsInstance(t, str)
+            self.assertTrue(
+                t.strip(),
+                f"El texto 2B '{clave}' está vacío."
+            )
+
+    def test_diccionario_tiene_el_total_esperado_de_claves(self):
+        self.assertEqual(
+            len(principal.TEXTOS_AYUDA_GIT_V1),
+            CLAVES_TOTALES_ESPERADAS
+        )
+
+
+class TestTooltipsV2BSeguridad(unittest.TestCase):
+    """Los textos 2B tampoco recomiendan comandos destructivos.
+
+    Se mantiene el criterio de OPERACIONES_PROHIBIDAS (comandos
+    peligrosos completos); la prueba global de Fase 2A ya recorre
+    TODO el diccionario, incluida la Fase 2B.
+    """
+
+    def test_ningun_texto_2b_contiene_operaciones_prohibidas(self):
+        for clave in CLAVES_2B_ESPERADAS:
+            t = texto(clave)
+            for prohibida in OPERACIONES_PROHIBIDAS:
+                self.assertNotIn(
+                    prohibida,
+                    t,
+                    msg=(
+                        f"El tooltip 2B '{clave}' menciona la "
+                        f"operación prohibida '{prohibida}'."
+                    )
+                )
+
+
+class TestTooltipsV2BSemanticaActualizar(unittest.TestCase):
+    """Los cuatro botones 'Actualizar' enseñan operaciones distintas."""
+
+    def test_actualizar_estado_local_es_consulta_local(self):
+        t = texto("actualizar_estado_local")
+        self.assertIn("LOCAL", t)
+
+    def test_actualizar_estado_local_no_equivale_a_fetch(self):
+        t = texto("actualizar_estado_local")
+        self.assertIn("No equivale a Fetch", t)
+        self.assertIn("no consulta el remoto", t)
+        self.assertIn("no descarga ni sube nada", t)
+
+    def test_actualizar_historial_es_consulta_local(self):
+        t = texto("actualizar_historial")
+        self.assertIn("LOCAL", t)
+
+    def test_actualizar_historial_no_equivale_a_fetch(self):
+        t = texto("actualizar_historial")
+        self.assertIn("No equivale a Fetch", t)
+        self.assertIn("no consulta el remoto", t)
+
+    def test_actualizar_inspector_es_consulta_local(self):
+        t = texto("actualizar_inspector")
+        self.assertIn("LOCALES", t)
+
+    def test_actualizar_inspector_no_hace_fetch(self):
+        t = texto("actualizar_inspector")
+        self.assertIn("No hace Fetch", t)
+        self.assertIn("no modifica el archivo", t)
+        self.assertIn("ni los commits", t)
+
+    def test_actualizar_ramas_lista_solo_ramas_locales(self):
+        t = texto("actualizar_ramas")
+        self.assertIn("ramas LOCALES", t)
+
+    def test_actualizar_ramas_no_hace_fetch_ni_cambia_rama(self):
+        t = texto("actualizar_ramas")
+        self.assertIn("No hace Fetch", t)
+        self.assertIn("no verás ramas nuevas del servidor", t)
+        self.assertIn("Tampoco cambia de rama", t)
+
+    def test_los_cuatro_actualizar_son_textos_distintos(self):
+        textos = {
+            texto("actualizar_estado_local"),
+            texto("actualizar_historial"),
+            texto("actualizar_inspector"),
+            texto("actualizar_ramas"),
+        }
+        self.assertEqual(
+            len(textos),
+            4,
+            "Los tooltips 'Actualizar' comparten un texto genérico."
+        )
+
+
+class TestTooltipsV2BExportaciones(unittest.TestCase):
+    """CSV y TXT garantizan que exportar no modifica nada."""
+
+    def test_exportar_csv_escribe_archivo_en_disco(self):
+        t = texto("exportar_historial_csv")
+        self.assertIn("archivo CSV", t)
+        self.assertIn("disco", t)
+
+    def test_exportar_csv_no_modifica_repositorio(self):
+        t = texto("exportar_historial_csv")
+        self.assertIn("no modifica el repositorio", t)
+        self.assertIn("no cambia commits", t)
+
+    def test_exportar_csv_no_consulta_remoto(self):
+        self.assertIn(
+            "no consulta el remoto",
+            texto("exportar_historial_csv")
+        )
+
+    def test_exportar_txt_escribe_archivo_en_disco(self):
+        t = texto("exportar_historial_txt")
+        self.assertIn("archivo de", t)
+        self.assertIn("disco", t)
+
+    def test_exportar_txt_no_modifica_repositorio(self):
+        t = texto("exportar_historial_txt")
+        self.assertIn("no modifica el repositorio", t)
+        self.assertIn("no cambia commits", t)
+
+    def test_exportar_txt_no_consulta_remoto(self):
+        self.assertIn(
+            "no consulta el remoto",
+            texto("exportar_historial_txt")
+        )
+
+
+class TestTooltipsV2BCopiarDiff(unittest.TestCase):
+    """Copiar diff: portapapeles de solo lectura, sin tocar Git."""
+
+    def test_copiar_diff_inspector_usa_portapapeles(self):
+        self.assertIn(
+            "portapapeles",
+            texto("copiar_diff_inspector")
+        )
+
+    def test_copiar_diff_inspector_menciona_pestana_activa(self):
+        t = texto("copiar_diff_inspector")
+        self.assertIn("VISIBLE", t)
+        self.assertIn("pestaña", t)
+
+    def test_copiar_diff_inspector_no_modifica_nada(self):
+        t = texto("copiar_diff_inspector")
+        self.assertIn("No modifica archivos", t)
+        self.assertIn("no prepara ni descarta", t)
+        self.assertIn("no modifica Git", t)
+
+    def test_copiar_diff_commit_usa_portapapeles(self):
+        self.assertIn(
+            "portapapeles",
+            texto("copiar_diff_commit")
+        )
+
+    def test_copiar_diff_commit_menciona_el_commit(self):
+        t = texto("copiar_diff_commit")
+        self.assertIn("VISIBLE", t)
+        self.assertIn("commit seleccionado", t)
+
+    def test_copiar_diff_commit_no_modifica_repositorio(self):
+        t = texto("copiar_diff_commit")
+        self.assertIn("No copia ni ejecuta un commit", t)
+        self.assertIn("no modifica el", t)
+        self.assertIn("ni el historial", t)
+
+    def test_copiar_diff_inspector_y_commit_son_textos_distintos(self):
+        self.assertNotEqual(
+            texto("copiar_diff_inspector"),
+            texto("copiar_diff_commit")
+        )
+
+
+class TestTooltipsV2BSincronizacion(unittest.TestCase):
+    """Conceptos remotos: commits conocidos, nunca archivos ni en vivo."""
+
+    def test_por_enviar_cuenta_commits_no_archivos(self):
+        self.assertIn(
+            "COMMITS, no archivos",
+            texto("concepto_por_enviar")
+        )
+
+    def test_por_enviar_depende_de_informacion_remota_conocida(self):
+        t = texto("concepto_por_enviar")
+        self.assertIn("CONOCIDA", t)
+        self.assertIn("un Fetch reciente actualiza esa referencia", t)
+
+    def test_por_enviar_no_afirma_que_se_haya_hecho_push(self):
+        self.assertIn(
+            "No significa que se haya hecho Push",
+            texto("concepto_por_enviar")
+        )
+
+    def test_por_descargar_cuenta_commits_no_archivos(self):
+        self.assertIn(
+            "COMMITS, no archivos",
+            texto("concepto_por_descargar")
+        )
+
+    def test_por_descargar_depende_de_la_consulta_del_remoto(self):
+        self.assertIn(
+            "tras consultar el remoto (Fetch)",
+            texto("concepto_por_descargar")
+        )
+
+    def test_por_descargar_no_afirma_pull_integrado(self):
+        self.assertIn(
+            "No significa que esos commits ya estén integrados con Pull",
+            texto("concepto_por_descargar")
+        )
+
+    def test_upstream_no_afirma_estar_sincronizado(self):
+        t = texto("concepto_upstream")
+        self.assertIn(
+            "tener upstream no significa estar sincronizado ahora mismo",
+            t
+        )
+
+    def test_estado_sincronizacion_no_es_monitorizacion_tiempo_real(self):
+        t = texto("concepto_estado_sincronizacion")
+        self.assertIn("No es monitorización en tiempo real", t)
+        self.assertIn("CONOCIDA", t)
+        self.assertIn("última consulta", t)
+
+    def test_ultima_consulta_no_vigila_continuamente(self):
+        t = texto("concepto_ultima_consulta")
+        self.assertIn("no vigila continuamente el servidor", t)
+
+    def test_ultima_consulta_operacion_fallida_no_actualiza(self):
+        self.assertIn(
+            "Una operación fallida no significa que la información "
+            "remota se haya actualizado",
+            texto("concepto_ultima_consulta")
+        )
+
+    def test_ningun_concepto_afirma_estado_remoto_continuo(self):
+        claves_conceptos_sincronizacion = {
+            "concepto_upstream",
+            "concepto_rama_remota",
+            "concepto_por_enviar",
+            "concepto_por_descargar",
+            "concepto_estado_sincronizacion",
+            "concepto_ultima_consulta",
+        }
+        frases_afirmativas_prohibidas = (
+            "siempre actualizado",
+            "en todo momento",
+            "estado actual del servidor",
+        )
+        for clave in claves_conceptos_sincronizacion:
+            t = texto(clave).lower()
+            for frase in frases_afirmativas_prohibidas:
+                self.assertNotIn(
+                    frase,
+                    t,
+                    msg=(
+                        f"El concepto '{clave}' afirma que Git "
+                        f"conoce continuamente el remoto: '{frase}'."
+                    )
+                )
+
+
+class TestTooltipsV2BFiltros(unittest.TestCase):
+    """Los filtros del historial son consultas LOCALES."""
+
+    def test_filtro_archivo_es_consulta_local(self):
+        t = texto("historial_filtro_archivo")
+        self.assertIn("git log LOCAL", t)
+        self.assertIn("no consulta el remoto", t)
+
+    def test_aplicar_filtros_es_consulta_local(self):
+        t = texto("historial_aplicar_filtros")
+        self.assertIn("LOCAL", t)
+        self.assertIn("No consulta el remoto", t)
+
+    def test_limpiar_filtros_no_cambia_commits(self):
+        t = texto("historial_limpiar_filtros")
+        self.assertIn("historial LOCAL", t)
+        self.assertIn("No cambia commits", t)
+
+    def test_fecha_desde_y_hasta_se_refieren_a_fecha_del_commit(self):
+        for clave in ("historial_fecha_desde", "historial_fecha_hasta"):
+            self.assertIn(
+                "FECHA DEL COMMIT",
+                texto(clave),
+                f"La clave '{clave}' no aclara la fecha del commit."
+            )
+
+
+def obtener_claves_2b_usadas_en_llamadas_ayuda():
+    """
+    Analiza con ast las llamadas a AyudaEmergente de principal.py.
+
+    Devuelve la lista de tuplas (linea, clave_1b_arg) donde clave es la
+    clave TEXTOS_AYUDA_GIT_V1 usada como segundo argumento posicional;
+    si el argumento no es un subscript del diccionario, clave es None.
+    No depende de números de línea fijos: recorre el árbol sintáctico.
+    """
+
+    ruta = Path(principal.__file__).resolve()
+    arbol = ast.parse(
+        ruta.read_text(encoding="utf-8"),
+        filename=str(ruta)
+    )
+
+    resultados = []
+
+    for nodo in ast.walk(arbol):
+        if not isinstance(nodo, ast.Call):
+            continue
+
+        if not (
+            isinstance(nodo.func, ast.Name)
+            and nodo.func.id == "AyudaEmergente"
+        ):
+            continue
+
+        if len(nodo.args) < 2:
+            resultados.append((nodo.lineno, None))
+            continue
+
+        argumento_texto = nodo.args[1]
+
+        clave = None
+
+        if (
+            isinstance(argumento_texto, ast.Subscript)
+            and isinstance(argumento_texto.value, ast.Name)
+            and argumento_texto.value.id == "TEXTOS_AYUDA_GIT_V1"
+            and isinstance(argumento_texto.slice, ast.Constant)
+            and isinstance(argumento_texto.slice.value, str)
+        ):
+            clave = argumento_texto.slice.value
+
+        resultados.append((nodo.lineno, clave))
+
+    return resultados
+
+
+class TestTooltipsV2BCableadoEstatico(unittest.TestCase):
+    """Cableado con ast: sin textos inline y claves conectadas una vez."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.llamadas = obtener_claves_2b_usadas_en_llamadas_ayuda()
+
+    def test_ninguna_llamada_usa_texto_literal_inline(self):
+        sin_clave = [
+            (linea, clave)
+            for linea, clave in self.llamadas
+            if clave is None
+        ]
+
+        self.assertEqual(
+            sin_clave,
+            [],
+            (
+                "Hay llamadas a AyudaEmergente sin diccionario "
+                f"(líneas {sin_clave}): quedan textos inline."
+            )
+        )
+
+    def test_cantidad_de_llamadas_igual_a_claves_del_diccionario(self):
+        self.assertEqual(
+            len(self.llamadas),
+            len(principal.TEXTOS_AYUDA_GIT_V1),
+            (
+                "El número de llamadas a AyudaEmergente debe coincidir "
+                "con el número de claves del diccionario."
+            )
+        )
+
+    def test_cada_clave_2b_esta_conectada_exactamente_una_vez(self):
+        claves_uso = [
+            clave
+            for _, clave in self.llamadas
+        ]
+
+        for clave in CLAVES_2B_ESPERADAS:
+            repeticiones = claves_uso.count(clave)
+            self.assertEqual(
+                repeticiones,
+                1,
+                (
+                    f"La clave 2B '{clave}' está conectada "
+                    f"{repeticiones} veces (debe ser 1)."
+                )
+            )
+
+    def test_claves_usadas_biyectivas_con_el_diccionario(self):
+        claves_usadas = {
+            clave
+            for _, clave in self.llamadas
+        }
+
+        self.assertEqual(
+            claves_usadas,
+            set(principal.TEXTOS_AYUDA_GIT_V1.keys()),
+            "Las claves usadas en llamadas y el diccionario no coinciden."
+        )
 
 
 if __name__ == "__main__":
