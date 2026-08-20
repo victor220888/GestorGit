@@ -1053,9 +1053,155 @@ cada llamada a `obtener_cambios()` consume la siguiente tupla
 cuando se agota), lo que permite simular que el repositorio se
 ensucia ENTRE dos validaciones sin tocar el código productivo.
 
+## Corrección estructurada de conflictos en staging
+
+Etapa CERRADA (implementación + microcorrección + prueba manual
+Windows EXITOSA). Commit de cierre: "Corrige manejo seguro de
+conflictos en staging" (consultar git log -1 --oneline; SIN PUSH).
+
+### Causa
+
+Los siete pares de conflicto que `git status --porcelain` puede
+reportar (DD, AU, UD, UA, DU, AA, UU) quedaban con
+`CambioArchivo.preparado=True` por la semántica histórica de
+`estado_indice` (`not in (" ", "?", "!")`), aunque
+`_es_estado_conflicto()` los reconocía. Un conflicto no es "un
+archivo preparado para commit" ni "un archivo sin preparar": es un
+estado especial que Git dejó sin resolver para que una persona
+decida. Consecuencias antiguas: la tabla podía mostrar
+`Conflicto / Sí`; "Quitar de preparados" podía quedar habilitado y
+`git restore --staged` alteraba el estado unmerged del índice;
+`crear_commit` dependía parcialmente de
+`descripcion == "Conflicto"` (texto localizado).
+
+### Diseño estructurado
+
+- `modelos.py` — `CambioArchivo.en_conflicto: bool = False`; el
+  dato procede EXCLUSIVAMENTE de los códigos Git XY, nunca del
+  texto de la descripción. La prioridad de seguridad es
+  `en_conflicto`; la semántica histórica de `preparado` se
+  conserva internamente para no introducir regresiones.
+- `servicio_git.py`:
+  - `_es_estado_conflicto(estado_indice, estado_trabajo)`
+    reconoce exactamente `DD AU UD UA DU AA UU`;
+  - `obtener_cambios()` calcula `en_conflicto` una sola vez y lo
+    almacena; `requiere_actualizar_preparado` reutiliza el
+    booleano (sin cambios de semántica histórica);
+  - `agregar_archivos()`: defensa en profundidad — reconsulta
+    `obtener_cambios()` antes del `git add` productivo; error de
+    consulta BLOQUEA; conflicto en cualquier ruta BLOQUEA toda la
+    operación con mensaje educativo ("Git necesita que una persona
+    decida cómo resolver el conflicto. GestorGit no elige una
+    versión automáticamente."); cero add productivo sobre
+    conflicto;
+  - `quitar_archivos_preparados()`: defensa en profundidad
+    OBLIGATORIA — reconsulta antes del `restore --staged` /
+    `rm --cached` productivo; cada ruta debe seguir existiendo
+    como cambio, NO estar en conflicto y seguir preparada
+    (bloqueos con mensajes específicos); error de consulta bloquea
+    (nunca se interpreta un fallo como estado seguro);
+  - `actualizar_archivos_preparados()`: usa `cambio.en_conflicto`
+    (antes `_es_estado_conflicto(estado_indice, estado_trabajo)`),
+    mismo comportamiento y decisión estructurada;
+  - `crear_commit()`: bloquea cualquier `cambio.en_conflicto`
+    (antes `descripcion == "Conflicto"`); la defensa del servicio
+    queda intacta y sin texto localizado.
+- `principal.py` (GUI):
+  - tabla principal: para conflicto la columna Preparado muestra
+    `No aplica` (Estado ya muestra `Conflicto`);
+  - Inspector: `detalle.en_conflicto` -> Preparado = `No aplica`;
+  - Preparar/Quitar/Actualizar preparados: filtran explícitamente
+    `cambio.en_conflicto` (un conflicto nunca es "preparable", no
+    cuenta para habilitar Quitar y no es actualizable);
+  - botones: un conflicto por sí solo no habilita Preparar, Quitar,
+    Actualizar preparados ni Crear commit;
+  - `crear_commit_desde_interfaz()`: consulta estado fresco y, si
+    existe cualquier `en_conflicto`, muestra aviso educativo
+    (messagebox.showwarning "Conflicto en el índice" con la lista
+    de rutas y "GestorGit no elige una versión automáticamente"),
+    NO muestra askyesno, NO llama `servicio_git.crear_commit()`;
+    `rutas_preparadas` se construye defensivamente con
+    `cambio.preparado and not cambio.en_conflicto`.
+
+### Microcorrección del helper de pruebas
+
+`tiene_comando_prohibido()` (en pruebas/test_servicio_git.py)
+miraba únicamente `argumentos[0]`, insuficiente porque los comandos
+productivos reales son por ejemplo
+`["--literal-pathspecs", "add", "--", ruta]`,
+`["--literal-pathspecs", "restore", "--staged", "--", ruta]` y
+`["--literal-pathspecs", "rm", "--cached", "--", ruta]`. El helper
+final examina SOLO los argumentos anteriores al primer `--`,
+reconoce los verbos exactos aunque haya opciones globales delante
+(comparación de igualdad, sin substring) y nunca confunde una ruta
+situada después de `--` con un verbo. Con el helper roto los
+asserts de ausencia pasaban por el motivo equivocado; ahora
+comprueban realmente la ausencia de add/restore/rm sobre
+conflictos (5 verificaciones existentes).
+
+### Pruebas
+
+- 11 pruebas nuevas en `pruebas/test_servicio_git.py`
+  (`PruebasConflictoEstructurado`): default False de en_conflicto,
+  identificación de los siete códigos, estados normales no
+  marcados, bloqueo real de merge (UU) para agregar/quitar,
+  ausencia de git add / restore / rm con spies
+  (`ServicioGitEspiaEstado` intercepta status; `ServicioGitEspiaCambios`
+  sustituye obtener_cambios), error de consulta que bloquea,
+  archivo que ya no está preparado, actualizar preparados bloquea
+  conflicto y crear commit bloquea con `en_conflicto=True` y
+  descripcion que no dice "Conflicto";
+- 1 prueba GUI focalizada SIN Tk real en
+  `pruebas/test_commit_gui_conflicto.py` (PruebaCommitGuiConflicto):
+  instancia de `AplicacionGit` con `__new__` y dobles mínimos;
+  escenario A preparado/sin conflicto + B preparado con
+  `en_conflicto=True` y `descripcion` distinta de "Conflicto";
+  demuestra showwarning una vez (identifica la ruta y enseña que
+  GestorGit no elige una versión), askyesno NO llamado y
+  `servicio_git.crear_commit()` NO llamado;
+- suite completa: 267 tests OK (255 + 11 + 1).
+
+### Prueba manual Windows (EXITOSA, confirmada por el usuario)
+
+Repositorio TEMPORAL independiente
+`GestorGit-Prueba-Conflicto-20260820-162507` (no corresponde al
+repo GestorGit ni a repositorios Oracle), con
+`UU conflicto.sql` y `M  normal.sql` intencionales:
+
+- Caso 1 (tabla): conflicto.sql -> Estado = Conflicto, Preparado =
+  No aplica; normal.sql -> Estado = Modificado y preparado,
+  Preparado = Sí;
+- Caso 2 (selección del conflicto): Preparar seleccionados,
+  Actualizar preparados y Quitar de preparados DESHABILITADOS;
+  "Ver cambios locales" disponible como inspección;
+- Caso 3 (Inspector): Estado = Conflicto, Preparado = No aplica;
+  Sin preparar mostró el diff con marcadores del conflicto;
+  Preparados mostró el estado unmerged; no se ofreció descarte del
+  conflicto;
+- Caso 4 (commit con estado mixto): con UU conflicto.sql + M
+  normal.sql y mensaje "Prueba bloqueo conflicto", al pulsar Crear
+  commit apareció "Conflicto en el índice" listando conflicto.sql,
+  explicando que Git necesita decisión humana y que GestorGit no
+  elige una versión automáticamente; NO apareció la confirmación
+  "¿Desea continuar?"; NO se creó commit. Comprobación externa
+  inmediatamente después: Compare-Object de `git status` antes/
+  después SIN salida; Compare-Object de `git ls-files -u` SIN
+  salida; HEAD antes == HEAD después = True; status continuó
+  `UU conflicto.sql` / `M  normal.sql`; `git ls-files -u -- conflicto.sql`
+  conservó las tres entradas stage 1/2/3;
+- Caso 5 (quitar preparado NORMAL): seleccionando solo normal.sql
+  el botón quedó habilitado; después la tabla mostró conflicto.sql
+  Conflicto/No aplica y normal.sql Modificado/No; Crear commit
+  DESHABILITADO; Git real: `UU conflicto.sql` / ` M normal.sql`;
+  `git ls-files -u -- conflicto.sql` conservó intactas las tres
+  entradas unmerged.
+
+La corrección protege el índice unmerged y conserva las
+operaciones normales sobre archivos no conflictivos.
+
 ## Pruebas
 
-El proyecto tiene actualmente **255 pruebas automatizadas**:
+El proyecto tiene actualmente **267 pruebas automatizadas**:
 
 - 49 pruebas base de operaciones locales/remotas;
 - 11 pruebas del historial;
@@ -1069,7 +1215,19 @@ El proyecto tiene actualmente **255 pruebas automatizadas**:
 - 17 pruebas del descarte de cambios sin preparar;
 - 28 pruebas de las ramas locales (123 anteriores + 28 nuevas);
 - 104 pruebas de los tooltips didácticos V1 (
-  58 de Fase 2A P0/P1 + 46 de Fase 2B P2/P3).
+  58 de Fase 2A P0/P1 + 46 de Fase 2B P2/P3);
+- 11 pruebas nuevas de la corrección estructurada de conflictos
+  en staging (PruebasConflictoEstructurado en
+  pruebas/test_servicio_git.py: default de en_conflicto, los siete
+  códigos DD/AU/UD/UA/DU/AA/UU, estados normales no marcados,
+  agregar/quitar/actualizar/crear commit bloqueados con Git real y
+  spies, error de consulta que bloquea);
+- 1 prueba GUI focalizada sin Tk real
+  (pruebas/test_commit_gui_conflicto.py:
+  crear_commit_desde_interfaz muestra showwarning con la ruta del
+  conflicto, NO llama askyesno y NO llama servicio_git.crear_commit()
+  cuando un archivo tiene en_conflicto=True y descripcion que no
+  dice "Conflicto").
 
 Archivos principales de pruebas:
 
@@ -1089,12 +1247,13 @@ pruebas/test_cambios_locales_git.py
 pruebas/test_descarte_cambios_git.py
 pruebas/test_ramas_git.py
 pruebas/test_ayuda_tooltips_v1.py
+pruebas/test_commit_gui_conflicto.py
 ```
 
 Resultado esperado:
 
 ```text
-Ran 255 tests in ...
+Ran 267 tests in ...
 OK
 ```
 
@@ -1429,12 +1588,15 @@ y primer Push, hijo de bc57772); SIN PUSH. Después, la Fase 2B
 (P2/P3) añadió 46 pruebas más de tooltips (104 específicas) y una
 microcorrección previa al cierre eliminó el test genérico
 test_textos_2b_no_recomiendan_git_destructivo (contra
-"git reset"/"git clean"): el total ACTUAL es 255
+"git reset"/"git clean"): el total ACTUAL era 255
 (209 anteriores + 46 de Fase 2B; 104/104 específicas de
 tooltips OK y 255/255 suite completa OK). Fase 2B CERRADA:
 PRUEBA MANUAL EN WINDOWS EXITOSA (confirmada por el usuario) y
 cierre documentado en el commit "Cierra tooltips didacticos V1"
-(hijo de 0413697; SIN PUSH).
+(hijo de 0413697; SIN PUSH). Después, la corrección estructurada
+de conflictos en staging añadió 11 pruebas de servicio + 1 prueba
+GUI focalizada: el total ACTUAL es 267 (255 + 12), con la etapa
+CERRADA y prueba manual Windows EXITOSA (ver sección específica).
 
 Las 5 pruebas de exportación validan CSV, TXT, lista vacía, errores de escritura y protección contra fórmulas CSV. Fueron ejecutadas en aislamiento y pasaron correctamente.
 
@@ -1479,7 +1641,11 @@ Selector y creación segura de ramas LOCALES
 Tooltips didácticos V1 (Fase 2A P0/P1 + Fase 2B P2/P3:
 37 tooltips centralizados en TEXTOS_AYUDA_GIT_V1, 0 inline;
 104 pruebas de tooltips)
-255 pruebas OK
+Corrección estructurada de conflictos en staging (en_conflicto
+estructurado, defensa en profundidad en agregar/quitar, commit
+bloqueado por conflicto, GUI con "No aplica" y bloqueo antes de
+la confirmación; 11 pruebas de servicio + 1 prueba GUI)
+267 pruebas OK
 ```
 
 El historial se ordena explícitamente por fecha de commit descendente
@@ -1652,14 +1818,14 @@ python -m unittest discover -s .\pruebas -v
 git status
 ```
 
-Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio, actualización de archivos preparados, inspector de cambios locales, descarte de cambios sin preparar, ramas locales y tooltips didácticos V1 (Fase 2A + Fase 2B), esperar:
+Después de integrar filtros, exportación, configuración de remoto, endurecimiento del primer Push, detalle de un commit, persistencia del último repositorio, actualización de archivos preparados, inspector de cambios locales, descarte de cambios sin preparar, ramas locales, tooltips didácticos V1 (Fase 2A + Fase 2B) y la corrección estructurada de conflictos en staging, esperar:
 
 ```text
-Ran 255 tests in ...
+Ran 267 tests in ...
 OK
 ```
 
-Si el total no es 255, revisar que estén presentes `pruebas/test_historial_git.py`,
+Si el total no es 267, revisar que estén presentes `pruebas/test_historial_git.py`,
 `pruebas/test_exportacion_historial.py`,
 `pruebas/test_configuracion_remoto_git.py`,
 `pruebas/test_push_git.py`,
@@ -1668,8 +1834,9 @@ Si el total no es 255, revisar que estén presentes `pruebas/test_historial_git.
 `pruebas/test_actualizacion_preparados.py`,
 `pruebas/test_cambios_locales_git.py`,
 `pruebas/test_descarte_cambios_git.py`,
-`pruebas/test_ramas_git.py` y
-`pruebas/test_ayuda_tooltips_v1.py`.
+`pruebas/test_ramas_git.py`,
+`pruebas/test_ayuda_tooltips_v1.py` y
+`pruebas/test_commit_gui_conflicto.py`.
 
 ## Notas del entorno
 
@@ -1708,25 +1875,31 @@ python -m unittest discover -s .\pruebas -v
 ```
 
 3. confirmar que cualquier cambio pendiente es conocido y esperado;
-4. confirmar que las 255 pruebas pasan;
+4. confirmar que las 267 pruebas pasan;
 5. confirmar que tooltips/estética, historial, filtros, orden, exportación,
    configuración inicial de GitHub, detalle de cambios de un commit,
    persistencia del último repositorio, actualización de archivos
    preparados, inspector de cambios locales, descarte de cambios sin
-   preparar y selector de ramas locales siguen presentes;
+   preparar, selector de ramas locales y el manejo seguro de conflictos
+   en staging (en_conflicto estructurado) siguen presentes;
 6. la etapa Tooltips Didácticos V1 está CERRADA (37 tooltips
    centralizados en TEXTOS_AYUDA_GIT_V1: 13 P0/P1 de Fase 2A +
    24 P2/P3 de Fase 2B; 104 pruebas específicas; 255 suite
-   completa; 0 textos literales inline en llamadas a
+   completa en su momento; 0 textos literales inline en llamadas a
    AyudaEmergente; prueba manual Windows de 2A EXITOSA con
    commits locales bc57772 y 82a32d1 SIN PUSH y prueba manual
    Windows de 2B EXITOSA commiteada en "Cierra tooltips
-   didacticos V1", hijo de 0413697, SIN PUSH). Después de
-   Tooltips V1, las etapas FUTURAS son: la leyenda/ayuda
-   contextual de estados Git en la tabla de cambios (working
-   tree, staging/índice, HEAD, ??, M, MM, preparado, preparado y
-   vuelto a modificar, conflictos) y "Publicar rama local"
-   (separada, con sus propias confirmaciones);
+   didacticos V1", hijo de 0413697, SIN PUSH). La corrección
+   estructurada de conflictos en staging quedó CERRADA en el
+   commit "Corrige manejo seguro de conflictos en staging"
+   (consultar git log -1 --oneline; SIN PUSH; 267 pruebas;
+   prueba manual Windows EXITOSA). Después de Tooltips V1 y de
+   la corrección de conflictos, las etapas FUTURAS son: la
+   leyenda/ayuda contextual de estados Git en la tabla de cambios
+   (working tree, staging/índice, HEAD, ??, M, MM, preparado,
+   preparado y vuelto a modificar, conflictos) — SIGUIENTE — y
+   "Publicar rama local" (separada, con sus propias
+   confirmaciones);
 7. mantener todas las reglas de seguridad y coordinación entre agentes.
 
 ## Coordinación entre agentes

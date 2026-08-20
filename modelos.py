@@ -44,6 +44,11 @@ class CambioArchivo:
     # existen cambios posteriores en el working tree: el área
     # preparada no contiene la versión actual completa.
     requiere_actualizar_preparado: bool = False
+    # True cuando el par de códigos de git status corresponde a
+    # un conflicto de merge (DD/AU/UD/UA/DU/AA/UU). Un conflicto
+    # no es un archivo "preparado para commit" ni "sin preparar":
+    # es un estado especial que bloquea las acciones de staging.
+    en_conflicto: bool = False
 
 
 @dataclass

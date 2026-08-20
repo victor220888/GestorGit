@@ -375,6 +375,15 @@ class ServicioGit:
                 "!"
             )
 
+            # Los conflictos de merge son un estado especial:
+            # no son "preparados para commit" ni "sin preparar".
+            # El dato estructurado procede exclusivamente de los
+            # códigos Git; nunca del texto de la descripción.
+            en_conflicto = self._es_estado_conflicto(
+                estado_indice,
+                estado_trabajo
+            )
+
             # El área preparada quedó desactualizada cuando el
             # archivo está preparado y además existe un cambio
             # posterior en el working tree. Los conflictos no
@@ -386,10 +395,7 @@ class ServicioGit:
                     "?",
                     "!"
                 )
-                and not self._es_estado_conflicto(
-                    estado_indice,
-                    estado_trabajo
-                )
+                and not en_conflicto
             )
 
             cambios.append(
@@ -402,7 +408,8 @@ class ServicioGit:
                     ruta_anterior=ruta_anterior,
                     requiere_actualizar_preparado=(
                         requiere_actualizar_preparado
-                    )
+                    ),
+                    en_conflicto=en_conflicto
                 )
             )
 
@@ -451,6 +458,52 @@ class ServicioGit:
                 error=mensaje_error,
                 comando=""
             )
+
+        # Defensa en profundidad: consultamos nuevamente el estado
+        # antes del git add productivo. Si alguna ruta está en
+        # conflicto, bloqueamos TODA la operación: un conflicto no
+        # debe poder entrar en el área preparada mediante
+        # "Preparar seleccionados".
+        resultado_cambios = self.obtener_cambios(
+            estado_repositorio.ruta_raiz
+        )
+
+        if not resultado_cambios.exitoso:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=resultado_cambios.error,
+                comando=""
+            )
+
+        cambios_por_ruta = {
+            cambio.ruta: cambio
+            for cambio in resultado_cambios.cambios
+        }
+
+        for ruta_archivo in rutas_validas:
+            cambio = cambios_por_ruta.get(
+                ruta_archivo
+            )
+
+            if (
+                cambio is not None
+                and cambio.en_conflicto
+            ):
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error=(
+                        f"El archivo '{ruta_archivo}' está en "
+                        "conflicto y no se preparará.\n\n"
+                        "Git necesita que una persona decida cómo "
+                        "resolver el conflicto. GestorGit no elige "
+                        "una versión automáticamente."
+                    ),
+                    comando=""
+                )
 
         argumentos = [
             "--literal-pathspecs",
@@ -506,6 +559,76 @@ class ServicioGit:
                 error=mensaje_error,
                 comando=""
             )
+
+        # Defensa en profundidad: consultamos nuevamente el estado
+        # antes del restore --staged / rm --cached productivo. Cada
+        # ruta debe seguir siendo un cambio válido para quitar de
+        # preparados y NO debe estar en conflicto; un conflicto no
+        # se "quita de preparados" (eso alteraría el estado unmerged
+        # del índice). Un error de consulta bloquea: nunca se
+        # interpreta un fallo como estado seguro.
+        resultado_cambios = self.obtener_cambios(
+            estado_repositorio.ruta_raiz
+        )
+
+        if not resultado_cambios.exitoso:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=resultado_cambios.error,
+                comando=""
+            )
+
+        cambios_por_ruta = {
+            cambio.ruta: cambio
+            for cambio in resultado_cambios.cambios
+        }
+
+        for ruta_archivo in rutas_validas:
+            cambio = cambios_por_ruta.get(
+                ruta_archivo
+            )
+
+            if cambio is None:
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error=(
+                        f"El archivo '{ruta_archivo}' ya no "
+                        "presenta cambios pendientes."
+                    ),
+                    comando=""
+                )
+
+            if cambio.en_conflicto:
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error=(
+                        f"El archivo '{ruta_archivo}' está en "
+                        "conflicto y no se quitará de preparados."
+                        " No se ejecutó ningún comando Git.\n\n"
+                        "Git necesita que una persona decida cómo "
+                        "resolver el conflicto. GestorGit no elige "
+                        "una versión automáticamente."
+                    ),
+                    comando=""
+                )
+
+            if not cambio.preparado:
+                return ResultadoComando(
+                    exitoso=False,
+                    codigo_salida=-1,
+                    salida="",
+                    error=(
+                        f"El archivo '{ruta_archivo}' ya no "
+                        "está preparado."
+                    ),
+                    comando=""
+                )
 
         if estado_repositorio.tiene_commits:
             # Ya existe HEAD.
@@ -645,10 +768,7 @@ class ServicioGit:
                     comando=""
                 )
 
-            if self._es_estado_conflicto(
-                cambio.estado_indice,
-                cambio.estado_trabajo
-            ):
+            if cambio.en_conflicto:
                 return ResultadoComando(
                     exitoso=False,
                     codigo_salida=-1,
@@ -832,10 +952,13 @@ class ServicioGit:
             )
 
         # No permitimos commits mientras existan conflictos.
+        # La decisión usa el dato estructurado en_conflicto
+        # (procedente de los códigos Git), nunca el texto
+        # localizado de la descripción.
         archivos_conflicto = [
             cambio.ruta
             for cambio in resultado_cambios.cambios
-            if cambio.descripcion == "Conflicto"
+            if cambio.en_conflicto
         ]
 
         if archivos_conflicto:

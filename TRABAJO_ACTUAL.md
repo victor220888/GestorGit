@@ -54,6 +54,11 @@ Estado actual:
   0413697; SIN PUSH);
 - Tooltips Didácticos V1 completos: 37 tooltips (13 P0/P1 +
   24 P2/P3) centralizados en TEXTOS_AYUDA_GIT_V1, 0 inline;
+- corrección estructurada de conflictos en staging: FASE CERRADA
+  (prueba manual Windows EXITOSA; 267/267 suite OK; commit local
+  "Corrige manejo seguro de conflictos en staging"; SIN PUSH;
+  siguiente etapa de producto: Leyenda/Ayuda contextual de
+  estados Git);
 - config.json ignorado y no versionado;
 - .opencode/ sigue sin versionar y NO debe incluirse
   automáticamente.
@@ -690,31 +695,204 @@ Etapas FUTURAS (registradas, NO implementadas):
 2. "Publicar rama local" se conserva como etapa FUTURA separada,
    con sus propias confirmaciones de seguridad.
 
+## ETAPA CORRECCIÓN ESTRUCTURADA DE CONFLICTOS EN STAGING
+
+Tarea: Corrección previa de seguridad y semántica — Conflictos Git en
+tabla principal y acciones de staging (descubierta durante el análisis
+de la futura leyenda de estados).
+
+Estado: FASE CERRADA
+
+PRUEBA MANUAL WINDOWS:
+EXITOSA (confirmada por el usuario)
+
+SUITE COMPLETA:
+267/267 OK (255 anteriores + 11 de servicio + 1 prueba GUI)
+
+COMMIT DE CIERRE:
+"Corrige manejo seguro de conflictos en staging"
+(consultar git log -1 --oneline para el hash; SIN PUSH)
+
+PRUEBAS ESPECÍFICAS NUEVAS:
+11/11 OK (PruebasConflictoEstructurado en pruebas/test_servicio_git.py)
+
+PRUEBA FOCALIZADA NUEVA DE GUI (sin Tk real):
+1/1 OK (PruebaCommitGuiConflicto en pruebas/test_commit_gui_conflicto.py)
+
+HEAD observado al iniciar: 6ef1ad1 Cierra tooltips didacticos V1;
+rama master; staging vacío; archivo sin rastrear ajeno
+GestorGit_plan_continuidad_y_modo_equipo.md INTACTO (no tocado).
+
+Hallazgo corregido:
+
+- ServicioGit.obtener_cambios() calculaba preparado con
+  estado_indice not in (" ", "?", "!"): los 7 pares de conflicto
+  (DD AU UD UA DU AA UU) quedaban con preparado=True aunque
+  _es_estado_conflicto() los reconocía;
+- la reproducción con Git real confirmó que "Quitar de preparados"
+  sobre UU ejecutaba git restore --staged y alteraba el estado
+  unmerged del índice.
+
+Cambios implementados:
+
+- modelos.py: CambioArchivo.en_conflicto (bool, default False);
+  procede EXCLUSIVAMENTE de los códigos Git XY, nunca de texto;
+- servicio_git.py:
+  - obtener_cambios(): calcula en_conflicto una sola vez y lo
+    almacena; requiere_actualizar_preparado reutiliza el booleano
+    (sin cambios de semántica histórica: preparado se conserva);
+  - agregar_archivos(): DEFENSA EN PROFUNDIDAD - consulta
+    obtener_cambios() antes del git add productivo; conflicto en
+    cualquier ruta -> BLOQUEA toda la operación con mensaje
+    educativo y sin ejecutar git add; error de consulta bloquea;
+  - quitar_archivos_preparados(): DEFENSA EN PROFUNDIDAD
+    OBLIGATORIA - consulta obtener_cambios() antes del producto;
+    cada ruta debe seguir existiendo como cambio, no estar en
+    conflicto y seguir preparada; conflicto -> bloqueo educativo
+    sin restore --staged ni rm --cached; error de consulta bloquea
+    (nunca se interpreta error como estado seguro);
+  - actualizar_archivos_preparados(): usa cambio.en_conflicto en
+    lugar de _es_estado_conflicto (mismo comportamiento);
+  - crear_commit(): usa cambio.en_conflicto en lugar de
+    descripcion == "Conflicto" (eliminada la dependencia de texto
+    localizado);
+- principal.py:
+  - tabla principal: para conflicto la columna Preparado muestra
+    "No aplica" (Estado ya muestra "Conflicto");
+  - Inspector: detalle.en_conflicto -> Preparado = "No aplica";
+  - actualizar_estado_botones_archivos(): los conflictos NO
+    habilitan Preparar, Quitar de preparados, Actualizar
+    preparados ni Crear commit (el botón commit solo se habilita
+    si existe al menos un preparado normal; un conflicto no es
+    contenido commiteable por sí solo);
+  - preparar_seleccionados(), quitar_preparados_seleccionados(),
+    actualizar_preparados_seleccionados(): filtran explícitamente
+    cambio.en_conflicto;
+- pruebas/test_servicio_git.py: 11 pruebas nuevas
+  (PruebasConflictoEstructurado) con conflicto REAL de merge (UU)
+  y spies ServicioGitEspiaEstado / ServicioGitEspiaCambios;
+- sin cambios: ayuda_interfaz.py, servicio_remoto_git.py,
+  servicio_historial_git.py, servicio_exportacion_historial.py,
+  servicio_ramas_git.py, servicio_descarte_cambios_git.py,
+  modelos_cambios_locales.py, AGENTS.md, CLAUDE.md, config.json.
+
+Coherencia con la Leyenda futura (NO implementada todavía):
+
+- 1. ?? es NO RASTREADO (está en el disco); no se dice que esté
+     fuera del working tree;
+- 2. "Quitar de preparados" no afirma un estado final único;
+- 3. el commit se enseña como "Git crea el commit a partir del
+     contenido preparado en el índice; HEAD avanza";
+- 4. Copiado (C) no se afirma como detección por defecto;
+- la Leyenda/Ayuda contextual de estados Git sigue PENDIENTE como
+  etapa futura;
+- "Publicar rama local" sigue FUTURA y NO fue implementada.
+
+PRUEBA MANUAL WINDOWS — EXITOSA (confirmada por el usuario):
+
+Repositorio TEMPORAL independiente
+`GestorGit-Prueba-Conflicto-20260820-162507` (no corresponde al
+repo GestorGit ni a repositorios Oracle), con `UU conflicto.sql`
+y `M  normal.sql` intencionales. Casos confirmados:
+
+- caso 1 (tabla): conflicto.sql -> Conflicto / No aplica;
+  normal.sql -> Modificado y preparado / Sí;
+- caso 2 (selección del conflicto): Preparar seleccionados,
+  Actualizar preparados y Quitar de preparados DESHABILITADOS;
+  Ver cambios locales disponible como inspección;
+- caso 3 (Inspector): Conflicto / No aplica; Sin preparar mostró
+  el diff con marcadores del conflicto; Preparados mostró el
+  estado unmerged; no se ofreció descarte del conflicto;
+- caso 4 (commit con estado mixto UU + M, mensaje "Prueba
+  bloqueo conflicto"): al pulsar Crear commit apareció "Conflicto
+  en el índice" listando conflicto.sql, explicando que Git
+  necesita decisión humana y que GestorGit no elige una versión
+  automáticamente; NO apareció "¿Desea continuar?"; NO se creó
+  commit. Comprobación externa inmediata: Compare-Object de
+  git status y de git ls-files -u antes/después SIN salida;
+  HEAD antes == HEAD después: True; status continuó
+  UU conflicto.sql / M  normal.sql; ls-files -u conservó las tres
+  entradas stage 1/2/3;
+- caso 5 (quitar preparado NORMAL): con solo normal.sql
+  seleccionado el botón quedó habilitado; después: conflicto.sql
+  Conflicto/No aplica y normal.sql Modificado/No; Crear commit
+  DESHABILITADO; Git real UU conflicto.sql /  M normal.sql;
+  ls-files -u de conflicto.sql conservó las tres entradas.
+
+CONCLUSIÓN: la corrección protege el índice unmerged y conserva
+las operaciones normales sobre archivos no conflictivos.
+
+Validación realizada:
+
+- py_compile de modelos.py, servicio_git.py, principal.py,
+  pruebas/test_servicio_git.py y pruebas/test_commit_gui_conflicto.py:
+  OK;
+- pruebas focalizadas: test_servicio_git (34) +
+  test_commit_gui_conflicto (1) = 35 tests OK;
+- suite completa: Ran 267 tests ... OK;
+- NO se ejecutó sobre el repositorio real:
+  git add / git commit / git fetch / git pull / git push /
+  git reset / git restore / git checkout / git clean.
+
+MICROCORRECCIÓN (aplicada y auditable en el commit de cierre):
+
+1. pruebas/test_servicio_git.py — helper tiene_comando_prohibido()
+   REPARADO: ya no compara únicamente argumentos[0]; ahora toma
+   SOLO los argumentos anteriores al primer "--" y compara allí los
+   verbos exactos (igualdad, sin substring). Reconoce el verbo Git
+   con opciones globales delante (--literal-pathspecs add / restore /
+   rm) pero una ruta situada después de "--" jamás se confunde con
+   un verbo. Con el helper roto, las afirmaciones
+   assertFalse(tiene_comando_prohibido(...)) pasaban por el motivo
+   equivocado (el primer elemento --literal-pathspecs nunca
+   coincidía); ahora la ausencia de add/restore/rm sobre conflictos
+   queda COMPROBADA CORRECTAMENTE en las 5 verificaciones
+   existentes.
+2. principal.py — crear_commit_desde_interfaz(): la GUI de Commit
+   BLOQUEA ANTES DE LA CONFIRMACIÓN si existe cualquier conflicto:
+   después de obtener_cambios() se calcula archivos_conflicto
+   usando EXCLUSIVAMENTE cambio.en_conflicto (sin depender de
+   descripcion); si hay conflictos se muestra un aviso educativo
+   (messagebox.showwarning: "Git necesita que una persona decida
+   cómo resolver el conflicto. GestorGit no elige una versión
+   automáticamente."), NO se muestra askyesno, NO se llama a
+   servicio_git.crear_commit() y se retorna. Después, la lista se
+   construye defensivamente con
+   if cambio.preparado and not cambio.en_conflicto. La defensa de
+   ServicioGit.crear_commit() (servicio_git.py) queda INTACTA.
+3. NUEVO pruebas/test_commit_gui_conflicto.py (1 prueba SIN Tk
+   real): PruebaCommitGuiConflicto construye AplicacionGit con
+   __new__ y dobles mínimos (VariableMensajeCommitDoble y
+   ServicioGitDoble) e intercepta messagebox con unittest.mock.
+   Escenario: Cambio A preparado sin conflicto + Cambio B preparado
+   EN CONFLICTO con descripcion deliberadamente distinta de
+   "Conflicto". Demuestra: showwarning llamado una vez con el
+   nombre del archivo en conflicto y "no elige"; askyesno NO
+   llamado; servicio_git.crear_commit() NO llamado.
+
+git diff --check final del cierre: los únicos avisos son
+CR-at-EOL de líneas añadidas en archivos CRLF (modelos.py 5,
+servicio_git.py 133, pruebas/test_servicio_git.py 693); sin
+espacios reales al final de línea (verificado tras eliminar \r);
+los archivos LF (principal.py, AGENTS.md, CLAUDE.md,
+TRABAJO_ACTUAL.md y el nuevo pruebas/test_commit_gui_conflicto.py)
+no aportan avisos; causa conocida y documentada; NO se normalizó
+CRLF/LF.
+
+Siguiente etapa de producto: Leyenda/Ayuda contextual de estados
+Git (NO implementada ahora). Mantener como FUTURAS: 1) la
+Leyenda/Ayuda contextual de estados Git; 2) "Publicar rama local"
+(separada, con sus propias confirmaciones).
+
 ## Regla para reservar archivos
-
-Antes de comenzar una tarea, el agente debe actualizar esta sección indicando:
-
-Agente:
-Tarea:
-Archivos que modificará:
-Estado: EN CURSO
-Fecha/hora de inicio:
-
-Ejemplo:
-
-OpenCode:
-Tarea: persistencia del último repositorio
-Archivos:
-- servicio_configuracion.py
-- pruebas/test_configuracion.py
-Estado: EN CURSO
 
 Reserva activa:
 
-Agente: OpenCode
-Tarea: Cierre formal de Tooltips Didácticos V1 — Fase 2B
-Estado: SIN TAREA ACTIVA (tarea de cierre TERMINADA; Fase 2B
-CERRADA; commit "Cierra tooltips didacticos V1" realizado)
+SIN TAREA ACTIVA.
+
+La etapa "Corrección estructurada de conflictos en staging" quedó
+CERRADA y commiteada localmente (consultar git log -1 --oneline);
+SIN PUSH.
 
 Mientras una tarea figure EN CURSO, el otro agente NO debe modificar esos
 archivos sin coordinación explícita.

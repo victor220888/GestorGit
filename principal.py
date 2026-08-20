@@ -2038,7 +2038,12 @@ class AplicacionGit:
             return
 
         for cambio in resultado.cambios:
-            if not cambio.preparado:
+            if cambio.en_conflicto:
+                # Un conflicto no es "preparado" ni "sin
+                # preparar": es un estado especial que bloquea
+                # las acciones de staging.
+                texto_preparado = "No aplica"
+            elif not cambio.preparado:
                 texto_preparado = "No"
             elif cambio.requiere_actualizar_preparado:
                 texto_preparado = "Sí (hay cambios nuevos)"
@@ -4934,7 +4939,10 @@ class AplicacionGit:
             detalle.descripcion
         )
 
-        if not detalle.preparado:
+        if detalle.en_conflicto:
+            # Un conflicto no es "preparado" ni "sin preparar".
+            texto_preparado = "No aplica"
+        elif not detalle.preparado:
             texto_preparado = "No"
         elif detalle.requiere_actualizar_preparado:
             texto_preparado = "Sí (hay cambios nuevos)"
@@ -6787,6 +6795,9 @@ class AplicacionGit:
             if cambio.preparado:
                 continue
 
+            if cambio.en_conflicto:
+                continue
+
             rutas_archivos.append(
                 cambio.ruta
             )
@@ -6877,6 +6888,9 @@ class AplicacionGit:
                 continue
 
             if not cambio.preparado:
+                continue
+
+            if cambio.en_conflicto:
                 continue
 
             rutas_archivos.append(
@@ -6977,6 +6991,9 @@ class AplicacionGit:
                 continue
 
             if not cambio.requiere_actualizar_preparado:
+                continue
+
+            if cambio.en_conflicto:
                 continue
 
             rutas_archivos.append(
@@ -7092,10 +7109,40 @@ class AplicacionGit:
 
             return
 
+        # Bloqueo por conflicto ANTES de la confirmación: un
+        # conflicto es un estado especial que Git deja para que una
+        # persona decida. La decisión usa el dato estructurado
+        # en_conflicto (procedente de los códigos Git), nunca el
+        # texto localizado de la descripción.
+        archivos_conflicto = [
+            cambio.ruta
+            for cambio in resultado_cambios.cambios
+            if cambio.en_conflicto
+        ]
+
+        if archivos_conflicto:
+            lista_conflictos = "\n".join(
+                archivos_conflicto
+            )
+
+            messagebox.showwarning(
+                "Conflicto en el índice",
+                (
+                    "No se puede crear el commit porque existen "
+                    "archivos en conflicto:\n\n"
+                    f"{lista_conflictos}\n\n"
+                    "Git necesita que una persona decida cómo "
+                    "resolver el conflicto. GestorGit no elige "
+                    "una versión automáticamente."
+                )
+            )
+
+            return
+
         rutas_preparadas = [
             cambio.ruta
             for cambio in resultado_cambios.cambios
-            if cambio.preparado
+            if cambio.preparado and not cambio.en_conflicto
         ]
 
         if not rutas_preparadas:
@@ -7257,22 +7304,30 @@ class AplicacionGit:
         ) > 0
 
         # Preparar actúa sobre los seleccionados que todavía
-        # no están en el área preparada.
+        # no están en el área preparada. Los conflictos nunca
+        # son "preparables".
         hay_no_preparados_seleccionados = any(
             not cambio.preparado
+            and not cambio.en_conflicto
             for cambio in cambios_seleccionados
         )
 
-        # Quitar actúa sobre los seleccionados ya preparados.
+        # Quitar actúa sobre los seleccionados ya preparados,
+        # pero NUNCA sobre conflictos: un conflicto no puede
+        # "quitarse de preparados" (eso alteraría el estado
+        # unmerged del índice).
         hay_preparados_seleccionados = any(
             cambio.preparado
+            and not cambio.en_conflicto
             for cambio in cambios_seleccionados
         )
 
         # Actualizar actúa sobre los seleccionados que tienen
-        # cambios nuevos fuera del índice.
+        # cambios nuevos fuera del índice. Los conflictos quedan
+        # excluidos por su propia semántica.
         hay_que_actualizar = any(
             cambio.requiere_actualizar_preparado
+            and not cambio.en_conflicto
             for cambio in cambios_seleccionados
         )
 
@@ -7322,14 +7377,17 @@ class AplicacionGit:
             )
         )
 
-        # El commit se habilita cuando hay preparados; el servicio
-        # vuelve a bloquearlo con su mensaje educativo si algún
-        # archivo fue modificado después de haber sido preparado.
+        # El commit se habilita cuando hay preparados normales; el
+        # servicio vuelve a bloquearlo con su mensaje educativo si
+        # algún archivo fue modificado después de haber sido
+        # preparado o si existe cualquier conflicto. Un conflicto
+        # NO cuenta por sí solo como contenido commiteable.
         self.boton_crear_commit.config(
             state=(
                 tk.NORMAL
                 if any(
                     cambio.preparado
+                    and not cambio.en_conflicto
                     for cambio in cambios
                 )
                 else tk.DISABLED

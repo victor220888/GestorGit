@@ -73,7 +73,7 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 255 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 267 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
      en líneas CRLF añadidas: causa conocida y documentada);
@@ -104,8 +104,8 @@ El historial debe conservar estas características:
 
 ## Arquitectura
 
-- `modelos.py` — dataclasses: `ResultadoComando`, `EstadoRepositorio`, `CambioArchivo`, `ResultadoCambios`, `EstadoSincronizacion`.
-- `servicio_git.py` — operaciones Git locales: localizar Git, ejecutar comandos, validar repositorios, rama y remotos, `status --porcelain`, staging (incluida la actualización de archivos preparados con `actualizar_archivos_preparados`), identidad, operaciones en curso, commits, hash actual.
+- `modelos.py` — dataclasses: `ResultadoComando`, `EstadoRepositorio`, `CambioArchivo` (con `en_conflicto`, booleano estructurado que procede EXCLUSIVAMENTE de los códigos Git XY, nunca del texto) , `ResultadoCambios`, `EstadoSincronizacion`.
+- `servicio_git.py` — operaciones Git locales: localizar Git, ejecutar comandos, validar repositorios, rama y remotos, `status --porcelain`, staging (incluida la actualización de archivos preparados con `actualizar_archivos_preparados`), identidad, operaciones en curso, commits, hash actual. Los conflictos (DD/AU/UD/UA/DU/AA/UU) se exponen con `CambioArchivo.en_conflicto`, se bloquean en preparar/quitar con defensa en profundidad (reconsulta fresca antes del comando productivo; error de consulta bloquea) y en `crear_commit` sin depender de `descripcion`.
 - `servicio_remoto_git.py` — hereda de `ServicioGit`. Selección segura del remoto, Fetch, estado de sincronización, Push seguro, Pull con `--ff-only`, configuración del primer remoto GitHub (`agregar_remoto_github`).
 - `modelos_historial.py` — modelos del historial: `CommitGit`, `ResultadoHistorial`, `ResultadoExportacion`.
 - `servicio_historial_git.py` — solo lectura: consultas locales de `git log` con separadores de control y parche de un commit (`obtener_cambios_commit`) con `git show`. No ejecuta operaciones remotas ni modifica el repositorio.
@@ -117,7 +117,7 @@ El historial debe conservar estas características:
 - `servicio_descarte_cambios_git.py` — descarta los cambios SIN PREPARAR de UN archivo con `git --literal-pathspecs restore --worktree -- <ruta>` (restaura desde el ÍNDICE, no desde HEAD). Conserva el staging, revalida el estado antes del restore y nunca ejecuta operaciones remotas.
 - `modelos_ramas.py` — modelos de ramas locales: `RamaLocal`, `ResultadoRamas`.
 - `servicio_ramas_git.py` — ramas LOCALES: listar (`git for-each-ref --format=%(refname:short) refs/heads/`), identificar la rama actual (`git symbolic-ref --quiet --short HEAD`), cambiar (`git switch --no-guess <rama>`) y crear desde HEAD (`git switch -c <rama>`). Exige repositorio totalmente limpio, valida nombres (propias + `git check-ref-format refs/heads/<nombre>`) y nunca ejecuta Fetch/Pull/Push/Merge/Rebase; una rama nueva queda solo en el local y sin upstream.
-- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales (incluido el botón `Descartar cambios sin preparar...`), selector de ramas locales (botón `Ramas...` y ventana `Ramas locales - Gestor Git`), carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red. Contiene además `TEXTOS_AYUDA_GIT_V1`: los 37 tooltips didácticos (13 P0/P1 + 24 P2/P3) centralizados en un único diccionario.
+- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales (incluido el botón `Descartar cambios sin preparar...`), selector de ramas locales (botón `Ramas...` y ventana `Ramas locales - Gestor Git`), carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red. Para los conflictos la columna Preparado muestra `No aplica` (tabla principal e Inspector) y las acciones normales de staging los excluyen (Preparar/Quitar/Actualizar/Crear commit); `crear_commit_desde_interfaz` bloquea con aviso educativo ANTES del `askyesno` si existe cualquier `en_conflicto`, y la lista de rutas se construye con `preparado and not en_conflicto`. Contiene además `TEXTOS_AYUDA_GIT_V1`: los 37 tooltips didácticos (13 P0/P1 + 24 P2/P3) centralizados en un único diccionario.
 - `ayuda_interfaz.py` — ayuda visual: `AyudaEmergente` y `configurar_estilos`. Sin lógica Git.
 
 ## Seguridad
@@ -595,7 +595,7 @@ eliminación de ramas permanece fuera del alcance V1.
 
 ## Pruebas
 
-255 pruebas automatizadas en `pruebas/`. Ejecutar:
+267 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -604,7 +604,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 255 tests in ...
+Ran 267 tests in ...
 OK
 ```
 
@@ -681,7 +681,8 @@ TOOLTIPS DIDÁCTICOS V1: CERRADO (Fase 2A + Fase 2B).
   Upstream no implica estar sincronizado; historial y filtros
   son consultas LOCALES;
 - 104 pruebas específicas en `pruebas/test_ayuda_tooltips_v1.py`
-  (58 Fase 2A + 46 Fase 2B); 255 pruebas totales OK;
+  (58 Fase 2A + 46 Fase 2B); 255 pruebas totales en su momento
+  (HISTÓRICO; el total actual del proyecto es 267);
 - PRUEBA VISUAL WINDOWS FINAL: EXITOSA en ambas fases
   (2A confirmada en commits locales `bc57772` y `82a32d1`;
   2B confirmada por el usuario y commiteada en
@@ -698,6 +699,50 @@ Etapas FUTURAS (documentadas, sin implementar):
 2. La funcionalidad "Publicar rama local" NO se cancela: queda
    documentada como etapa FUTURA separada, fuera del alcance
    actual, con sus propias confirmaciones de seguridad.
+
+CORRECCIÓN ESTRUCTURADA DE CONFLICTOS EN STAGING: CERRADA.
+
+- causa: los siete pares de conflicto (DD/AU/UD/UA/DU/AA/UU)
+  podían quedar con `preparado=True` por la semántica histórica
+  de `estado_indice`; un conflicto no es "preparado" ni "sin
+  preparar": es un estado especial que bloquea las acciones de
+  staging;
+- `CambioArchivo.en_conflicto` (bool, default False) procede
+  EXCLUSIVAMENTE de los códigos Git XY (`_es_estado_conflicto`,
+  exactamente DD/AU/UD/UA/DU/AA/UU), nunca del texto de la
+  descripción;
+- servicio: `agregar_archivos()` y `quitar_archivos_preparados()`
+  reconsultan el estado antes del comando productivo (error de
+  consulta bloquea; conflicto bloquea con mensaje educativo; sin
+  git add / restore --staged / rm --cached sobre conflicto);
+  `actualizar_archivos_preparados()` y `crear_commit()` usan
+  `cambio.en_conflicto` (sin dependencia de `descripcion`);
+- GUI: tabla principal e Inspector muestran Preparado =
+  `No aplica`; Preparar/Quitar/Actualizar/Crear commit excluyen
+  los conflictos (`preparado and not en_conflicto`);
+  `crear_commit_desde_interfaz` bloquea ANTES del `askyesno` con
+  aviso educativo ("Git necesita que una persona decida...,
+  GestorGit no elige una versión automáticamente");
+- microcorrección: `tiene_comando_prohibido()` examina SOLO los
+  argumentos anteriores al primer `--` y compara verbos exactos
+  (sin substring), por lo que reconoce add/restore/rm detrás de
+  `--literal-pathspecs` y no confunde rutas posteriores a `--`;
+  los asserts de ausencia de add/restore/rm quedan así realmente
+  verificados;
+- prueba GUI SIN Tk real (`pruebas/test_commit_gui_conflicto.py`):
+  showwarning una vez con la ruta del conflicto, sin askyesno y
+  sin llamar a `servicio_git.crear_commit()`;
+- 11 pruebas nuevas en `pruebas/test_servicio_git.py`
+  (PruebasConflictoEstructurado) + 1 prueba GUI = total 267;
+- PRUEBA MANUAL WINDOWS: EXITOSA (repositorio temporal
+  `GestorGit-Prueba-Conflicto-20260820-162507` con UU conflicto.sql
+  y M  normal.sql: tabla/Inspector "No aplica", acciones de
+  staging del conflicto deshabilitadas, commit bloqueado antes de
+  la confirmación, índice unmerged intacto con las tres entradas
+  stage 1/2/3 y HEAD sin cambios; las operaciones normales sobre
+  archivos no conflictivos se conservan);
+- commit de cierre: "Corrige manejo seguro de conflictos en
+  staging" (consultar git log -1 --oneline); SIN PUSH.
 
 ## Filosofía
 
