@@ -1458,7 +1458,9 @@ Orden Fecha ↓
 Exportar CSV
 Exportar TXT
 Configurar GitHub (primer remoto origin)
-Primer Push solo con remoto vacío de ramas
+Primer Push seguro: si la rama remota ya existe puede configurar
+upstream; si hay que crearla, solo se permite con remoto vacío de
+otras ramas conocidas
 Detalle de cambios de un commit (solo lectura)
 Persistencia del último repositorio (config.json)
 Actualización de archivos preparados
@@ -1477,7 +1479,7 @@ CSV y TXT exportan exactamente los commits visibles y conservan ese mismo orden.
 
 ## Funcionalidades posteriores
 
-TOOLTIPS DIDÁCTICOS V1 — FASE 2A IMPLEMENTADA (P0/P1). Esta
+TOOLTIPS DIDÁCTICOS V1 — FASE 2A CERRADA (P0/P1). Esta
 fase cubre únicamente los tooltips de las acciones Git más
 críticas y de mayor riesgo, sin tocar la lógica Git productiva
 ni los servicios. Los textos se almacenan en el diccionario
