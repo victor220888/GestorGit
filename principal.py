@@ -546,6 +546,244 @@ TEXTOS_AYUDA_GIT_V1 = {
 }
 
 
+# =============================================================
+# CONTENIDO_AYUDA_ESTADOS_GIT_V1
+#
+# Leyenda / ayuda contextual de los estados Git de la tabla de
+# cambios. NO son tooltips: es el contenido de la ventana
+# educativa "Estados Git - Gestor Git" que se abre con el botón
+# "¿Qué significan estos estados?".
+#
+# Estructura pedagógica: primero el MODELO MENTAL (HEAD, índice/
+# staging y working tree), después los estados concretos que
+# muestra la tabla (??, " M", "M ", MM y conflicto), después
+# otros estados y la parte avanzada de códigos XY, y al final la
+# relación con el Inspector y con las acciones de staging.
+#
+# Todos los textos de la ventana proceden de este diccionario;
+# no quedan textos educativos inline en los métodos Tkinter.
+# =============================================================
+
+CONTENIDO_AYUDA_ESTADOS_GIT_V1 = {
+    # ---------------------------------------------------------
+    # NIVEL 1 - MODELO MENTAL: HEAD, índice/staging y working tree
+    # ---------------------------------------------------------
+    "modelo_head_indice_working_tree": (
+        "MODELO MENTAL: HEAD, ÍNDICE Y WORKING TREE\n\n"
+        "Antes de interpretar los estados de la tabla conviene "
+        "tener claro el modelo de tres lugares en el que trabaja "
+        "Git.\n\n"
+        "HEAD\n"
+        "- apunta al commit actual;\n"
+        "- representa la referencia de la versión ya confirmada "
+        "en el historial local.\n\n"
+        "Índice / staging\n"
+        "- contiene la versión preparada para el próximo commit;\n"
+        "- NO es una carpeta física del disco;\n"
+        "- preparar no mueve destructivamente el archivo del "
+        "disco: preparar copia/registra en el índice la versión "
+        "actual del archivo.\n\n"
+        "Working tree\n"
+        "- son los archivos actuales que tienes en el disco "
+        "dentro del repositorio.\n\n"
+        "Las relaciones:\n\n"
+        "Working tree\n"
+        "  -> Preparar / Actualizar preparados\n"
+        "Índice / staging\n\n"
+        "Índice / staging\n"
+        "  -> Crear commit\n"
+        "nuevo commit\n"
+        "  -> HEAD avanza al nuevo commit\n\n"
+        "Git crea el commit a partir del contenido preparado en "
+        "el índice; HEAD avanza al nuevo commit."
+    ),
+    # ---------------------------------------------------------
+    # NIVEL 2 - ESTADOS CONCRETOS: ?? (nuevo / no rastreado)
+    # ---------------------------------------------------------
+    "estado_no_rastreado": (
+        "ESTADO: NUEVO / NO RASTREADO (??)\n\n"
+        "Git XY: \"??\"\n\n"
+        "- el archivo SÍ existe en el working tree (disco);\n"
+        "- Git todavía no lo está rastreando;\n"
+        "- todavía no hay una versión preparada de ese archivo "
+        "en el índice;\n"
+        "- Preparar registra/copia su versión actual en el "
+        "índice."
+    ),
+    # ---------------------------------------------------------
+    # NIVEL 2 - " M" (modificado sin preparar)
+    # ---------------------------------------------------------
+    "estado_modificado_sin_preparar": (
+        "ESTADO: MODIFICADO SIN PREPARAR (\" M\")\n\n"
+        "Git XY: \" M\"\n"
+        "(espacio + M)\n\n"
+        "- primera posición vacía;\n"
+        "- segunda posición M;\n"
+        "- el índice coincide con HEAD para ese cambio;\n"
+        "- el working tree difiere del índice.\n\n"
+        "En la tabla GestorGit suele mostrarse:\n"
+        "Estado = Modificado\n"
+        "Preparado = No"
+    ),
+    # ---------------------------------------------------------
+    # NIVEL 2 - "M " (modificado y preparado)
+    # ---------------------------------------------------------
+    "estado_modificado_preparado": (
+        "ESTADO: MODIFICADO Y PREPARADO (\"M \")\n\n"
+        "Git XY: \"M \"\n"
+        "(M + espacio)\n\n"
+        "- primera posición M;\n"
+        "- segunda posición vacía;\n"
+        "- el índice difiere de HEAD;\n"
+        "- el working tree coincide con la versión preparada.\n\n"
+        "En la tabla GestorGit suele mostrarse:\n"
+        "Estado = Modificado y preparado\n"
+        "Preparado = Sí"
+    ),
+    # ---------------------------------------------------------
+    # NIVEL 2 - MM (preparado y vuelto a modificar)
+    # ---------------------------------------------------------
+    "estado_preparado_y_vuelto_a_modificar": (
+        "ESTADO: MODIFICADO, PREPARADO Y VUELTO A MODIFICAR (MM)\n\n"
+        "Git XY: \"MM\"\n\n"
+        "- el índice ya contiene una versión preparada;\n"
+        "- después el archivo volvió a modificarse en el working "
+        "tree;\n"
+        "- hay dos versiones distintas relevantes:\n"
+        "  - la preparada (en el índice);\n"
+        "  - la actual del disco (working tree).\n\n"
+        "En la tabla GestorGit suele mostrarse:\n"
+        "Estado = Modificado, preparado y vuelto a modificar\n"
+        "Preparado = Sí (hay cambios nuevos)\n\n"
+        "Punto importante: si se pudiera crear el commit en ese "
+        "momento, el commit usaría la versión que está en el "
+        "índice, NO automáticamente los cambios posteriores del "
+        "working tree. GestorGit bloquea ese flujo normal y "
+        "ofrece Actualizar preparados para copiar la versión "
+        "actual completa nuevamente al índice. También puedes "
+        "usar Ver cambios locales... para comparar ambas "
+        "versiones."
+    ),
+    # ---------------------------------------------------------
+    # NIVEL 2 - CONFLICTO (estado especial)
+    # ---------------------------------------------------------
+    "estado_conflicto": (
+        "ESTADO ESPECIAL: CONFLICTO\n\n"
+        "Un conflicto es un estado ESPECIAL: no es simplemente "
+        "\"preparado\" ni \"sin preparar\".\n\n"
+        "En la tabla GestorGit se muestra:\n"
+        "Estado = Conflicto\n"
+        "Preparado = No aplica\n\n"
+        "Git necesita que una persona decida cómo resolver el "
+        "contenido del archivo.\n\n"
+        "GestorGit:\n"
+        "- NO elige una versión automáticamente;\n"
+        "- NO prepara normalmente el conflicto;\n"
+        "- NO permite quitarlo de preparados;\n"
+        "- NO lo actualiza con Actualizar preparados;\n"
+        "- bloquea el commit mientras exista el conflicto.\n\n"
+        "En Git un conflicto puede representarse con los códigos "
+        "DD AU UD UA DU AA UU; GestorGit no resuelve conflictos: "
+        "la decisión queda en manos de una persona."
+    ),
+    # ---------------------------------------------------------
+    # OTROS ESTADOS
+    # ---------------------------------------------------------
+    "otros_estados": (
+        "OTROS ESTADOS DE GIT\n\n"
+        "Git también puede representar:\n"
+        "A = agregado (nuevo y ya rastreado)\n"
+        "D = eliminado\n"
+        "R = renombrado\n\n"
+        "La POSICIÓN sigue importando:\n"
+        "- primera posición: el índice comparado con HEAD;\n"
+        "- segunda posición: el working tree comparado con el "
+        "índice.\n\n"
+        "Esta ayuda no pretende ser una lista exhaustiva de los "
+        "códigos de git status --porcelain: el objetivo es "
+        "comprender el modelo."
+    ),
+    # ---------------------------------------------------------
+    # PARTE AVANZADA: CÓDIGOS XY
+    # ---------------------------------------------------------
+    "codigos_xy": (
+        "PARTE AVANZADA: CÓDIGOS XY\n\n"
+        "git status --porcelain usa dos posiciones:\n\n"
+        "XY\n\n"
+        "X: estado del ÍNDICE respecto de HEAD.\n"
+        "Y: estado del WORKING TREE respecto del índice.\n\n"
+        "Ejemplos explícitos:\n"
+        "\" M\" = espacio + M (segunda posición: working tree "
+        "modificado)\n"
+        "\"M \" = M + espacio (primera posición: índice "
+        "modificado)\n"
+        "\"MM\" = M + M (modificado en el índice y vuelto a "
+        "modificar)\n"
+        "\"??\" = caso especial: archivo no rastreado\n\n"
+        "La letra M, sin conocer su posición, puede ser ambigua: "
+        "M puede indicar cambios preparados o sin preparar según "
+        "dónde aparezca. No existe un significado único de M: "
+        "depende de su posición en XY."
+    ),
+    # ---------------------------------------------------------
+    # RELACIÓN CON EL INSPECTOR Y CON LAS ACCIONES
+    # ---------------------------------------------------------
+    "inspector_y_acciones": (
+        "RELACIÓN CON EL INSPECTOR Y LAS ACCIONES\n\n"
+        "Ver cambios locales...\n"
+        "- pestaña \"Sin preparar\": working tree comparado con "
+        "el índice (conceptualmente git diff);\n"
+        "- pestaña \"Preparados\": índice comparado con HEAD "
+        "(conceptualmente git diff --cached).\n\n"
+        "En el caso MM ambas pestañas pueden mostrar diffs "
+        "diferentes: una para lo preparado y otra para lo que "
+        "cambió después.\n\n"
+        "Recomendación: selecciona un archivo y usa Ver cambios "
+        "locales... para ver qué está preparado y qué sigue "
+        "fuera del índice.\n\n"
+        "Acciones:\n"
+        "- Preparar seleccionados: copia/registra la versión "
+        "actual en el índice.\n"
+        "- Actualizar preparados: vuelve a copiar la versión "
+        "actual cuando el archivo ya estaba preparado y cambió "
+        "después.\n"
+        "- Quitar de preparados: modifica el índice para dejar de "
+        "preparar ese cambio y conserva el working tree; el "
+        "estado final de la tabla depende de cada caso.\n"
+        "- Crear commit: crea el commit a partir de lo preparado; "
+        "no incorpora automáticamente los cambios posteriores no "
+        "preparados."
+    ),
+}
+
+
+# Subtítulos cortos del contenido que se resaltan en negrita en la
+# ventana de ayuda de estados. La comparación es por igualdad
+# exacta de la línea completa (line.strip()), nunca por substring.
+_SUBTITULOS_AYUDA_ESTADOS = (
+    "HEAD",
+    "Índice / staging",
+    "Working tree",
+    "Ver cambios locales...",
+    "Acciones:",
+)
+
+# Líneas de códigos Git que se muestran en Consolas bold. Los
+# patrones son COMPLETOS y EXACTOS (no regex de "M") para que
+# " M" y "M " se distingan sin ambigüedad y para no formatear
+# una letra M cualquiera.
+_LINEAS_CODIGO_GIT_AYUDA = (
+    'Git XY: "??"',
+    'Git XY: " M"',
+    'Git XY: "M "',
+    'Git XY: "MM"',
+    '" M" = espacio + M (segunda posición: working tree modificado)',
+    '"M " = M + espacio (primera posición: índice modificado)',
+    '"MM" = M + M (modificado en el índice y vuelto a modificar)',
+    '"??" = caso especial: archivo no rastreado',
+)
+
+
 class AplicacionGit:
     """
     Ventana principal de la aplicación Gestor Git.
@@ -663,6 +901,14 @@ class AplicacionGit:
         self.boton_cambiar_rama = None
         self.boton_crear_rama = None
         self.rama_actual_ventana_actual = ""
+
+        # Ventana única de la leyenda de estados Git (ventana
+        # educativa de SOLO TEXTO). NO modal: la ventana principal
+        # sigue siendo usable. Solo muestra conceptos generales:
+        # no ejecuta Git ni consulta el repositorio, por lo que
+        # permanece disponible incluso sin repositorio.
+        self.ventana_ayuda_estados_git = None
+        self.texto_ayuda_estados_git = None
 
         # Límite visual del diff mostrado en la ventana de detalle.
         # La truncación es solamente visual: no modifica el repositorio.
@@ -1261,17 +1507,45 @@ class AplicacionGit:
         # Archivos con cambios
         # ---------------------------------------------------------
 
+        marco_titulo_cambios = ttk.Frame(
+            marco_principal
+        )
+
+        marco_titulo_cambios.grid(
+            row=4,
+            column=0,
+            sticky="w",
+            pady=(5, 5)
+        )
+
         etiqueta_cambios = ttk.Label(
-            marco_principal,
+            marco_titulo_cambios,
             text="Archivos con cambios:",
             font=("Segoe UI", 10, "bold")
         )
 
         etiqueta_cambios.grid(
-            row=4,
+            row=0,
             column=0,
+            sticky="w"
+        )
+
+        # Botón de la leyenda de estados Git: abre una ventana
+        # educativa independiente y NO modal. Disponible siempre,
+        # incluso sin repositorio, porque explica conceptos
+        # generales (no ejecuta Git ni consulta el repositorio).
+        boton_ayuda_estados_git = ttk.Button(
+            marco_titulo_cambios,
+            text="¿Qué significan estos estados?",
+            command=self.abrir_ayuda_estados_git,
+            style="Accion.TButton"
+        )
+
+        boton_ayuda_estados_git.grid(
+            row=0,
+            column=1,
             sticky="w",
-            pady=(5, 5)
+            padx=(12, 0)
         )
 
         marco_tabla = ttk.Frame(
@@ -2838,6 +3112,233 @@ class AplicacionGit:
         self.boton_cambiar_rama = None
         self.boton_crear_rama = None
         self.rama_actual_ventana_actual = ""
+
+        if (
+            ventana is not None
+            and ventana.winfo_exists()
+        ):
+            ventana.destroy()
+
+    # =============================================================
+    # AYUDA DE ESTADOS GIT (leyenda contextual de la tabla)
+    # =============================================================
+
+    def abrir_ayuda_estados_git(self):
+        """
+        Abre la ventana única de la leyenda de estados Git.
+
+        Si ya existe una abierta, la trae al frente en lugar de
+        crear copias sucesivas. La ventana es NO modal: la
+        ventana principal sigue siendo usable mientras
+        permanezca abierta.
+
+        Solo muestra texto: nunca ejecuta Git, no consulta el
+        repositorio, no ejecuta Fetch/Pull/Push y no modifica el
+        working tree, el índice ni HEAD.
+        """
+
+        if (
+            self.ventana_ayuda_estados_git is not None
+            and self.ventana_ayuda_estados_git.winfo_exists()
+        ):
+            self.ventana_ayuda_estados_git.deiconify()
+            self.ventana_ayuda_estados_git.lift()
+            self.ventana_ayuda_estados_git.focus_force()
+            return
+
+        self.crear_ventana_ayuda_estados_git()
+
+    def crear_ventana_ayuda_estados_git(self):
+        """
+        Crea la ventana educativa de los estados de la tabla.
+
+        tk.Text de solo lectura con wrap por palabras, scroll
+        vertical, seleccionable y redimensionable. Todo el
+        contenido procede de CONTENIDO_AYUDA_ESTADOS_GIT_V1.
+        """
+
+        self.ventana_ayuda_estados_git = tk.Toplevel(
+            self.ventana_principal
+        )
+
+        self.ventana_ayuda_estados_git.title(
+            "Estados Git - Gestor Git"
+        )
+
+        self.ventana_ayuda_estados_git.geometry(
+            "820x680"
+        )
+
+        self.ventana_ayuda_estados_git.minsize(
+            600,
+            400
+        )
+
+        self.ventana_ayuda_estados_git.transient(
+            self.ventana_principal
+        )
+
+        self.ventana_ayuda_estados_git.protocol(
+            "WM_DELETE_WINDOW",
+            self.cerrar_ventana_ayuda_estados_git
+        )
+
+        marco_ayuda = ttk.Frame(
+            self.ventana_ayuda_estados_git,
+            padding=12
+        )
+
+        marco_ayuda.pack(
+            fill=tk.BOTH,
+            expand=True
+        )
+
+        marco_ayuda.columnconfigure(
+            0,
+            weight=1
+        )
+
+        marco_ayuda.rowconfigure(
+            0,
+            weight=1
+        )
+
+        self.texto_ayuda_estados_git = tk.Text(
+            marco_ayuda,
+            wrap=tk.WORD,
+            font=("Segoe UI", 10)
+        )
+
+        scrollbar_ayuda = ttk.Scrollbar(
+            marco_ayuda,
+            orient=tk.VERTICAL,
+            command=self.texto_ayuda_estados_git.yview
+        )
+
+        self.texto_ayuda_estados_git.configure(
+            yscrollcommand=scrollbar_ayuda.set
+        )
+
+        self.texto_ayuda_estados_git.grid(
+            row=0,
+            column=0,
+            sticky="nsew"
+        )
+
+        scrollbar_ayuda.grid(
+            row=0,
+            column=1,
+            sticky="ns"
+        )
+
+        # Jerarquía visual de la ventana de ayuda: títulos de
+        # sección en negrita algo mayor, subtítulos cortos en
+        # negrita y códigos Git en monoespaciada negrita. Sin
+        # colores ni decoración: solo negrita y monoespaciado.
+        self.texto_ayuda_estados_git.tag_configure(
+            "titulo_seccion",
+            font=("Segoe UI", 11, "bold"),
+            spacing1=6,
+            spacing3=6
+        )
+
+        self.texto_ayuda_estados_git.tag_configure(
+            "subtitulo",
+            font=("Segoe UI", 10, "bold")
+        )
+
+        self.texto_ayuda_estados_git.tag_configure(
+            "codigo_git",
+            font=("Consolas", 10, "bold")
+        )
+
+        secciones_ayuda = (
+            "modelo_head_indice_working_tree",
+            "estado_no_rastreado",
+            "estado_modificado_sin_preparar",
+            "estado_modificado_preparado",
+            "estado_preparado_y_vuelto_a_modificar",
+            "estado_conflicto",
+            "otros_estados",
+            "codigos_xy",
+            "inspector_y_acciones",
+        )
+
+        for clave in secciones_ayuda:
+            # "end-1c" es el índice real de inserción en tk.Text
+            # (tk.END apunta un carácter después del último). Se
+            # captura ANTES de insertar para marcar exactamente la
+            # primera línea del bloque como título de sección.
+            inicio = self.texto_ayuda_estados_git.index("end-1c")
+
+            self.texto_ayuda_estados_git.insert(
+                tk.END,
+                CONTENIDO_AYUDA_ESTADOS_GIT_V1[clave]
+            )
+            self.texto_ayuda_estados_git.insert(
+                tk.END,
+                "\n\n"
+            )
+
+            self.texto_ayuda_estados_git.tag_add(
+                "titulo_seccion",
+                inicio,
+                f"{inicio} lineend"
+            )
+
+        self._aplicar_tags_ayuda_estados_git()
+
+        self.texto_ayuda_estados_git.configure(
+            state=tk.DISABLED
+        )
+
+    def _aplicar_tags_ayuda_estados_git(self):
+        """
+        Aplica los tags de subtítulos y códigos Git por igualdad
+        EXACTA de línea completa.
+
+        Recorre las líneas ya insertadas y compara line.strip() con
+        las constantes _SUBTITULOS_AYUDA_ESTADOS y
+        _LINEAS_CODIGO_GIT_AYUDA. NO usa regex ni busca una letra
+        M aislada: los patrones son textos completos, por lo que
+        " M" y "M " se distinguen sin ambigüedad y una M común nunca
+        recibe el tag.
+        """
+
+        contenido = self.texto_ayuda_estados_git.get(
+            "1.0",
+            tk.END
+        )
+
+        indice = "1.0"
+
+        for linea in contenido.splitlines():
+            texto_linea = linea.strip()
+
+            if texto_linea in _SUBTITULOS_AYUDA_ESTADOS:
+                self.texto_ayuda_estados_git.tag_add(
+                    "subtitulo",
+                    indice,
+                    f"{indice} lineend"
+                )
+            elif texto_linea in _LINEAS_CODIGO_GIT_AYUDA:
+                self.texto_ayuda_estados_git.tag_add(
+                    "codigo_git",
+                    indice,
+                    f"{indice} lineend"
+                )
+
+            indice = f"{indice} +1 line"
+
+    def cerrar_ventana_ayuda_estados_git(self):
+        """
+        Cierra la ventana de la leyenda y libera sus referencias.
+        """
+
+        ventana = self.ventana_ayuda_estados_git
+
+        self.ventana_ayuda_estados_git = None
+        self.texto_ayuda_estados_git = None
 
         if (
             ventana is not None

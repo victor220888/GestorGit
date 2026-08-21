@@ -56,9 +56,12 @@ Estado actual:
   24 P2/P3) centralizados en TEXTOS_AYUDA_GIT_V1, 0 inline;
 - corrección estructurada de conflictos en staging: FASE CERRADA
   (prueba manual Windows EXITOSA; 267/267 suite OK; commit local
-  "Corrige manejo seguro de conflictos en staging"; SIN PUSH;
-  siguiente etapa de producto: Leyenda/Ayuda contextual de
-  estados Git);
+  "Corrige manejo seguro de conflictos en staging"; SIN PUSH);
+- leyenda/ayuda contextual de estados Git V1: ETAPA CERRADA,
+  validada manualmente en Windows e integrada mediante el commit
+  local "Agrega leyenda contextual de estados Git V1" (consultar
+  git log -1 --oneline para el hash vigente; SIN PUSH; 332/332
+  suite OK); la etapa FUTURA siguiente es "Publicar rama local";
 - config.json ignorado y no versionado;
 - .opencode/ sigue sin versionar y NO debe incluirse
   automáticamente.
@@ -87,7 +90,13 @@ Estado actual:
 - persistencia del último repositorio (config.json);
 - actualización de archivos preparados;
 - inspector de cambios locales (solo lectura + descarte de
-  cambios sin preparar).
+  cambios sin preparar);
+- leyenda/ayuda contextual de estados Git V1 (ventana educativa
+  "Estados Git - Gestor Git", botón "¿Qué significan estos
+  estados?", 9 bloques pedagógicos HEAD/índice/working tree y
+  estados ?? / " M" / "M " / MM / conflicto, jerarquía visual
+  con tags titulo_seccion/subtitulo/codigo_git; ventana única y
+  NO modal; no ejecuta Git ni modifica el repositorio).
 
 ## Histórico — cierre de la etapa de ramas locales
 
@@ -879,10 +888,12 @@ TRABAJO_ACTUAL.md y el nuevo pruebas/test_commit_gui_conflicto.py)
 no aportan avisos; causa conocida y documentada; NO se normalizó
 CRLF/LF.
 
-Siguiente etapa de producto: Leyenda/Ayuda contextual de estados
-Git (NO implementada ahora). Mantener como FUTURAS: 1) la
-Leyenda/Ayuda contextual de estados Git; 2) "Publicar rama local"
-(separada, con sus propias confirmaciones).
+Referencia HISTÓRICA al cierre de la corrección de conflictos:
+en ese momento la siguiente etapa prevista era la Leyenda/Ayuda
+contextual de estados Git y también se mantenía futura "Publicar
+rama local". Estado ACTUAL: la Leyenda V1 ya está implementada y
+validada manualmente en Windows; la única etapa futura es
+"Publicar rama local", separada y con sus propias confirmaciones.
 
 ## Regla para reservar archivos
 
@@ -890,9 +901,244 @@ Reserva activa:
 
 SIN TAREA ACTIVA.
 
-La etapa "Corrección estructurada de conflictos en staging" quedó
-CERRADA y commiteada localmente (consultar git log -1 --oneline);
-SIN PUSH.
+Última tarea cerrada: Leyenda/Ayuda contextual de estados Git
+V1, implementada y validada manualmente en Windows, integrada
+mediante el commit local "Agrega leyenda contextual de estados
+Git V1" (consultar git log -1 --oneline para el hash vigente;
+SIN PUSH).
+
+IMPLEMENTACIÓN V1 (resumen):
+
+- botón ttk.Button "¿Qué significan estos estados?" (estilo
+  Accion.TButton, SIEMPRE habilitado) dentro de un marco mínimo
+  nuevo junto a "Archivos con cambios:" en marco_principal row=4;
+  sin alterar fila/columnas de la tabla ni el resto del layout;
+- ventana única "Estados Git - Gestor Git": Toplevel 820x680,
+  minsize 600x400, transient, NO modal (sin grab_set/wait_window),
+  tk.Text de solo lectura con wrap=tk.WORD, scrollbar vertical,
+  redimensionable y texto seleccionable; si ya existe, se trae al
+  frente (deiconify/lift/focus_force) sin copias sucesivas;
+- CONTENIDO_AYUDA_ESTADOS_GIT_V1: diccionario Independiente de
+  TEXTOS_AYUDA_GIT_V1 (37 tooltips intactos; 0 llamadas
+  AyudaEmergente añadidas) con las 9 claves:
+  modelo_head_indice_working_tree, estado_no_rastreado,
+  estado_modificado_sin_preparar, estado_modificado_preparado,
+  estado_preparado_y_vuelto_a_modificar, estado_conflicto,
+  otros_estados, codigos_xy, inspector_y_acciones;
+- contenido: modelo mental (HEAD, índice NO carpeta física,
+  working tree; preparar = copia/registra, NO mueve; commit desde
+  el índice, HEAD avanza); ?? (SÍ en working tree, no rastreado,
+  sin "fuera del working tree"); " M" y "M " distinguidos con las
+  dos posiciones; MM con dos versiones y "NO automáticamente" +
+  Actualizar preparados + Ver cambios locales...; conflicto con
+  "No aplica", decisión humana, "no elige" y los siete códigos
+  DD AU UD UA DU AA UU; otros estados A/D/R con posiciones; XY
+  con X=índice vs HEAD e Y=working tree vs índice; M ambigua sin
+  posición ("M siempre" ausente); Inspector (Sin preparar =
+  working tree vs índice / git diff; Preparados = índice vs HEAD
+  / git diff --cached; MM deja diffs distintos); acciones breves
+  y "Quitar de preparados" sin prometer estado final único
+  ("depende de cada caso");
+- la ventana NO ejecuta Git, no consulta el repositorio, no hace
+  Fetch/Pull/Push y no modifica working tree/índice/HEAD; se
+  mantiene abierta al cambiar de repositorio (conceptos
+  generales) y sus referencias se liberan al cerrarla
+  (cerrar_ventana_ayuda_estados_git).
+
+PRUEBA MANUAL WINDOWS PARCIAL:
+
+EXITOSO:
+- botón "¿Qué significan estos estados?" visible y bien integrado
+  junto a "Archivos con cambios:";
+- layout principal correcto (sin deformar la tabla ni el resto);
+- ventana "Estados Git - Gestor Git" abre correctamente;
+- scrollbar visible;
+- ventana redimensionable;
+- ventana NO modal: la ventana principal sigue siendo utilizable
+  mientras la ayuda está abierta;
+- Compare-Object de status antes/después: SIN diferencias;
+- Compare-Object de staging antes/después: SIN diferencias.
+
+AJUSTE VISUAL IMPLEMENTADO (esta microetapa):
+
+El usuario solicitó mejorar la jerarquía visual del texto de la
+ventana de ayuda, especialmente distinguir " M" de "M " y dar
+más peso a los títulos y códigos. Cambios SOLO visuales, sin
+tocar el contenido pedagógico ni la lógica de la ventana:
+
+- 3 tags de tk.Text en crear_ventana_ayuda_estados_git:
+  - titulo_seccion: Segoe UI 11 bold, spacing1=6, spacing3=6;
+  - subtitulo: Segoe UI 10 bold;
+  - codigo_git: Consolas 10 bold;
+  - sin foreground, sin background, sin underline (negrita +
+    monoespaciado + espaciado únicamente);
+- titulo_seccion se aplica a la PRIMERA LÍNEA de cada uno de los
+  9 bloques dentro del bucle existente, capturando el índice real
+  con "end-1c" antes de insertar y aplicando tag_add hasta
+  "{inicio} lineend";
+- _SUBTITULOS_AYUDA_ESTADOS = ("HEAD", "Índice / staging",
+  "Working tree", "Ver cambios locales...", "Acciones:") y
+  _LINEAS_CODIGO_GIT_AYUDA = (8 textos exactos con
+  'Git XY: "??"', 'Git XY: " M"', 'Git XY: "M "',
+  'Git XY: "MM"', 'Git XY: "M "', '"M " = M + espacio ...',
+  '"MM" = M + M ...', '"??" = caso especial ...') como
+  constantes de módulo (patrones completos y exactos, NUNCA regex
+  ni búsqueda de una letra M aislada);
+- helper _aplicar_tags_ayuda_estados_git(self) recorre las líneas
+  ya insertadas y aplica subtitulo/codigo_git por igualdad EXACTA
+  de line.strip() contra las constantes (sin regex, sin "M" suelta);
+  " M" y "M " se distinguen sin ambigüedad porque son textos
+  completos distintos;
+- estado final del tk.Text sigue state=tk.DISABLED
+  (seleccionable, no editable);
+- sin colores, sin cajas, sin iconos, sin rediseño; jerarquía
+  tipográfica únicamente.
+
+CONTENIDO PEDAGÓGICO SIN CAMBIOS: CONTENIDO_AYUDA_ESTADOS_GIT_V1
+no se modificó (hash SHA-256 idéntico antes/después del microajuste
+visual); TEXTOS_AYUDA_GIT_V1 intacto (37 claves); servicios/modelos/
+ayuda_interfaz/config.json y pruebas existentes intactos.
+
+Validación realizada (AJUSTE VISUAL):
+
+- py_compile de principal.py y
+  pruebas/test_leyenda_estados_git.py: OK;
+- pruebas nuevas de la microetapa visual (15 tests en
+  TestLeyendaAjusteVisual): existencia de los 3 tags;
+  titulo_seccion Segoe UI 11 bold con spacing1=6 y spacing3=6;
+  subtitulo Segoe UI 10 bold; codigo_git Consolas 10 bold;
+  ningún tag define foreground/background; constantes
+  _SUBTITULOS_AYUDA_ESTADOS (5 valores) y
+  _LINEAS_CODIGO_GIT_AYUDA (8 valores) exactas; los 4 códigos
+  'Git XY: "??"', 'Git XY: " M"', 'Git XY: "M "',
+  'Git XY: "MM"' disjuntos y exactos; helper
+  _aplicar_tags_ayuda_estados_git compara line.strip() contra las
+  constantes (In) y NO busca la letra M suelta; el bucle de las
+  9 secciones aplica titulo_seccion con index("end-1c") y
+  "lineend"; estado final state=tk.DISABLED; 9 claves del
+  diccionario intactas; grab_set/wait_window ausentes; 37
+  AyudaEmergente intactos; helper _llamadas_a corregido
+  (Name + Attribute) se conserva;
+- pruebas de leyenda: 65 tests OK (50 anteriores + 15 del
+  ajuste visual);
+- regresión tooltips V1: 104/104 OK;
+- suite completa: Ran 332 tests ... OK (267 + 65);
+- git diff --check: SIN avisos (exit 0); todas las adiciones son LF;
+- git diff --cached --check: sin salida (nada preparado);
+- staging VACÍO; NO commit; NO Fetch/Pull/Push;
+- archivos protegidos sin diff (modelos.py, servicios, ayuda_
+  interfaz.py, config.json y pruebas existentes);
+- GestorGit_plan_continuidad_y_modo_equipo.md INTACTO (??).
+
+PRUEBA MANUAL WINDOWS FINAL: EXITOSA (confirmada por el usuario).
+
+La prueba visual final del AJUSTE VISUAL de la Leyenda/Ayuda
+contextual de estados Git V1 se completó con los siguientes
+resultados confirmados:
+
+- botón "¿Qué significan estos estados?" visible y correctamente
+  integrado junto a "Archivos con cambios:";
+- layout principal sin deformaciones;
+- ventana única "Estados Git - Gestor Git";
+- una segunda apertura reutiliza la ventana existente;
+- títulos de las 9 secciones en negrita y con jerarquía visual;
+- subtítulos HEAD, Índice / staging, Working tree,
+  Ver cambios locales... y Acciones: en negrita;
+- códigos Git con tipografía monoespaciada y negrita;
+- distinción visual correcta entre " M", "M ", "MM" y "??";
+- texto legible;
+- scrollbar, wrap por palabras y redimensionamiento correctos;
+- ventana NO modal: la ventana principal siguió siendo utilizable;
+- texto seleccionable y no editable;
+- cierre y reapertura correctos;
+- index.lock inexistente;
+- comparación antes/después:
+  Estado idéntico: True
+  Staging idéntico: True
+  HEAD idéntico: True
+- HEAD antes/después:
+  876283f5799c342554730a35e53f9d3cadf51e07
+- estado Git final:
+   M TRABAJO_ACTUAL.md
+   M principal.py
+  ?? GestorGit_plan_continuidad_y_modo_equipo.md
+  ?? pruebas/test_leyenda_estados_git.py
+
+Durante la prueba el usuario pulsó Fetch MANUALMENTE desde la
+ventana principal para confirmar que seguía siendo utilizable con
+la ayuda abierta. Fetch no fue iniciado por la ventana de ayuda,
+terminó correctamente y después aparecían 7 commits por enviar y
+0 por descargar. El working tree, el staging y el HEAD
+permanecieron idénticos; abrir, usar y cerrar la ayuda no ejecuta
+Git por sí mismo (según la implementación y las pruebas
+automatizadas). Fetch puede actualizar FETCH_HEAD o referencias
+remotas, por lo que NO se afirma que toda la metadata interna de
+Git quedó idéntica.
+
+CIERRE TÉCNICO DE LA ETAPA (ESTADO PREVIO AL COMMIT):
+
+- ETAPA TERMINADA Y VALIDADA MANUALMENTE EN WINDOWS;
+- 332/332 pruebas OK (267 anteriores + 65 de la Leyenda V1);
+- py_compile OK; git diff --check SIN avisos (exit 0);
+- staging VACÍO; durante ESTE CIERRE DOCUMENTAL no se ejecutó
+  add/commit/pull/push/restore/checkout/reset/clean sobre el
+  repositorio real; durante la prueba manual Windows anterior el
+  usuario sí ejecutó Fetch manualmente desde la ventana principal
+  (Fetch no fue iniciado por la ventana de ayuda, ya está
+  documentado en el bloque inmediatamente anterior y no se creó
+  ningún commit); no se ejecutaron Pull ni Push;
+- archivos protegidos sin diff (modelos.py, servicios,
+  ayuda_interfaz.py, config.json y pruebas existentes);
+- GestorGit_plan_continuidad_y_modo_equipo.md INTACTO (??);
+- SIN COMMIT LOCAL todavía de esta etapa (pendiente por
+  indicación del usuario); los cambios viven en el working tree:
+  M TRABAJO_ACTUAL.md, M principal.py,
+  ?? pruebas/test_leyenda_estados_git.py (nuevo).
+
+CIERRE FINAL: esta etapa se integra finalmente mediante el commit
+local "Agrega leyenda contextual de estados Git V1" (consultar
+git log -1 --oneline para el hash vigente; SIN PUSH).
+
+Validación realizada (con MICROCORRECCIÓN del helper de pruebas):
+
+- MICROCORRECCIÓN: la auditoría detectó que el helper
+  _llamadas_a() de pruebas/test_leyenda_estados_git.py solo
+  reconocía llamadas ast.Name y podía dejar pasar
+  self.ventana.grab_set() / self.ventana.wait_window() (llamadas
+  ast.Attribute). CORREGIDO: compara por nombre exacto tanto
+  nodo.func.id (Name) como nodo.func.attr (Attribute); ahora las
+  comprobaciones "sin grab_set/wait_window" son efectivas.
+  principal.py NO necesitó cambios y no fue modificado por la
+  microcorrección (conserva exactamente los 4 hunks funcionales
+  de la Leyenda V1). Se agregó además una prueba focalizada del
+  propio helper con AST artificial (obj.grab_set(),
+  obj.wait_window(), AyudaEmergente(...) y un método ausente).
+- py_compile de principal.py y pruebas/test_leyenda_estados_git.py:
+  OK;
+- pruebas nuevas: pruebas/test_leyenda_estados_git.py = 50 tests
+  OK (46 originales + 4 del helper corregido);
+- regresión tooltips V1: 104/104 OK;
+- suite completa: Ran 317 tests ... OK (267 + 50);
+- git diff --check: SIN avisos (exit 0); todas las adiciones son LF;
+- git diff --cached --check: sin salida (nada preparado);
+- staging VACÍO; NO commit; NO Fetch/Pull/Push;
+- archivos protegidos sin diff (modelos.py, servicios, ayuda_
+  interfaz.py, config.json y pruebas existentes);
+- GestorGit_plan_continuidad_y_modo_equipo.md INTACTO (??).
+
+PRUEBA MANUAL WINDOWS FINAL: EXITOSA (confirmada por el usuario).
+Detalles del retest visual final registrados más arriba (botón
+visible, ventana única, NO modal, tamaño/resize/scroll, textos y
+acentos, modelo mental y estados, coherencia de "No aplica", uso
+simultáneo de la ventana principal con Fetch manual, ausencia de
+Git al abrir/cerrar, distinción visual " M" vs "M " vs "MM" vs
+"??", subtítulos en negrita, códigos XY en monoespaciada,
+legibilidad, cierre y reapertura correctos).
+
+CERRADA ANTES de esta tarea: "Corrección estructurada de
+conflictos en staging" (876283f, local, SIN PUSH). NO volver a
+analizar arquitectura; solo revalidación breve contra el código
+actual.
 
 Mientras una tarea figure EN CURSO, el otro agente NO debe modificar esos
 archivos sin coordinación explícita.

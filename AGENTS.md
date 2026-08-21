@@ -73,7 +73,7 @@ Capacidades esperadas:
 5. Mantener comentarios, variables, métodos y clases en español.
 
 6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 267 tests ... OK`);
+   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 332 tests ... OK`);
    - `git diff --check`;
    - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
      en líneas CRLF añadidas: causa conocida y documentada);
@@ -117,7 +117,7 @@ El historial debe conservar estas características:
 - `servicio_descarte_cambios_git.py` — descarta los cambios SIN PREPARAR de UN archivo con `git --literal-pathspecs restore --worktree -- <ruta>` (restaura desde el ÍNDICE, no desde HEAD). Conserva el staging, revalida el estado antes del restore y nunca ejecuta operaciones remotas.
 - `modelos_ramas.py` — modelos de ramas locales: `RamaLocal`, `ResultadoRamas`.
 - `servicio_ramas_git.py` — ramas LOCALES: listar (`git for-each-ref --format=%(refname:short) refs/heads/`), identificar la rama actual (`git symbolic-ref --quiet --short HEAD`), cambiar (`git switch --no-guess <rama>`) y crear desde HEAD (`git switch -c <rama>`). Exige repositorio totalmente limpio, valida nombres (propias + `git check-ref-format refs/heads/<nombre>`) y nunca ejecuta Fetch/Pull/Push/Merge/Rebase; una rama nueva queda solo en el local y sin upstream.
-- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales (incluido el botón `Descartar cambios sin preparar...`), selector de ramas locales (botón `Ramas...` y ventana `Ramas locales - Gestor Git`), carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red. Para los conflictos la columna Preparado muestra `No aplica` (tabla principal e Inspector) y las acciones normales de staging los excluyen (Preparar/Quitar/Actualizar/Crear commit); `crear_commit_desde_interfaz` bloquea con aviso educativo ANTES del `askyesno` si existe cualquier `en_conflicto`, y la lista de rutas se construye con `preparado and not en_conflicto`. Contiene además `TEXTOS_AYUDA_GIT_V1`: los 37 tooltips didácticos (13 P0/P1 + 24 P2/P3) centralizados en un único diccionario.
+- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales (incluido el botón `Descartar cambios sin preparar...`), selector de ramas locales (botón `Ramas...` y ventana `Ramas locales - Gestor Git`), carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red. Para los conflictos la columna Preparado muestra `No aplica` (tabla principal e Inspector) y las acciones normales de staging los excluyen (Preparar/Quitar/Actualizar/Crear commit); `crear_commit_desde_interfaz` bloquea con aviso educativo ANTES del `askyesno` si existe cualquier `en_conflicto`, y la lista de rutas se construye con `preparado and not en_conflicto`. Contiene `TEXTOS_AYUDA_GIT_V1`: los 37 tooltips didácticos (13 P0/P1 + 24 P2/P3) centralizados en un único diccionario. Contiene además la **Leyenda/Ayuda contextual de estados Git V1**: botón `¿Qué significan estos estados?` junto a `Archivos con cambios:`, ventana educativa única y NO modal `Estados Git - Gestor Git` (820x680, `tk.Text` de solo lectura con `wrap=tk.WORD`, scrollbar vertical, redimensionable, texto seleccionable; al reabrir reutiliza la ventana existente con `deiconify`/`lift`/`focus_force`), el diccionario `CONTENIDO_AYUDA_ESTADOS_GIT_V1` con 9 bloques pedagógicos (modelo mental HEAD/índice/working tree, estados `??` / ` M` / `M ` / `MM` / conflicto con los siete códigos `DD AU UD UA DU AA UU`, otros estados `A`/`D`/`R`, códigos XY, Inspector y acciones) y una jerarquía visual mediante 3 tags de `tk.Text` (`titulo_seccion` Segoe UI 11 bold, `subtitulo` Segoe UI 10 bold, `codigo_git` Consolas 10 bold) aplicados por `_aplicar_tags_ayuda_estados_git` por igualdad EXACTA de línea completa contra las constantes `_SUBTITULOS_AYUDA_ESTADOS` y `_LINEAS_CODIGO_GIT_AYUDA` (sin regex, sin colores ni cajas). La ventana NO ejecuta Git, no consulta el repositorio, no hace Fetch/Pull/Push y no modifica working tree/índice/HEAD.
 - `ayuda_interfaz.py` — ayuda visual: `AyudaEmergente` y `configurar_estilos`. Sin lógica Git.
 
 ## Seguridad
@@ -595,7 +595,7 @@ eliminación de ramas permanece fuera del alcance V1.
 
 ## Pruebas
 
-267 pruebas automatizadas en `pruebas/`. Ejecutar:
+332 pruebas automatizadas en `pruebas/`. Ejecutar:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
@@ -604,7 +604,7 @@ python -m unittest discover -s .\pruebas -v
 Resultado esperado:
 
 ```text
-Ran 267 tests in ...
+Ran 332 tests in ...
 OK
 ```
 
@@ -682,21 +682,74 @@ TOOLTIPS DIDÁCTICOS V1: CERRADO (Fase 2A + Fase 2B).
   son consultas LOCALES;
 - 104 pruebas específicas en `pruebas/test_ayuda_tooltips_v1.py`
   (58 Fase 2A + 46 Fase 2B); 255 pruebas totales en su momento
-  (HISTÓRICO; el total actual del proyecto es 267);
+  (HISTÓRICO; el total actual del proyecto es 332);
 - PRUEBA VISUAL WINDOWS FINAL: EXITOSA en ambas fases
   (2A confirmada en commits locales `bc57772` y `82a32d1`;
   2B confirmada por el usuario y commiteada en
   "Cierra tooltips didacticos V1", hijo de 0413697);
 - SIN PUSH.
 
+LEYENDA/AYUDA CONTEXTUAL DE ESTADOS GIT V1: CERRADA.
+
+- botón `¿Qué significan estos estados?` junto a
+  `Archivos con cambios:`; ventana educativa única y NO modal
+  `Estados Git - Gestor Git` (820x680, `tk.Text` de solo lectura
+  con `wrap=tk.WORD`, scrollbar vertical, redimensionable, texto
+  seleccionable; al reabrir reutiliza la ventana existente con
+  `deiconify`/`lift`/`focus_force`);
+- diccionario `CONTENIDO_AYUDA_ESTADOS_GIT_V1` independiente de
+  `TEXTOS_AYUDA_GIT_V1` (37 tooltips intactos; 0 llamadas
+  `AyudaEmergente` añadidas) con 9 bloques pedagógicos: modelo
+  mental HEAD/índice/working tree, estados `??` / ` M` / `M ` /
+  `MM` / conflicto (con los siete códigos `DD AU UD UA DU AA UU`
+  y `No aplica`), otros estados `A`/`D`/`R`, códigos XY,
+  Inspector (`Sin preparar` = working tree vs índice /
+  `git diff`; `Preparados` = índice vs HEAD /
+  `git diff --cached`; MM deja diffs distintos) y acciones
+  breves ("Quitar de preparados" sin prometer estado final único:
+  "depende de cada caso");
+- jerarquía visual con 3 tags de `tk.Text`:
+  `titulo_seccion` (Segoe UI 11 bold, spacing1=6, spacing3=6),
+  `subtitulo` (Segoe UI 10 bold) y `codigo_git` (Consolas 10
+  bold) aplicados por `_aplicar_tags_ayuda_estados_git` por
+  igualdad EXACTA de línea completa contra las constantes
+  `_SUBTITULOS_AYUDA_ESTADOS` (HEAD, Índice / staging, Working
+  tree, Ver cambios locales..., Acciones:) y
+  `_LINEAS_CODIGO_GIT_AYUDA` (8 textos completos con
+  'Git XY: "??"', 'Git XY: " M"', 'Git XY: "M "',
+  'Git XY: "MM"', 'Git XY: "M "', '"M " = M + espacio ...',
+  '"MM" = M + M ...', '"??" = caso especial ...'); sin regex,
+  sin colores ni cajas; la primera línea de cada uno de los 9
+  bloques recibe `titulo_seccion`;
+- el contenido pedagógico NO cambió (el hash SHA-256 del
+  `CONTENIDO_AYUDA_ESTADOS_GIT_V1` es idéntico antes/después del
+  microajuste visual); `TEXTOS_AYUDA_GIT_V1` intacto (37 claves);
+- la ventana NO ejecuta Git, no consulta el repositorio, no hace
+  Fetch/Pull/Push y no modifica working tree/índice/HEAD; se
+  mantiene abierta al cambiar de repositorio (conceptos generales)
+  y sus referencias se liberan al cerrarla
+  (`cerrar_ventana_ayuda_estados_git`);
+- 65 pruebas específicas en `pruebas/test_leyenda_estados_git.py`
+  (50 base + 15 del ajuste visual), incluida una microcorrección
+  del helper `_llamadas_a` (reconoce llamadas `ast.Name` y
+  `ast.Attribute`, por lo que las comprobaciones "sin
+  `grab_set`/`wait_window`" son efectivas);
+- suite completa: 332 tests OK (267 + 65);
+- PRUEBA MANUAL WINDOWS FINAL: EXITOSA (botón visible, layout
+  sin deformaciones, ventana única, NO modal, títulos en negrita
+  con jerarquía, subtítulos en negrita, códigos XY en
+  monoespaciada, distinción visual ` M`/`M `/`MM`/`??`,
+  scrollbar/wrap/redimensionamiento, texto seleccionable, cierre
+  y reapertura, Fetch manual desde la ventana principal con la
+   ayuda abierta terminó correctamente y working tree/staging/HEAD
+   permanecieron idénticos; index.lock inexistente; etapa CERRADA
+   e integrada mediante el commit local
+   "Agrega leyenda contextual de estados Git V1" (consultar
+   git log -1 --oneline para el hash vigente; SIN PUSH).
+
 Etapas FUTURAS (documentadas, sin implementar):
 
-1. Leyenda/ayuda contextual de estados Git para la tabla de
-   cambios que enseñe working tree, staging/índice, HEAD,
-   `??`, `M`, `MM`, preparado, preparado y vuelto a modificar y
-   conflictos. La tabla de cambios quedó deliberadamente SIN
-   tooltip general en Fase 2B.
-2. La funcionalidad "Publicar rama local" NO se cancela: queda
+1. La funcionalidad "Publicar rama local" NO se cancela: queda
    documentada como etapa FUTURA separada, fuera del alcance
    actual, con sus propias confirmaciones de seguridad.
 
