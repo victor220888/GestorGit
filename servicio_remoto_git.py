@@ -1435,3 +1435,502 @@ class ServicioRemotoGit(ServicioGit):
             error=mensaje,
             comando=""
         )
+
+    # =============================================================
+    # Publicar rama local
+    # =============================================================
+
+    def publicar_rama_local(
+        self,
+        ruta_repositorio,
+        remoto_esperado,
+        rama_esperada
+    ):
+        """
+        Publica la rama local ACTUAL en el único remoto determinable.
+
+        Crea refs/heads/<rama> en el remoto y configura su upstream
+        mediante un Push normal con --set-upstream. Es una operación
+        DISTINTA del Push normal (ejecutar_push_seguro queda intacto)
+        y no relaja ninguna de sus protecciones.
+
+        Solo procede cuando la rama todavía NO tiene upstream y la
+        rama remota homónima NO existe en el remoto, verificado con
+        una consulta remota directa de solo lectura inmediatamente
+        antes del Push:
+
+            git ls-remote --heads <remoto> refs/heads/<rama>
+
+        No ejecuta Fetch: la interfaz exige un Fetch manual exitoso
+        previo y la consulta fresca la aporta ls-remote.
+
+        Comando productivo:
+
+            git push --porcelain --set-upstream <remoto> <rama>:refs/heads/<rama>
+        """
+
+        # La confirmación de la interfaz se hizo sobre esta rama y
+        # este remoto: el servicio no confía ciegamente en la GUI y
+        # vuelve a comprobar ambos contra el repositorio real.
+        error_entrada = self._validar_datos_publicacion(
+            remoto_esperado,
+            rama_esperada
+        )
+
+        if error_entrada:
+            return self._crear_resultado_error(error_entrada)
+
+        # PRIMERA validación local completa: repositorio, commits,
+        # rama esperada, upstream ausente, remoto seguro esperado,
+        # operación en curso, index.lock, working tree/staging
+        # limpios y sin conflictos.
+        ruta_raiz, remoto, error = self._validar_publicacion_local(
+            ruta_repositorio,
+            remoto_esperado,
+            rama_esperada
+        )
+
+        if error:
+            return self._crear_resultado_error(error)
+
+        # SEGUNDA validación local, releyendo todo el estado de
+        # nuevo (defensa en profundidad contra cambios externos
+        # aparecidos entre ambas pasadas, patrón de
+        # ServicioRamasGit).
+        ruta_raiz, remoto, error = self._validar_publicacion_local(
+            ruta_repositorio,
+            remoto_esperado,
+            rama_esperada
+        )
+
+        if error:
+            return self._crear_resultado_error(error)
+
+        # Consulta remota directa de solo lectura, inmediatamente
+        # antes del Push: ¿existe ya refs/heads/<rama> en el
+        # remoto? Un error de consulta bloquea; nunca se interpreta
+        # un error como ausencia. Sin --force-with-lease: la
+        # limitación residual de carrera queda minimizada con esta
+        # consulta fresca y documentada.
+        existe_homonima, error_consulta = (
+            self._consultar_rama_remota_homonima(
+                ruta_raiz,
+                remoto,
+                rama_esperada
+            )
+        )
+
+        if error_consulta:
+            return self._crear_resultado_error(error_consulta)
+
+        if existe_homonima:
+            return self._crear_resultado_error(
+                (
+                    f"La rama remota '{rama_esperada}' ya existe "
+                    f"en '{remoto}'.\n\n"
+                    "\"Publicar rama local\" solo crea una rama "
+                    "remota nueva.\n\n"
+                    "No se realizó ninguna publicación.\n\n"
+                    "Use el flujo normal de Push; GestorGit "
+                    "aplicará allí sus comprobaciones de seguridad "
+                    "y decidirá si puede continuar."
+                )
+            )
+
+        # Comando productivo: Push normal con refspec explícito de
+        # la única rama que se publica. Nunca --force ni
+        # --force-with-lease, --all, --tags, --mirror ni --delete.
+        return self.ejecutar_git(
+            argumentos=[
+                "push",
+                "--porcelain",
+                "--set-upstream",
+                remoto,
+                (
+                    f"{rama_esperada}:"
+                    f"refs/heads/{rama_esperada}"
+                )
+            ],
+            ruta_repositorio=ruta_raiz,
+            tiempo_maximo=180
+        )
+
+    def _validar_datos_publicacion(
+        self,
+        remoto_esperado,
+        rama_esperada
+    ):
+        """
+        Validación básica de los valores esperados recibidos.
+
+        Rechaza valores que no son texto, vacíos, con caracteres
+        NUL o que comienzan con guion (evita opciones Git
+        inyectadas) antes de construir cualquier comando.
+
+        Devuelve "" cuando ambos son válidos o el motivo del
+        bloqueo.
+        """
+
+        valores = (
+            (rama_esperada, "rama"),
+            (remoto_esperado, "remoto")
+        )
+
+        for nombre, etiqueta in valores:
+            if nombre is None or not isinstance(nombre, str):
+                return (
+                    f"El nombre del {etiqueta} a publicar debe "
+                    "ser texto."
+                )
+
+            if not nombre.strip():
+                return (
+                    f"El nombre del {etiqueta} a publicar no "
+                    "puede estar vacío."
+                )
+
+            if "\x00" in nombre:
+                return (
+                    f"El nombre del {etiqueta} no puede contener "
+                    "caracteres NUL."
+                )
+
+            if nombre.startswith("-"):
+                return (
+                    f"El nombre del {etiqueta} no puede comenzar "
+                    "con un guion."
+                )
+
+        return ""
+
+    def _validar_publicacion_local(
+        self,
+        ruta_repositorio,
+        remoto_esperado,
+        rama_esperada
+    ):
+        """
+        Valida las precondiciones LOCALES de la publicación.
+
+        Se ejecuta DOS veces desde publicar_rama_local: antes de
+        preparar la operación e inmediatamente antes de la consulta
+        remota y del Push. No realiza operaciones de red.
+
+        Devuelve (ruta_raiz, remoto, "") cuando puede proseguir, o
+        (None, None, mensaje) con el motivo del bloqueo. Un error
+        de consulta nunca se interpreta como estado seguro.
+        """
+
+        estado = self.analizar_repositorio(ruta_repositorio)
+
+        if not estado.es_repositorio:
+            return (None, None, estado.mensaje)
+
+        if not estado.tiene_commits:
+            return (
+                None,
+                None,
+                (
+                    "No se puede publicar la rama porque el "
+                    "repositorio todavía no tiene commits."
+                )
+            )
+
+        if not estado.rama_actual:
+            return (
+                None,
+                None,
+                (
+                    "No se puede publicar la rama porque HEAD "
+                    "no está asociado a una rama."
+                )
+            )
+
+        if estado.rama_actual != rama_esperada:
+            return (
+                None,
+                None,
+                (
+                    f"La rama actual cambió: la confirmación se "
+                    f"hizo sobre la rama '{rama_esperada}', pero "
+                    f"ahora la rama actual es "
+                    f"'{estado.rama_actual}'. No se realizará la "
+                    "publicación."
+                )
+            )
+
+        upstream_configurado, nombre_upstream, error_upstream = (
+            self._obtener_upstream_rama_actual(
+                estado.ruta_raiz,
+                estado.rama_actual
+            )
+        )
+
+        if error_upstream:
+            # Un error o una incertidumbre en la consulta NUNCA
+            # equivale a "sin upstream": se bloquea la publicación.
+            return (None, None, error_upstream)
+
+        if upstream_configurado:
+            return (
+                None,
+                None,
+                (
+                    f"La rama local '{estado.rama_actual}' ya "
+                    "está vinculada a una rama remota: su "
+                    f"upstream es '{nombre_upstream}'.\n\n"
+                    "\"Publicar rama local\" sirve solamente para "
+                    "ramas que todavía no fueron publicadas.\n\n"
+                    "No se ejecutó ningún Push desde esta acción.\n\n"
+                    "Use el flujo normal de Push para enviar "
+                    "commits; GestorGit aplicará allí sus "
+                    "comprobaciones de seguridad."
+                )
+            )
+
+        # Remoto seguro: nunca se elige uno al azar. Con upstream
+        # ausente, obtener_remoto_sincronizacion exige exactamente
+        # un remoto (cero o varios remotos bloquean con su propio
+        # mensaje educativo).
+        resultado_remoto = self.obtener_remoto_sincronizacion(
+            estado.ruta_raiz
+        )
+
+        if not resultado_remoto.exitoso:
+            return (None, None, resultado_remoto.error)
+
+        remoto = resultado_remoto.salida
+
+        if remoto_esperado not in estado.remotos:
+            return (
+                None,
+                None,
+                (
+                    f"El remoto '{remoto_esperado}' no figura "
+                    "entre los remotos configurados del "
+                    "repositorio."
+                )
+            )
+
+        if remoto != remoto_esperado:
+            return (
+                None,
+                None,
+                (
+                    f"El remoto determinable cambió: la "
+                    f"confirmación se hizo sobre "
+                    f"'{remoto_esperado}', pero el remoto seguro "
+                    f"actual es '{remoto}'. No se realizará la "
+                    "publicación."
+                )
+            )
+
+        operacion_en_curso = self.detectar_operacion_en_curso(
+            estado.ruta_raiz
+        )
+
+        if operacion_en_curso:
+            return (
+                None,
+                None,
+                (
+                    operacion_en_curso
+                    + "\n\nGestorGit no publicará la rama "
+                    "mientras haya una operación Git en curso."
+                )
+            )
+
+        ruta_bloqueo = self._obtener_ruta_git_interna(
+            estado.ruta_raiz,
+            "index.lock"
+        )
+
+        if (
+            ruta_bloqueo is not None
+            and ruta_bloqueo.exists()
+        ):
+            return (
+                None,
+                None,
+                (
+                    "No se puede publicar la rama porque existe "
+                    "un archivo index.lock.\n\n"
+                    "Compruebe que no haya otro proceso Git "
+                    "trabajando sobre el repositorio.\n\n"
+                    "La aplicación no eliminará el bloqueo "
+                    "automáticamente."
+                )
+            )
+
+        resultado_cambios = self.obtener_cambios(estado.ruta_raiz)
+
+        if not resultado_cambios.exitoso:
+            return (
+                None,
+                None,
+                (
+                    "No fue posible determinar el estado de los "
+                    "archivos del repositorio; la publicación de "
+                    "la rama quedó bloqueada."
+                )
+            )
+
+        # Los conflictos se reconocen exclusivamente con el dato
+        # estructurado en_conflicto (códigos Git XY), nunca con el
+        # texto localizado de la descripción.
+        conflictos = [
+            cambio.ruta
+            for cambio in resultado_cambios.cambios
+            if cambio.en_conflicto
+        ]
+
+        if conflictos:
+            lista_conflictos = "\n".join(conflictos)
+
+            return (
+                None,
+                None,
+                (
+                    "No se puede publicar la rama porque existen "
+                    "archivos en conflicto:\n\n"
+                    f"{lista_conflictos}\n\n"
+                    "Git necesita que una persona decida cómo "
+                    "resolver el conflicto. GestorGit no elige "
+                    "una versión automáticamente."
+                )
+            )
+
+        if resultado_cambios.cambios:
+            cantidad = len(resultado_cambios.cambios)
+
+            return (
+                None,
+                None,
+                (
+                    "No se puede publicar la rama porque el "
+                    f"repositorio no está limpio: hay {cantidad} "
+                    "archivo(s) con cambios, preparados o nuevos "
+                    "pendientes.\n\n"
+                    "\"Publicar rama local\" exige un área de "
+                    "trabajo completamente limpia. Confirme, "
+                    "prepare o descarte los cambios y vuelva a "
+                    "intentarlo."
+                )
+            )
+
+        return (estado.ruta_raiz, remoto, "")
+
+    def _obtener_upstream_rama_actual(
+        self,
+        ruta_repositorio,
+        rama
+    ):
+        """
+        Consulta ESTRUCTURADA del upstream configurado de una rama.
+
+        Comando:
+
+            git for-each-ref --format=%(upstream:short) refs/heads/<rama>
+
+        for-each-ref representa la configuración de upstream de la
+        rama aunque la remote-tracking ref de seguimiento esté
+        ausente o marcada como gone (situación que
+        rev-parse @{upstream} no resuelve: falla aunque el upstream
+        siga configurado). Por eso un fallo del comando es un ERROR
+        y nunca equivale a "sin upstream".
+
+        Devuelve:
+            (True, nombre, "")    -> upstream configurado;
+            (False, "", "")       -> sin upstream configurado;
+            (False, "", mensaje)  -> error de consulta.
+        """
+
+        resultado = self.ejecutar_git(
+            argumentos=[
+                "for-each-ref",
+                "--format=%(upstream:short)",
+                f"refs/heads/{rama}"
+            ],
+            ruta_repositorio=ruta_repositorio
+        )
+
+        if not resultado.exitoso:
+            detalle = (
+                resultado.error
+                if resultado.error
+                else resultado.salida
+            )
+
+            return (
+                False,
+                "",
+                (
+                    "No fue posible consultar el upstream de la "
+                    f"rama '{rama}'.\n\n"
+                    "No se realizará la publicación.\n\n"
+                    f"{detalle}"
+                )
+            )
+
+        nombre = resultado.salida.strip()
+
+        if nombre:
+            return (True, nombre, "")
+
+        return (False, "", "")
+
+    def _consultar_rama_remota_homonima(
+        self,
+        ruta_repositorio,
+        remoto,
+        rama
+    ):
+        """
+        Consulta directamente en el remoto si existe la rama
+        refs/heads/<rama>, mediante una operación de solo lectura:
+
+            git ls-remote --heads <remoto> refs/heads/<rama>
+
+        La presencia local de refs/remotes/<remoto>/<rama> depende
+        del refspec de Fetch configurado, por lo que NO es fuente
+        suficiente: la decisión crítica se toma con esta consulta
+        remota fresca ejecutada inmediatamente antes del Push.
+
+        Devuelve (existe, "") o (False, mensaje) cuando la consulta
+        falla. Un error nunca se interpreta como ausencia.
+        """
+
+        resultado = self.ejecutar_git(
+            argumentos=[
+                "ls-remote",
+                "--heads",
+                remoto,
+                f"refs/heads/{rama}"
+            ],
+            ruta_repositorio=ruta_repositorio,
+            tiempo_maximo=180
+        )
+
+        if not resultado.exitoso:
+            detalle = (
+                resultado.error
+                if resultado.error
+                else resultado.salida
+            )
+
+            return (
+                False,
+                (
+                    "No fue posible consultar el remoto para "
+                    f"verificar si la rama '{rama}' ya existe.\n\n"
+                    "No se realizará la publicación.\n\n"
+                    f"{detalle}"
+                )
+            )
+
+        # Salida vacía con comando exitoso: la rama homónima no
+        # fue encontrada en el remoto.
+        if not resultado.salida.strip():
+            return (False, "")
+
+        return (True, "")

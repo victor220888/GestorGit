@@ -14,8 +14,10 @@ ventana: el botón "¿Qué significan estos estados?" está conectado
 a abrir_ayuda_estados_git, la ventana es NO modal (sin
 grab_set/wait_window), consume el diccionario centralizado (sin
 textos pedagógicos inline en los métodos Tkinter), no agrega
-llamadas nuevas a AyudaEmergente y los 37 tooltips V1 siguen
-intactos.
+llamadas nuevas a AyudaEmergente y los tooltips V1 siguen
+intactos (37 = total HISTÓRICO al cerrar la Leyenda V1; 38 =
+total ACTUAL después de la ayuda "publicar_rama" añadida por la
+etapa posterior Publicar rama local).
 
 Estas pruebas no dependen de un display gráfico real ni de mover
 el ratón.
@@ -404,7 +406,9 @@ class TestLeyendaInspectorYAcciones(unittest.TestCase):
 
 
 class TestLeyendaCableadoEstatico(unittest.TestCase):
-    """Cableado con ast: botón, ventana única, NO modal, 37 tooltips."""
+    """Cableado con ast: botón, ventana única, NO modal, tooltips
+    V1 intactos (37 HISTÓRICO al cerrar la Leyenda; 38 ACTUAL tras
+    la ayuda posterior de Publicar rama local)."""
 
     @classmethod
     def setUpClass(cls):
@@ -558,10 +562,15 @@ class TestLeyendaCableadoEstatico(unittest.TestCase):
                 f"'{nombre}' usa wait_window (ventana modal)."
             )
 
-    def test_tooltips_existentes_siguen_siendo_37(self):
+    def test_tooltips_existentes_siguen_siendo_38(self):
+        # HISTÓRICO: al cerrar la Leyenda V1 el diccionario tenía
+        # 37 claves; la clave 38 ("publicar_rama") fue añadida
+        # POSTERIORMENTE por la etapa "Publicar rama local". Esta
+        # prueba sigue garantizando que la Leyenda no añadió
+        # ninguna clave propia.
         self.assertEqual(
             len(principal.TEXTOS_AYUDA_GIT_V1),
-            37
+            38
         )
 
     def test_leyenda_y_tooltips_son_diccionarios_independientes(self):
@@ -572,11 +581,15 @@ class TestLeyendaCableadoEstatico(unittest.TestCase):
         )
 
     def test_no_se_agregan_llamadas_nuevas_a_ayuda_emergente(self):
+        # HISTÓRICO: al cerrar la Leyenda V1 había 37 llamadas; la
+        # llamada 38 (publicar_rama) pertenece a la etapa posterior
+        # "Publicar rama local". El total exacto se sigue vigilando
+        # para que la Leyenda no haya añadido llamadas propias.
         total = _llamadas_a("AyudaEmergente")
         self.assertEqual(
             len(total),
-            37,
-            "Las llamadas a AyudaEmergente deben seguir siendo 37."
+            38,
+            "Las llamadas a AyudaEmergente deben seguir siendo 38."
         )
 
     def test_metodos_de_la_ayuda_no_usan_ayuda_emergente(self):

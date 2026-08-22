@@ -466,8 +466,15 @@ CLAVES_2B_ESPERADAS = {
     "concepto_ultima_consulta",
 }
 
-# Total de claves del diccionario tras Fase 2B: 13 (P0/P1) + 24 (P2/P3).
-CLAVES_TOTALES_ESPERADAS = 37
+# Ayuda añadida POSTERIORMENTE al cierre de Tooltips Didácticos V1,
+# para la etapa "Publicar rama local". V1 cerró con 37 claves
+# (HISTÓRICO: 13 P0/P1 + 24 P2/P3); el total ACTUAL del diccionario
+# es 38 por esta ayuda posterior.
+CLAVES_PUBLICAR_ESPERADAS = {"publicar_rama"}
+
+# Total ACTUAL de claves del diccionario:
+# 13 (P0/P1) + 24 (P2/P3) + 1 (Publicar rama local, posterior a V1).
+CLAVES_TOTALES_ESPERADAS = 38
 
 
 class TestTooltipsV2BCompletitud(unittest.TestCase):
@@ -887,6 +894,136 @@ class TestTooltipsV2BCableadoEstatico(unittest.TestCase):
             claves_usadas,
             set(principal.TEXTOS_AYUDA_GIT_V1.keys()),
             "Las claves usadas en llamadas y el diccionario no coinciden."
+        )
+
+
+class TestTooltipsPublicarRama(unittest.TestCase):
+    """Ayuda contextual de 'Publicar rama local...' (posterior a V1).
+
+    V1 cerró con 37 claves; esta ayuda fue añadida después para la
+    etapa Publicar rama local y debe cumplir las mismas reglas:
+    comando real, sin operaciones prohibidas y sin texto inline.
+    """
+
+    def test_son_exactamente_1_clave_publicar(self):
+        self.assertEqual(len(CLAVES_PUBLICAR_ESPERADAS), 1)
+
+    def test_la_clave_publicar_existe_y_no_esta_vacia(self):
+        self.assertIn(
+            "publicar_rama",
+            principal.TEXTOS_AYUDA_GIT_V1
+        )
+
+        self.assertTrue(texto("publicar_rama").strip())
+
+    def test_el_total_es_la_suma_historica_mas_la_clave_nueva(self):
+        self.assertEqual(
+            CLAVES_TOTALES_ESPERADAS,
+            13 + len(CLAVES_2B_ESPERADAS)
+            + len(CLAVES_PUBLICAR_ESPERADAS)
+        )
+
+    def test_explica_el_comando_real_con_set_upstream(self):
+        t = texto("publicar_rama")
+
+        self.assertIn("git push --porcelain", t)
+        self.assertIn("--set-upstream", t)
+        self.assertIn("refs/heads/", t)
+
+    def test_explica_la_consulta_previa_con_ls_remote(self):
+        t = texto("publicar_rama")
+
+        self.assertIn("ls-remote", t)
+        self.assertIn("--heads", t)
+
+    def test_explica_upstream_y_publicacion(self):
+        t = texto("publicar_rama")
+
+        self.assertIn("upstream", t.lower())
+        self.assertIn("vinculada", t)
+
+    def test_no_recomienda_operaciones_prohibidas(self):
+        t = texto("publicar_rama")
+
+        for prohibida in OPERACIONES_PROHIBIDAS:
+            self.assertNotIn(
+                prohibida,
+                t,
+                msg=(
+                    "El tooltip 'publicar_rama' menciona la "
+                    f"operación prohibida '{prohibida}'."
+                )
+            )
+
+    def test_explica_bloqueo_si_la_rama_ya_existe_o_tiene_upstream(self):
+        t = texto("publicar_rama")
+
+        self.assertIn("ya existe", t)
+        self.assertIn("ya tiene", t)
+
+    def test_explica_que_no_exige_commits_exclusivos(self):
+        self.assertIn(
+            "no tenga commits exclusivos",
+            texto("publicar_rama")
+        )
+
+    def test_explica_refspec_de_destino_unico(self):
+        t = texto("publicar_rama")
+
+        self.assertIn("apunta únicamente", t)
+        self.assertIn("refs/heads/", t)
+
+    def test_enumera_las_opciones_que_no_se_usan(self):
+        t = texto("publicar_rama")
+
+        for opcion in (
+            "--all",
+            "--tags",
+            "--mirror",
+            "--delete",
+            "--force",
+            "--force-with-lease"
+        ):
+            self.assertIn(
+                opcion,
+                t,
+                f"El tooltip debe enseñar que no usa {opcion}."
+            )
+
+    def test_no_promete_absolutamente_sobre_otras_refs_remotas(self):
+        """GG-PROMPT-004: sin garantía absoluta de efectos externos
+        del servidor; solo la garantía precisa del comando enviado."""
+
+        t = texto("publicar_rama")
+
+        self.assertNotIn("no modifica otras ramas", t)
+        self.assertNotIn("otras referencias del remoto", t)
+
+
+class TestTooltipsPublicarRamaCableado(unittest.TestCase):
+    """Cableado estático de la clave añadida para Publicar rama."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.llamadas = obtener_claves_2b_usadas_en_llamadas_ayuda()
+
+    def test_la_clave_publicar_esta_conectada_exactamente_una_vez(self):
+        claves_uso = [
+            clave
+            for _, clave in self.llamadas
+        ]
+
+        self.assertEqual(
+            claves_uso.count("publicar_rama"),
+            1,
+            "La clave 'publicar_rama' debe conectarse exactamente "
+            "una vez en una llamada a AyudaEmergente."
+        )
+
+    def test_el_total_de_llamadas_cubre_las_38_claves(self):
+        self.assertEqual(
+            len(self.llamadas),
+            CLAVES_TOTALES_ESPERADAS
         )
 
 

@@ -1,128 +1,113 @@
 # AGENTS.md
 
-## Orden obligatorio de lectura antes de trabajar
-
-1. AGENTS.md
-2. TRABAJO_ACTUAL.md
-3. CLAUDE.md cuando se necesite contexto histórico o técnico
-4. Ejecutar:
-   git status --short
-   git log -1 --oneline
-
-Nunca asumir que el HEAD indicado en la documentación sigue siendo actual.
-
 ## Propósito
 
-Este archivo resume el contexto técnico y las reglas del proyecto **Gestor Git** para que un agente continúe el trabajo sin depender del historial del chat. El documento de referencia completo es `CLAUDE.md`; mantener ambos actualizados.
+Archivo de configuración para ZCode, OpenCode y otros agentes que consumen
+`AGENTS.md`.
 
-## Objetivo del proyecto
+Debe ser suficiente para trabajar con seguridad sin leer `CLAUDE.md`.
+Contiene reglas ESTABLES. El estado dinámico vive en `TRABAJO_ACTUAL.md`.
 
-Aplicación de escritorio sencilla, educativa y conservadora para trabajar con Git desde Windows, orientada al desarrollo Oracle/PLSQL.
+## Lectura obligatoria antes de trabajar
 
-Capacidades esperadas:
+1. Leer `AGENTS.md`.
+2. Leer `TRABAJO_ACTUAL.md`.
+3. Consultar Git real:
+   - `git status --short`
+   - `git status -sb`
+   - `git log -1 --oneline`
+   - `git branch -vv`
+   - `git diff --cached --name-only`
+   - comprobar `.git/index.lock`
+4. Leer la versión ACTUAL de cada archivo que se vaya a modificar.
 
-- ver el estado de un repositorio;
-- detectar archivos nuevos, modificados y eliminados;
-- preparar y quitar archivos del staging;
-- crear commits locales;
-- Fetch;
-- calcular commits por enviar y por descargar;
-- Push seguro;
-- Pull solo mediante fast-forward (`--ff-only`);
-- configurar el primer remoto GitHub (origin) cuando no existen remotos;
-- enseñar conceptos de Git con textos explicativos y tooltips;
-- evitar operaciones destructivas o ambiguas;
-- mantener la interfaz responsiva durante operaciones de red.
+No leer `CLAUDE.md`, `METODO_TRABAJO_AGENTES.md`, `README.md` ni
+`seguimiento_prompts/` por defecto. Solo hacerlo si el prompt lo exige o
+hace falta resolver una contradicción concreta.
 
-## Entorno
+Git manda sobre hashes, conteos de pruebas o estados escritos en documentos.
 
-- Proyecto: `D:\Mi Tierra - Desarrollos\Herramientas\GestorGit`
-- Repositorio Oracle real: `D:\Mi Tierra - Desarrollos\Git\Desarrollo-Mi-Tierra-S.A` (ramas `master`, upstream `origin/master`)
-- Entorno virtual: `D:\Mi Tierra - Desarrollos\Herramientas\GestorGit\.venv`
-- Windows, PowerShell, Python 3.11.5 64-bit, Git 2.45.2.windows.1, Tkinter/ttk, biblioteca estándar de Python
+## Proyecto
+
+GestorGit es una aplicación de escritorio educativa y conservadora para
+trabajar con Git desde Windows, orientada especialmente a desarrollo
+Oracle/PLSQL.
+
+Entorno habitual:
+
+- proyecto: `D:\Mi Tierra - Desarrollos\Herramientas\GestorGit`
+- repositorio Oracle real:
+  `D:\Mi Tierra - Desarrollos\Git\Desarrollo-Mi-Tierra-S.A`
+- Python 3.11.x
+- Git 2.45.x para Windows
+- Tkinter/ttk
+- biblioteca estándar
+- Git real mediante `subprocess`
+
+## Roles
+
+- ChatGPT: orquestador, diseñador de prompts y auditor técnico.
+- Agente programador activo: implementa SOLO el alcance autorizado.
+- Usuario: decide prioridades, ejecuta pruebas manuales/visuales y autoriza
+  staging, commit y Push.
+
+Solo puede existir UN agente programador modificando el repositorio a la vez.
+Otro agente solo puede actuar en paralelo si fue autorizado expresamente como
+solo lectura.
+
+El informe del agente es provisional hasta la revisión de ChatGPT y, cuando
+corresponda, la prueba manual del usuario.
+
+## Alcance y bitácora
+
+- Ejecutar únicamente la tarea recibida.
+- Modificar únicamente archivos autorizados.
+- No iniciar la siguiente etapa por iniciativa propia.
+- No administrar `seguimiento_prompts/`.
+- No asignar IDs `GG-PROMPT`.
+- No crear archivos `GG-PROMPT-XXX-RESULTADO.md` salvo instrucción expresa.
+- Al terminar: validar, informar y DETENERSE.
+
+`seguimiento_prompts/README.md` es un índice vivo.
+Los prompts, REV, ADDENDUM y RESULTADO históricos se preservan.
 
 ## Convenciones
 
-- comentarios, variables, métodos, clases e interfaz en español;
+- interfaz, comentarios, variables, métodos y clases en español;
 - identificadores Python sin tildes;
-- código simple;
-- biblioteca estándar siempre que sea posible;
-- Git real mediante `subprocess` (nunca GitPython, nunca `shell=True`);
-- no guardar tokens ni credenciales;
-- delegar HTTPS a Git/Git Credential Manager.
+- código simple y conservador;
+- biblioteca estándar cuando sea posible;
+- nunca GitPython;
+- nunca `shell=True`;
+- nunca guardar credenciales, PAT o tokens;
+- HTTPS y autenticación se delegan a Git/Git Credential Manager;
+- cambios pequeños sobre archivos actuales;
+- nunca reemplazar `principal.py` completo desde una copia antigua;
+- no reformatear ni normalizar line endings masivamente.
 
-## Coordinación entre agentes
+## Arquitectura mínima
 
-1. Antes de modificar cualquier archivo:
-   - ejecutar `git status --short`;
-   - ejecutar `git log -1 --oneline`;
-   - leer SIEMPRE la versión actual del archivo antes de editarlo;
-   - no trabajar desde backups o copias generadas antiguas.
+- `modelos.py`: resultados/estado/cambios/sincronización.
+- `servicio_git.py`: operaciones Git locales, status, staging, commit,
+  identidad, locks/operaciones en curso.
+- `servicio_remoto_git.py`: Fetch, sincronización, Push/Pull seguros,
+  configuración de remoto y publicación segura de rama local.
+- `servicio_ramas_git.py`: listar/cambiar/crear ramas LOCALES.
+- `servicio_historial_git.py`: historial y detalle de commit, solo lectura.
+- `servicio_configuracion.py`: último repositorio local.
+- `servicio_cambios_locales_git.py`: inspección de cambios.
+- `servicio_descarte_cambios_git.py`: descarte controlado de cambios sin
+  preparar preservando el índice.
+- `principal.py`: GUI Tkinter y coordinación.
+- `ayuda_interfaz.py`: ayuda visual, sin lógica Git.
+- `pruebas/`: `unittest`.
 
-2. Nunca reemplazar `principal.py` completo usando una copia antigua o un
-   archivo generado en una sesión anterior.
-   Integrar cambios mediante modificaciones pequeñas sobre la versión actual,
-   porque varios agentes pueden haber agregado funcionalidades en paralelo.
+Consultar `TRABAJO_ACTUAL.md` para el alcance funcional vigente y los archivos
+de la tarea actual.
 
-3. Si otro agente está trabajando sobre el mismo archivo, no modificarlo
-   en paralelo sin coordinar primero.
+## Seguridad Git obligatoria
 
-4. No normalizar saltos de línea ni reformatear todo un archivo durante
-   un cambio funcional.
-
-5. Mantener comentarios, variables, métodos y clases en español.
-
-6. Antes de considerar terminado un cambio ejecutar:
-   - `python -m unittest discover -s .\pruebas -v` (resultado esperado: `Ran 332 tests ... OK`);
-   - `git diff --check`;
-   - `git diff --cached --check` (puede mostrar avisos CR-at-EOL
-     en líneas CRLF añadidas: causa conocida y documentada);
-   - `git diff --stat`;
-   - `git status --short`;
-   - no hacer commit automáticamente salvo indicación del usuario.
-
-7. Si una modificación reduce funcionalidades que ya están documentadas
-   en `AGENTS.md` o `CLAUDE.md`, detenerse antes de reemplazar el archivo.
-
-Línea base estable:
-
-```text
-fe5e49e Agrega historial con filtros y exportacion
-```
-
-`fe5e49e` es la línea base estable confirmada, pero después de nuevos commits
-no debe asumirse que sigue siendo el HEAD actual. Siempre consultar Git
-antes de trabajar.
-
-El historial debe conservar estas características:
-
-- filtros por archivo y fechas;
-- orden explícito por fecha de commit descendente;
-- cabecera `Fecha ↓`;
-- exportación CSV y TXT de los commits visibles;
-- ninguna operación destructiva desde el historial.
-
-## Arquitectura
-
-- `modelos.py` — dataclasses: `ResultadoComando`, `EstadoRepositorio`, `CambioArchivo` (con `en_conflicto`, booleano estructurado que procede EXCLUSIVAMENTE de los códigos Git XY, nunca del texto) , `ResultadoCambios`, `EstadoSincronizacion`.
-- `servicio_git.py` — operaciones Git locales: localizar Git, ejecutar comandos, validar repositorios, rama y remotos, `status --porcelain`, staging (incluida la actualización de archivos preparados con `actualizar_archivos_preparados`), identidad, operaciones en curso, commits, hash actual. Los conflictos (DD/AU/UD/UA/DU/AA/UU) se exponen con `CambioArchivo.en_conflicto`, se bloquean en preparar/quitar con defensa en profundidad (reconsulta fresca antes del comando productivo; error de consulta bloquea) y en `crear_commit` sin depender de `descripcion`.
-- `servicio_remoto_git.py` — hereda de `ServicioGit`. Selección segura del remoto, Fetch, estado de sincronización, Push seguro, Pull con `--ff-only`, configuración del primer remoto GitHub (`agregar_remoto_github`).
-- `modelos_historial.py` — modelos del historial: `CommitGit`, `ResultadoHistorial`, `ResultadoExportacion`.
-- `servicio_historial_git.py` — solo lectura: consultas locales de `git log` con separadores de control y parche de un commit (`obtener_cambios_commit`) con `git show`. No ejecuta operaciones remotas ni modifica el repositorio.
-- `servicio_exportacion_historial.py` — exporta el historial consultado a CSV (UTF-8 con BOM, `;` como separador, protección contra fórmulas Excel) o TXT con encabezado de repositorio y filtros. No ejecuta Git.
-- `modelos_configuracion.py` — dataclass `ResultadoConfiguracion`.
-- `servicio_configuracion.py` — persistencia del último repositorio en `config.json`: carga validada y escritura conservadora (archivo temporal + `os.replace`). Nunca guarda credenciales ni ejecuta operaciones remotas.
-- `modelos_cambios_locales.py` — modelos del inspector de cambios locales: `DetalleCambioLocal`, `ResultadoDetalleCambioLocal`.
-- `servicio_cambios_locales_git.py` — solo lectura: diffs sin preparar y preparados de UN archivo (`--literal-pathspecs`, `--no-color`, `--no-ext-diff`, `--no-textconv`, `--unified=3`), resúmenes `--numstat`, último commit local. Reutiliza un `ServicioGit` existente; validación propia de la ruta relativa.
-- `servicio_descarte_cambios_git.py` — descarta los cambios SIN PREPARAR de UN archivo con `git --literal-pathspecs restore --worktree -- <ruta>` (restaura desde el ÍNDICE, no desde HEAD). Conserva el staging, revalida el estado antes del restore y nunca ejecuta operaciones remotas.
-- `modelos_ramas.py` — modelos de ramas locales: `RamaLocal`, `ResultadoRamas`.
-- `servicio_ramas_git.py` — ramas LOCALES: listar (`git for-each-ref --format=%(refname:short) refs/heads/`), identificar la rama actual (`git symbolic-ref --quiet --short HEAD`), cambiar (`git switch --no-guess <rama>`) y crear desde HEAD (`git switch -c <rama>`). Exige repositorio totalmente limpio, valida nombres (propias + `git check-ref-format refs/heads/<nombre>`) y nunca ejecuta Fetch/Pull/Push/Merge/Rebase; una rama nueva queda solo en el local y sin upstream.
-- `principal.py` — interfaz Tkinter: selección de repositorio, tabla de cambios, staging (Preparar/Actualizar preparados/Quitar), commit, Fetch, Pull, Push, estado por enviar/por descargar, historial, visor de cambios de un commit, inspector de cambios locales (incluido el botón `Descartar cambios sin preparar...`), selector de ramas locales (botón `Ramas...` y ventana `Ramas locales - Gestor Git`), carga del último repositorio recordado al iniciar, `threading` + `queue.Queue` para red. Para los conflictos la columna Preparado muestra `No aplica` (tabla principal e Inspector) y las acciones normales de staging los excluyen (Preparar/Quitar/Actualizar/Crear commit); `crear_commit_desde_interfaz` bloquea con aviso educativo ANTES del `askyesno` si existe cualquier `en_conflicto`, y la lista de rutas se construye con `preparado and not en_conflicto`. Contiene `TEXTOS_AYUDA_GIT_V1`: los 37 tooltips didácticos (13 P0/P1 + 24 P2/P3) centralizados en un único diccionario. Contiene además la **Leyenda/Ayuda contextual de estados Git V1**: botón `¿Qué significan estos estados?` junto a `Archivos con cambios:`, ventana educativa única y NO modal `Estados Git - Gestor Git` (820x680, `tk.Text` de solo lectura con `wrap=tk.WORD`, scrollbar vertical, redimensionable, texto seleccionable; al reabrir reutiliza la ventana existente con `deiconify`/`lift`/`focus_force`), el diccionario `CONTENIDO_AYUDA_ESTADOS_GIT_V1` con 9 bloques pedagógicos (modelo mental HEAD/índice/working tree, estados `??` / ` M` / `M ` / `MM` / conflicto con los siete códigos `DD AU UD UA DU AA UU`, otros estados `A`/`D`/`R`, códigos XY, Inspector y acciones) y una jerarquía visual mediante 3 tags de `tk.Text` (`titulo_seccion` Segoe UI 11 bold, `subtitulo` Segoe UI 10 bold, `codigo_git` Consolas 10 bold) aplicados por `_aplicar_tags_ayuda_estados_git` por igualdad EXACTA de línea completa contra las constantes `_SUBTITULOS_AYUDA_ESTADOS` y `_LINEAS_CODIGO_GIT_AYUDA` (sin regex, sin colores ni cajas). La ventana NO ejecuta Git, no consulta el repositorio, no hace Fetch/Pull/Push y no modifica working tree/índice/HEAD.
-- `ayuda_interfaz.py` — ayuda visual: `AyudaEmergente` y `configurar_estilos`. Sin lógica Git.
-
-## Seguridad
-
-Nunca implementar automáticamente:
+Nunca ejecutar automáticamente:
 
 ```text
 git reset --hard
@@ -132,675 +117,88 @@ git push --force-with-lease
 git branch -D
 ```
 
-Prohibido sin confirmación explícita:
+También está prohibido sin autorización explícita:
 
-- borrar `index.lock`;
+- borrar `.git/index.lock`;
 - resolver conflictos automáticamente;
-- Merge o Rebase automáticos;
-- elegir remoto al azar;
-- guardar PAT/token.
-
-Push se bloquea si hay cambios sin commit, conflictos, operación Git en curso, `index.lock`, detached HEAD, remoto adelantado o divergencia. El primer Push (rama local sin upstream y sin existencia en el remoto) solamente se ejecuta cuando el remoto está vacío de ramas: tras el Fetch previo se consultan las referencias locales del remoto con `git for-each-ref refs/remotes/<remoto>/` y, si existen otras ramas conocidas (o no es posible verificarlo), el Push se bloquea indicando las ramas encontradas.
-
-Pull se bloquea si hay cambios sin commit, commits por enviar, divergencia, falta de upstream, operación Git en curso o `index.lock`. Usa `git pull --ff-only`.
-
-Ante incertidumbre: bloquear la operación y explicar el motivo.
-
-## Configuración inicial de GitHub
-
-`agregar_remoto_github()` configura el PRIMER remoto de un repositorio local:
-
-- permitido solamente cuando el repositorio NO tiene ningún remoto;
-- nombre del remoto: `origin`;
-- únicamente URLs HTTPS de `github.com` (`https://github.com/usuario/repositorio` o con `.git`);
-- nunca credenciales embebidas en la URL (usuario, contraseña o token);
-- nunca se modifica, sustituye ni elimina un remoto existente (sin `set-url`, `remove` ni `rename`);
-- no ejecuta Fetch, no se conecta a Internet durante `remote add` y no duplica lógica de Push;
-- sin API de GitHub, sin PAT/token, sin `gh` CLI.
-
-El flujo enseñado es:
-
-```text
-Configurar GitHub
-    ↓
-Fetch
-    ↓
-Pull si hiciera falta
-    ↓
-Push seguro (configura upstream en el primer Push)
-```
-
-En la interfaz, el botón `Configurar GitHub...` está habilitado únicamente
-cuando existe un repositorio válido sin remotos y no hay operación remota
-en curso. La ventana educativa abre `https://github.com/new` en el navegador
-(solo abre el navegador; no inicia sesión). Al confirmar `Agregar origin`,
-la aplicación recarga el repositorio, exige un Fetch nuevo y deja Pull/Push
-deshabilitados hasta que el Fetch sea exitoso.
-
-## Hilos y Tkinter
-
-Fetch, Pull y Push corren en hilos secundarios:
-
-```text
-Tkinter -> Thread -> Git -> queue.Queue -> after(...) -> Tkinter
-```
-
-Nunca modificar widgets Tkinter desde un hilo secundario.
-
-## Historial
-
-El historial se ordena explícitamente por fecha de commit descendente
-(más reciente -> más antiguo), independientemente del orden topológico
-devuelto por git log. La interfaz muestra "Fecha ↓". CSV y TXT conservan
-el mismo orden visible.
-
-Ventana independiente de solo lectura con columnas `Hash | Fecha ↓ | Autor | Mensaje`, hasta 100 commits. `ServicioHistorialGit` ordena explícitamente los commits por `fecha_iso` descendente (más reciente primero) después de interpretar la salida de `git log`. Filtros combinables (AND):
-
-- `Archivo contiene` — pathspec literal (escapa globs), sin distinguir mayúsculas;
-- `Desde` / `Hasta` — `dd/mm/aaaa` en la interfaz, `YYYY-MM-DD` internamente, inclusivos, bloquea rango invertido.
-
-Botones: `Aplicar filtros`, `Limpiar`, `Actualizar historial`. Sin acciones destructivas (no hay Checkout, Reset, Revert, Merge, Rebase ni borrado de commits).
-
-## Detalle de cambios de un commit
-
-Desde el historial, el botón `Ver cambios...` (habilitado solo con un
-commit seleccionado) abre la ventana única `Cambios del commit - Gestor Git`,
-exclusivamente de SOLO LECTURA. No permite Checkout, Reset, Revert, Merge,
-Rebase, restaurar/preparar archivos, crear commits ni ejecutar
-Push/Pull/Fetch.
-
-La consulta la realiza `ServicioHistorialGit.obtener_cambios_commit(ruta, hash)`:
-
-- acepta únicamente hashes hexadecimales completos de 40 o 64 caracteres
-  (verificados primero con `rev-parse --verify --quiet <hash>^{commit}`);
-- usa `git show --format= --no-color --no-ext-diff --no-textconv --unified=3 <hash> --`;
-- `--no-ext-diff` evita ejecutar programas de diff externos configurados
-  en Git;
-- `--no-textconv` evita ejecutar convertidores externos configurados
-  en atributos Git;
-- nunca utiliza `shell=True`;
-- nunca modifica el working tree;
-- nunca accede al remoto ni ejecuta Fetch;
-- un commit sin cambios devuelve un resultado exitoso con salida vacía.
-
-La ventana muestra datos del commit, advertencia de solo lectura y el diff
-coloreado (agregado, eliminado, bloque `@@`, encabezado técnico). Límite
-visual de 500000 caracteres; si el diff lo supera, se muestra solo el
-comienzo con el aviso `[Vista truncada: ...]`. La truncación es solamente
-visual y nunca modifica el repositorio. Botones: `Cerrar` y `Copiar diff`
-(portapapeles de Tkinter). Ventana única: si ya existe una abierta, se
-destruye y se recrea con el commit solicitado; al cambiar de repositorio
-o cerrar el historial, la ventana de detalle también se cierra.
-
-## Exportación
-
-Desde el historial se exportan los commits visibles a CSV o TXT mediante `ServicioExportacionHistorial` (sin ejecutar Git). CSV y TXT conservan el mismo orden de los commits visibles (más reciente primero). El CSV es compatible con Excel en Windows español (BOM + `;`); celdas con `=`, `+`, `-`, `@`, tabulación o CR se anteponen `'` contra fórmulas maliciosas.
-
-## Persistencia del último repositorio
-
-`ServicioConfiguracion` recuerda únicamente el último repositorio
-seleccionado manualmente por el usuario.
-
-- `config.json` vive junto a los archivos Python
-  (`Path(__file__).resolve().parent / "config.json"`), sin depender
-  del directorio desde el cual se ejecute la aplicación;
-- estructura permitida:
-  `{"ruta_repositorio": "D:\\ruta\\al\\repositorio"}`;
-- nunca guarda usuario, correo, contraseña, PAT, token, URLs de
-  remotos ni credenciales (Git Credential Manager queda intacto);
-- al iniciar se carga el estado LOCAL del repositorio recordado:
-  sin Fetch, Pull ni Push automáticos; Pull/Push quedan
-  deshabilitados hasta un Fetch manual exitoso;
-- un `config.json` inválido o con una ruta que ya no es repositorio
-  muestra un aviso en la barra de estado y no impide trabajar;
-  no se borra automáticamente;
-- la escritura es conservadora: primero se valida la ruta con Git,
-  después se escribe un archivo temporal en la misma carpeta y se
-  reemplaza con `os.replace`; nunca se sobrescribe una configuración
-  válida con una ruta inválida;
-- `config.json` está ignorado por `.gitignore` y no forma parte
-  del repositorio.
-
-## Actualización de archivos preparados
-
-Concepto: "archivo preparado y vuelto a modificar después".
-
-- se detecta desde el estado estructurado de
-  `git status --porcelain` (nunca buscando textos en la
-  descripción): `CambioArchivo.requiere_actualizar_preparado`
-  es True cuando el archivo está preparado y además existen
-  cambios posteriores en el working tree (p. ej. `MM`, `AM`,
-  `MD`, `RM`); los conflictos nunca son actualizables;
-- lo mismo se muestra en la columna Preparado como
-  `Sí (hay cambios nuevos)`;
-- el botón `Actualizar preparados` (entre Preparar y Quitar)
-  vuelve a ejecutar `git add -- <rutas explícitas>` con
-  `--literal-pathspecs` sobre la versión actual; nunca
-  `git add .` ni `git add -A`;
-- el servicio (`actualizar_archivos_preparados`) validar el
-  estado nuevamente antes de ejecutar: cada archivo debe seguir
-  preparado, con cambios nuevos fuera del índice y sin conflictos;
-  si no, bloquea con mensaje explicando el archivo;
-- no deshace cambios, no modifica el working tree, no quita
-  archivos del staging y no crea commits;
-- GestorGit trabaja a nivel de ARCHIVO: si se preparó solo parte
-  de un archivo con otra herramienta, la actualización incluye
-  la versión actual completa (la confirmación lo advierte);
-- el commit se sigue bloqueando si algún preparado fue
-  modificado después, con mensaje educativo que menciona
-  `Actualizar preparados`.
-
-Existen 7 pruebas específicas de esta funcionalidad:
-
-- detección de archivo preparado y modificado después;
-- actualización que incluye la versión actual completa en el índice;
-- actualización múltiple de archivos;
-- rechazo de archivo que ya no está preparado;
-- rechazo de archivo sin cambios nuevos;
-- commit bloqueado hasta actualizar preparados;
-- rechazo controlado de rutas con carácter NUL (\x00) antes
-  de ejecutar git add.
-
-Las pruebas de portabilidad en Windows normalizan rutas mediante
-`Path.resolve()` en lugar de comparación de strings, y los
-subprocess que leen diff con acentos usan `encoding="utf-8"`
-y `errors="replace"`.
-
-## Inspector de cambios locales
-
-Ventana de inspección de cambios locales que enseña qué cambió en
-UN archivo antes de prepararlo, después de prepararlo, o en ambos
-lugares a la vez. Las CONSULTAS y los visores son de SOLO LECTURA,
-pero la ventana incorpora además una acción destructiva controlada
-y separada: `Descartar cambios sin preparar...` (sección
-siguiente), exclusiva de la pestaña `Sin preparar`.
-`ServicioCambiosLocalesGit` reutiliza el `ServicioGit` existente;
-`servicio_git.py` no se modifica.
-
-PRUEBA MANUAL EN WINDOWS: EXITOSA (confirmada por el usuario).
-
-Casos confirmados visualmente:
-
-- archivo modificado sin preparar: la pestaña `Sin preparar`
-  muestra el diff y `Preparados` queda vacía;
-- archivo preparado: `Preparados` muestra el diff que entraría
-  al commit;
-- caso MM ("Modificado, preparado y vuelto a modificar" con
-  Preparado = "Sí (hay cambios nuevos)"): la pestaña
-  `Sin preparar` muestra únicamente los cambios posteriores al
-  staging y `Preparados` conserva el diff previamente preparado;
-  ambos diffs son distintos;
-- resúmenes de inserciones/eliminaciones visibles;
-- colores `+` / `-` / `@@` funcionan;
-- scroll horizontal y vertical funcionan;
-- `Actualizar` refresca únicamente el estado LOCAL;
-- `Copiar diff` funciona;
-- `Ver cambios locales...` se habilita con exactamente un archivo
-  y se deshabilita con selección múltiple.
-
-Resto del comportamiento:
-
-- el botón `Ver cambios locales...` está habilitado únicamente con
-  exactamente UN archivo seleccionado en la tabla de cambios;
-- ventana única `Cambios locales - Gestor Git` (se destruye y recrea
-  al abrir de nuevo; se cierra al cambiar de repositorio);
-- la consulta NO prepara ni quita archivos, no crea commits, no
-  ejecuta Fetch/Pull/Push y nunca modifica el repositorio; la
-  única acción que modifica el working tree es el botón
-  `Descartar cambios sin preparar...` (sección siguiente);
-- pestañas `Sin preparar` (working tree -> índice, equivale a
-  `git diff`) y `Preparados` (índice -> HEAD, equivale a
-  `git diff --cached`); en el caso `MM` ambas pueden contener
-  cambios distintos;
-- comandos conceptuales para el diff sin preparar:
-
-  ```text
-  git --literal-pathspecs diff --no-color --no-ext-diff
-      --no-textconv --unified=3 -- <ruta>
-  ```
-
-  y con `--cached` insertado después de `diff` para el preparado;
-  siempre listas de argumentos, nunca `shell=True`, siempre `--`
-  antes del pathspec;
-- resúmenes de inserciones/eliminaciones mediante `--numstat`
-  (nunca interpretando texto localizado de `--stat`); un binario
-  devuelve `-` y se muestra `Archivo binario` sin convertir el
-  texto a entero;
-- si `--numstat` FALLA, la consulta devuelve un error controlado
-  (nunca 0 inserciones / 0 eliminaciones falsos);
-- un archivo nuevo sin preparar (`??`) no inventa diffs ni lee el
-  archivo: muestra un mensaje educativo explicando que Git aún no
-  tiene versión anterior para comparar;
-- un archivo que ya no tiene cambios devuelve "El archivo ya no
-  tiene cambios locales pendientes." (resultado normal, no error);
-  el botón `Actualizar` solo consulta el estado LOCAL;
-- `Copiar diff` copia el contenido visible de la pestaña activa;
-- la ruta debe ser relativa al repositorio: se rechazan controladas
-  ruta vacía, ruta absoluta, `..` y NUL antes de construir/ejecutar
-  cualquier diff (validación propia del servicio, sin acoplarse a
-  métodos privados de `ServicioGit`);
-- límite visual de 500000 caracteres con aviso
-  `[Vista truncada: ...]`; la truncación es solo visual;
-- visor `tk.Text` de solo lectura, `wrap=tk.NONE`, fuente Consolas,
-  colores como el visor de cambios de commits; reutiliza
-  `_tag_para_linea_diff` sin refactorizar el visor histórico;
-- hay 12 pruebas específicas en
-  `pruebas/test_cambios_locales_git.py` (archivo, modificación,
-  MM, numstat, error de numstat, archivo nuevo, eliminado, NUL,
-  pathspecs literales, argumentos seguros interceptando
-  `ejecutar_git()` con un spy, no-modificación del repositorio y
-  conflicto expuesto de forma estructurada con `en_conflicto`).
-
-## Descarte de cambios sin preparar
-
-Operación explícita y controlada dentro de la ventana del Inspector
-(`Cambios locales - Gestor Git`), exclusiva de la pestaña
-`Sin preparar`. PRUEBA MANUAL EN WINDOWS: EXITOSA (confirmada por
-el usuario).
-
-Casos confirmados manualmente en Windows:
-
-- caso A (archivo modificado sin preparar): el Inspector muestra
-  el diff, Preparado = No, el botón queda habilitado en
-  `Sin preparar` y deshabilitado en `Preparados`; tras la
-  confirmación el descarte funciona y el archivo vuelve a HEAD;
-- caso B (MM): A preparada y B agregada después; estado
-  "Modificado, preparado y vuelto a modificar", Preparado =
-  "Sí (hay cambios nuevos)", `Preparados` muestra A y
-  `Sin preparar` muestra B; el descarte elimina B, A permanece
-  preparada, `git diff` vuelve a quedar vacío y `git diff --cached`
-  conserva A; después, quitar de preparados conserva A en el
-  working tree, un segundo descarte elimina A y servicio_git.py
-  vuelve exactamente a HEAD;
-- caso C (archivo nuevo ??): estado Nuevo, Preparado No, mensaje
-  educativo, botón de descarte deshabilitado desde el primer
-  momento (también en `Preparados`); `Test-Path` confirmó que el
-  archivo sigue existiendo: GestorGit no lo eliminó;
-- caso D (archivo solamente preparado): `Sin preparar` vacío y el
-  botón de descarte deshabilitado;
-- caso E (actualización visual): tras el descarte el Inspector se
-  actualiza correctamente y, cuando ya no quedan cambios, muestra
-  "El archivo ya no tiene cambios locales pendientes.";
-- caso F (Fetch simultáneo): NO APLICABLE desde la GUI actual
-  (con el Inspector abierto no fue posible interactuar con Fetch
-  de la ventana principal); documentado como limitación, no como
-  fallo ni prueba exitosa.
-
-Comportamiento:
-
-- botón `Descartar cambios sin preparar...` junto a
-  `Actualizar` / `Copiar diff` / `Cerrar`;
-- se habilita únicamente cuando la pestaña activa es
-  `Sin preparar`, el archivo inspeccionado tiene cambios SIN
-  PREPARAR reales, no es nuevo (??) y no está en conflicto;
-  al cambiar de pestaña el botón queda deshabilitado;
-- antes de la confirmación se vuelve a consultar el estado LOCAL
-  del archivo (sin Fetch) y la vista se actualiza; el servicio
-  revalida otra vez justo antes del restore;
-- confirmación fuerte con messagebox que cita explícitamente la
-  ruta y explica qué versión quedará (staging, o índice/HEAD si
-  no hay preparados) y que los cambios preparados SE CONSERVAN;
-- comando productivo exacto:
-
-  ```text
-  git --literal-pathspecs restore --worktree -- <ruta>
-  ```
-
-  construido SIEMPRE como lista de argumentos (nunca
-  `shell=True`); sin `--source`: restaura desde el ÍNDICE, no
-  desde HEAD; nunca `--staged`, `git restore .`, `checkout`,
-  `reset`, `clean`, `add`, `rm`;
-- un archivo nuevo (??) se rechaza con mensaje educativo: nunca
-  se ejecuta `os.remove`, `Path.unlink` ni `git clean`;
-- los conflictos se bloquean (DD, AU, UD, UA, DU, AA, UU) con
-  mensaje educativo; la decisión usa el booleano estructurado
-  `detalle.en_conflicto` de `DetalleCambioLocal` (calculado en
-  `ServicioCambiosLocalesGit._calcular_en_conflicto` desde
-  `estado_indice` + `estado_trabajo`, nunca desde el texto
-  localizado de `descripcion`); `ServicioDescarteCambiosGit`
-  conserva además su revalidación estructurada propia antes del
-  restore;
-- la regla de los estados permitidos se basa en
-  `estado_indice` / `estado_trabajo` (nunca en `descripcion`):
-  el working tree debe tener una diferencia real respecto del
-  índice; funcionan " M", " D", MM, MD, AM y equivalentes;
-- `ServicioDescarteCambiosGit` reutiliza el `ServicioGit`
-  existente, tiene validación propia de la ruta (None, vacía,
-  espacios, NUL antes de construir `Path`, absoluta, `..`) y
-  nunca duplica `subprocess.run`;
-- si hay una operación remota en curso (Fetch/Pull/Push), el
-  botón de descarte queda deshabilitado y
-  `descartar_cambios_sin_preparar()` se bloquea al principio con
-  un mensaje controlado, sin consulta ni confirmación previas
-  (defensa en profundidad, independiente de la modalidad de las
-  ventanas); `actualizar_controles_operacion_remota()` recalcula
-  el botón de forma segura cuando el Inspector no existe;
-- después del restore: se refresca la tabla principal y el
-  Inspector, no se cierra la ventana, no se hace Fetch y se
-  muestra un mensaje breve de éxito; si el archivo ya no tiene
-  cambios, el Inspector maneja normalmente "El archivo ya no
-  tiene cambios locales pendientes." y la fila desaparece;
-- caso MM esperado: tras el descarte el archivo queda
-  `Modificado y preparado` con Preparado = `Sí`, `Sin preparar`
-  vacía (0 inserciones · 0 eliminaciones) y `Preparados`
-  conservando exactamente su diff;
-- staging intacto: `git diff --cached -- <ruta>` antes y después
-  del descarte son IDÉNTICOS;
-- no Fetch/Pull/Push; no se altera `fetch_exitoso_en_sesion`;
-  no se crean commits ni se modifica HEAD;
-- hay 17 pruebas específicas en
-  `pruebas/test_descarte_cambios_git.py` (" M", MM, " D", MD,
-  AM sin versión en HEAD (restaura desde el índice), ?? con y
-  sin spy, solamente preparado con y sin spy, NUL,
-  ruta absoluta, `..`, guion/caracteres especiales literales,
-  argumentos exactos del restore, verbos prohibidos —se
-  identifica el VERBO real, un archivo llamado `reset` solo
-  aparece como pathspec—, otro archivo sin seleccionar conserva
-  cambios y conflicto UU).
-
-## Ramas locales (selector y creación segura)
-
-V1: SOLO ramas locales. Sin borrar, renombrar, publicar, upstream
-automático, Merge, Rebase, Cherry-pick, Checkout, Reset, Force
-Push ni Fetch/Pull/Push automáticos. Una rama nueva queda LOCAL
-hasta una etapa posterior de "Publicar rama".
-
-Comandos productivos exactos (siempre listas de argumentos vía
-`ejecutar_git`, nunca `shell=True`):
-
-```text
-git for-each-ref --format=%(refname:short) refs/heads/
-git check-ref-format refs/heads/<nombre>
-git switch --no-guess <rama>
-git switch -c <rama>      (nace del HEAD actual, sin start-point)
-```
-
-`ServicioRamasGit(servicio_git)` reutiliza la instancia existente;
-`servicio_git.py` no se modifica y no se duplica `subprocess.run`.
-
-Precondiciones conservadoras revalidadas ANTES de cambiar o crear:
-
-- repositorio válido;
-- existe al menos un commit;
-- HEAD no está separado (`git symbolic-ref --quiet --short HEAD`
-  falla en detached: listar sigue válido, cambiar/crear bloquean);
-- distinción explícita en `ResultadoRamas` (`tiene_commits`,
-  `head_separado`): un repositorio sin commits NO es un HEAD
-  separado; `head_separado=True` solo cuando hay commits y
-  `symbolic-ref` falla (la GUI muestra "Repositorio sin commits
-  todavía" frente a "HEAD separado...");
-- sin operación Git en curso ni `MERGE_HEAD`/`CHERRY_PICK_HEAD`/
-  `REVERT_HEAD`/rebase/sequencer;
-- sin `index.lock` (nunca se borra);
-- working tree, staging y archivos nuevos (`??`) TOTALMENTE
-  limpios — `obtener_cambios()` debe devolver `exitoso=True` y sin
-  cambios; un error de consulta bloquea, nunca se interpreta como
-  limpio;
-- sin conflictos (códigos DD/AU/UD/UA/DU/AA/UU con helper propio,
-  nunca texto localizado);
-- cambiar: la rama existe LOCALMENTE (`rev-parse --verify --quiet
-  refs/heads/<nombre>`) y no es la actual; crear: la rama NO
-  existe aún;
-- nunca se descartan cambios para permitir el switch;
-- además de la validación de entrada, el servicio revalida TODAS
-  las precondiciones DOS veces en cambiar_rama() y crear_rama():
-  la primera al inicio y la SEGUNDA inmediatamente antes del
-  `git switch` productivo (defensa en profundidad: reduce la
-  ventana TOCTOU; cualquier cambio local aparecido entre ambas
-  consultas bloquea la operación antes de ejecutar switch).
-
-Validación del nombre (no se corrige silenciosamente, no se
-convierte a minúsculas, no se quitan espacios): rechaza None,
-vacío, solo espacios, espacios iniciales/finales, NUL, inicio
-`-`, `HEAD`, `@`, sintaxis `@{...}` (p. ej. `@{-1}`); después
-`git check-ref-format refs/heads/<nombre>`. Válidos ejemplares:
-`feature/login`, `fix/error-oracle`, `prueba_2026`; inválidos:
-`""`, `" rama"`, `"rama "`, `"-rama"`, `"HEAD"`, `"rama..mala"`,
-`"rama.lock"`, `"rama@{1}"`.
-
-Interfaz: botón `Ramas...` en "Información local" (junto a
-`Historial...`, se deshabilita durante operaciones remotas);
-ventana única `Ramas locales - Gestor Git` (Toplevel con
-`transient`, NO modal — sin `grab_set` ni `wait_window` —, se
-cierra al cambiar de repositorio) con texto educativo, rama
-actual, lista de ramas locales (rama actual marcada), entrada
-"Nueva rama" y botones `Cambiar a seleccionada`, `Crear rama`,
-`Actualizar`, `Cerrar`. Confirmaciones explícitas antes de operar
-que NO afirman limpieza absoluta: "GestorGit realizará el cambio
-únicamente si el repositorio continúa limpio; el servicio volverá
-a comprobarlo antes de ejecutar git switch". Durante Fetch/Pull/
-Push los botones de la ventana de ramas se deshabilitan. Tras
-cambiar o crear: se cierran historial, detalle de commit e
-Inspector; se recarga el estado LOCAL con
-`cargar_repositorio(..., reiniciar_fetch=True)` (invalida
-`fetch_exitoso_en_sesion`: Pull/Push quedan deshabilitados hasta
-un Fetch nuevo; Fetch sigue disponible si hay remoto); nunca Fetch
-automático; la lista de ramas se refresca.
-
-Push intacto: la protección del primer Push no cambia; una rama
-nueva (sin upstream) en un remoto con ramas conocidas bloquea el
-Push explicando el motivo — la publicación explícita será la
-etapa "Publicar rama" con sus propias confirmaciones.
-
-PRUEBA MANUAL EN WINDOWS: EXITOSA (confirmada por el usuario).
-Prueba ejecutada en repositorio temporal
-`C:\Users\victo\AppData\Local\Temp\GestorGit-Prueba-Ramas-20260819-151113`
-con rama `prueba-manual-ramas-victor`: creación desde master OK,
-cambio a nueva rama OK, cambio a master BLOQUEADO correctamente
-con `archivo.txt` modificado, limpieza solamente del cambio temporal,
-regreso posterior a master OK, `git branch --show-current` -> master,
-`git status --short` -> sin salida, ambas ramas apuntaban a
-`f9f40c4`, `git remote -v` -> sin salida, rama NO publicada;
-eliminación de ramas permanece fuera del alcance V1.
-
-## Pruebas
-
-332 pruebas automatizadas en `pruebas/`. Ejecutar:
+- Merge/Rebase automáticos;
+- elegir un remoto al azar;
+- almacenar credenciales;
+- `git add .` o `git add -A` en cierres controlados.
+
+Ante incertidumbre: BLOQUEAR y explicar.
+
+No ejecutar sobre GestorGit `git add`, staging, commit, Fetch, Pull o Push
+salvo autorización explícita de la tarea ACTUAL. Una autorización anterior
+no se hereda.
+
+## Reglas funcionales que no deben degradarse
+
+- Pull únicamente con `--ff-only`.
+- Push nunca forzado.
+- Conflictos se representan mediante estado estructurado
+  (`CambioArchivo.en_conflicto`), no por textos localizados.
+- Rutas de staging explícitas; no `git add .`.
+- Operaciones remotas mantienen la GUI responsiva:
+  `Tkinter -> Thread -> Git -> queue.Queue -> after(...) -> Tkinter`.
+- Nunca tocar widgets Tkinter desde un hilo secundario.
+- Errores de consulta Git no se interpretan como estado seguro/limpio.
+- `index.lock` se detecta y bloquea; nunca se elimina automáticamente.
+
+## Pruebas y cierre de una tarea
+
+Ejecutar las pruebas indicadas por el prompt.
+
+Si el prompt pide suite completa:
 
 ```powershell
 python -m unittest discover -s .\pruebas -v
 ```
 
-Resultado esperado:
+No usar aquí un número fijo como “total esperado”; el total vigente está en
+`TRABAJO_ACTUAL.md` y debe confirmarse por ejecución.
+
+Validaciones habituales cuando correspondan:
 
 ```text
-Ran 332 tests in ...
-OK
+py_compile focalizado
+tests focalizados
+suite completa
+git diff --check
+git diff --cached --check
+git diff --cached --name-only
+git diff --stat
+git status --short
 ```
 
-Las pruebas nunca tocan GitHub ni el repositorio Oracle real; usan `tempfile.TemporaryDirectory()`.
+## Informe final compacto
 
-## Validación habitual
+Salvo que el prompt pida otro formato, reportar SOLO:
 
-```powershell
-python -m py_compile .\modelos.py
-python -m py_compile .\modelos_historial.py
-python -m py_compile .\modelos_configuracion.py
-python -m py_compile .\servicio_git.py
-python -m py_compile .\servicio_remoto_git.py
-python -m py_compile .\servicio_historial_git.py
-python -m py_compile .\servicio_exportacion_historial.py
-python -m py_compile .\servicio_configuracion.py
-python -m py_compile .\principal.py
-python -m py_compile .\ayuda_interfaz.py
-python -m py_compile .\pruebas\test_historial_git.py
-python -m py_compile .\pruebas\test_exportacion_historial.py
-python -m py_compile .\pruebas\test_configuracion_remoto_git.py
-python -m py_compile .\pruebas\test_configuracion.py
-python -m py_compile .\pruebas\test_detalle_commit_git.py
-python -m py_compile .\pruebas\test_actualizacion_preparados.py
-python -m py_compile .\modelos_cambios_locales.py
-python -m py_compile .\servicio_cambios_locales_git.py
-python -m py_compile .\servicio_descarte_cambios_git.py
-python -m py_compile .\pruebas\test_cambios_locales_git.py
-python -m py_compile .\pruebas\test_descarte_cambios_git.py
-python -m py_compile .\modelos_ramas.py
-python -m py_compile .\servicio_ramas_git.py
-python -m py_compile .\pruebas\test_ramas_git.py
-python -m unittest discover -s .\pruebas -v
-git status
-```
+1. estado Git inicial y anomalías;
+2. archivos modificados;
+3. cambio realizado;
+4. pruebas focalizadas;
+5. suite completa (total real) si se ejecutó;
+6. `diff --check` / staging / lock;
+7. operaciones remotas y commit: sí/no;
+8. pendientes o hallazgos.
 
-Nota: PowerShell puede mostrar mojibake (p. ej. `aplicaciÃ³n`); Tkinter muestra los acentos correctamente.
+No pegar logs completos que hayan terminado correctamente.
+Incluir salida extensa solo ante fallos o si el prompt la exige.
 
-## Siguiente etapa
+## Documentación dinámica
 
-TOOLTIPS DIDÁCTICOS V1: CERRADO (Fase 2A + Fase 2B).
+No añadir a este archivo:
 
-- 37 tooltips totales: 13 P0/P1 (Fase 2A, largos,
-  `ancho_texto=620`) + 24 P2/P3 (Fase 2B, breves, ancho por
-  defecto);
-- todos los textos centralizados en `TEXTOS_AYUDA_GIT_V1`
-  (diccionario único en `principal.py`, consumido por
-  `AyudaEmergente`); 0 textos literales inline en llamadas a
-  `AyudaEmergente`;
-- pruebas estáticas con `ast` en
-  `pruebas/test_ayuda_tooltips_v1.py` garantizan: 0 textos
-  inline; total de llamadas == total de claves del diccionario
-  (37); cada clave conectada exactamente una vez; biyección
-  claves usadas <-> diccionario;
-- los 24 tooltips 2B incluyen: 14 tooltips secundarios que
-  estaban inline (5 ventana principal + 9 historial)
-  centralizados; 4 ayudas de acciones nuevas (Actualizar y
-  Copiar diff del Inspector; Actualizar de ramas; Copiar diff
-  del detalle de commit); 6 conceptos de sincronización sobre
-  las etiquetas Upstream, Rama remota, Por enviar, Por
-  descargar, Estado y Última consulta;
-- los conceptos de sincronización enseñan información remota
-  CONOCIDA localmente, no un estado vivo del servidor:
-  "Rama remota" es la rama de seguimiento conocida localmente;
-  "Estado" compara con lo último conocido (Fetch reciente), no
-  es monitorización en tiempo real; "Última consulta" puede
-  reflejar operaciones remotas exitosas o fallidas y una
-  operación fallida no implica información actualizada;
-- "Por enviar" / "Por descargar" cuentan COMMITS, no archivos;
-- los cuatro botones "Actualizar" (estado local, historial,
-  Inspector, ramas) tienen semánticas y textos distintos
-  (consultas LOCALES, no Fetch); exportaciones CSV/TXT escriben
-  informes y no modifican Git; Copiar diff es solo portapapeles;
-  Upstream no implica estar sincronizado; historial y filtros
-  son consultas LOCALES;
-- 104 pruebas específicas en `pruebas/test_ayuda_tooltips_v1.py`
-  (58 Fase 2A + 46 Fase 2B); 255 pruebas totales en su momento
-  (HISTÓRICO; el total actual del proyecto es 332);
-- PRUEBA VISUAL WINDOWS FINAL: EXITOSA en ambas fases
-  (2A confirmada en commits locales `bc57772` y `82a32d1`;
-  2B confirmada por el usuario y commiteada en
-  "Cierra tooltips didacticos V1", hijo de 0413697);
-- SIN PUSH.
+- HEAD actual;
+- `ahead/behind` actual;
+- número actual de tests;
+- prompt activo;
+- lista temporal de archivos modificados;
+- resultados detallados de una etapa.
 
-LEYENDA/AYUDA CONTEXTUAL DE ESTADOS GIT V1: CERRADA.
+Todo eso pertenece a `TRABAJO_ACTUAL.md`, Git o `seguimiento_prompts/`.
 
-- botón `¿Qué significan estos estados?` junto a
-  `Archivos con cambios:`; ventana educativa única y NO modal
-  `Estados Git - Gestor Git` (820x680, `tk.Text` de solo lectura
-  con `wrap=tk.WORD`, scrollbar vertical, redimensionable, texto
-  seleccionable; al reabrir reutiliza la ventana existente con
-  `deiconify`/`lift`/`focus_force`);
-- diccionario `CONTENIDO_AYUDA_ESTADOS_GIT_V1` independiente de
-  `TEXTOS_AYUDA_GIT_V1` (37 tooltips intactos; 0 llamadas
-  `AyudaEmergente` añadidas) con 9 bloques pedagógicos: modelo
-  mental HEAD/índice/working tree, estados `??` / ` M` / `M ` /
-  `MM` / conflicto (con los siete códigos `DD AU UD UA DU AA UU`
-  y `No aplica`), otros estados `A`/`D`/`R`, códigos XY,
-  Inspector (`Sin preparar` = working tree vs índice /
-  `git diff`; `Preparados` = índice vs HEAD /
-  `git diff --cached`; MM deja diffs distintos) y acciones
-  breves ("Quitar de preparados" sin prometer estado final único:
-  "depende de cada caso");
-- jerarquía visual con 3 tags de `tk.Text`:
-  `titulo_seccion` (Segoe UI 11 bold, spacing1=6, spacing3=6),
-  `subtitulo` (Segoe UI 10 bold) y `codigo_git` (Consolas 10
-  bold) aplicados por `_aplicar_tags_ayuda_estados_git` por
-  igualdad EXACTA de línea completa contra las constantes
-  `_SUBTITULOS_AYUDA_ESTADOS` (HEAD, Índice / staging, Working
-  tree, Ver cambios locales..., Acciones:) y
-  `_LINEAS_CODIGO_GIT_AYUDA` (8 textos completos con
-  'Git XY: "??"', 'Git XY: " M"', 'Git XY: "M "',
-  'Git XY: "MM"', 'Git XY: "M "', '"M " = M + espacio ...',
-  '"MM" = M + M ...', '"??" = caso especial ...'); sin regex,
-  sin colores ni cajas; la primera línea de cada uno de los 9
-  bloques recibe `titulo_seccion`;
-- el contenido pedagógico NO cambió (el hash SHA-256 del
-  `CONTENIDO_AYUDA_ESTADOS_GIT_V1` es idéntico antes/después del
-  microajuste visual); `TEXTOS_AYUDA_GIT_V1` intacto (37 claves);
-- la ventana NO ejecuta Git, no consulta el repositorio, no hace
-  Fetch/Pull/Push y no modifica working tree/índice/HEAD; se
-  mantiene abierta al cambiar de repositorio (conceptos generales)
-  y sus referencias se liberan al cerrarla
-  (`cerrar_ventana_ayuda_estados_git`);
-- 65 pruebas específicas en `pruebas/test_leyenda_estados_git.py`
-  (50 base + 15 del ajuste visual), incluida una microcorrección
-  del helper `_llamadas_a` (reconoce llamadas `ast.Name` y
-  `ast.Attribute`, por lo que las comprobaciones "sin
-  `grab_set`/`wait_window`" son efectivas);
-- suite completa: 332 tests OK (267 + 65);
-- PRUEBA MANUAL WINDOWS FINAL: EXITOSA (botón visible, layout
-  sin deformaciones, ventana única, NO modal, títulos en negrita
-  con jerarquía, subtítulos en negrita, códigos XY en
-  monoespaciada, distinción visual ` M`/`M `/`MM`/`??`,
-  scrollbar/wrap/redimensionamiento, texto seleccionable, cierre
-  y reapertura, Fetch manual desde la ventana principal con la
-   ayuda abierta terminó correctamente y working tree/staging/HEAD
-   permanecieron idénticos; index.lock inexistente; etapa CERRADA
-   e integrada mediante el commit local
-   "Agrega leyenda contextual de estados Git V1" (consultar
-   git log -1 --oneline para el hash vigente; SIN PUSH).
-
-Etapas FUTURAS (documentadas, sin implementar):
-
-1. La funcionalidad "Publicar rama local" NO se cancela: queda
-   documentada como etapa FUTURA separada, fuera del alcance
-   actual, con sus propias confirmaciones de seguridad.
-
-CORRECCIÓN ESTRUCTURADA DE CONFLICTOS EN STAGING: CERRADA.
-
-- causa: los siete pares de conflicto (DD/AU/UD/UA/DU/AA/UU)
-  podían quedar con `preparado=True` por la semántica histórica
-  de `estado_indice`; un conflicto no es "preparado" ni "sin
-  preparar": es un estado especial que bloquea las acciones de
-  staging;
-- `CambioArchivo.en_conflicto` (bool, default False) procede
-  EXCLUSIVAMENTE de los códigos Git XY (`_es_estado_conflicto`,
-  exactamente DD/AU/UD/UA/DU/AA/UU), nunca del texto de la
-  descripción;
-- servicio: `agregar_archivos()` y `quitar_archivos_preparados()`
-  reconsultan el estado antes del comando productivo (error de
-  consulta bloquea; conflicto bloquea con mensaje educativo; sin
-  git add / restore --staged / rm --cached sobre conflicto);
-  `actualizar_archivos_preparados()` y `crear_commit()` usan
-  `cambio.en_conflicto` (sin dependencia de `descripcion`);
-- GUI: tabla principal e Inspector muestran Preparado =
-  `No aplica`; Preparar/Quitar/Actualizar/Crear commit excluyen
-  los conflictos (`preparado and not en_conflicto`);
-  `crear_commit_desde_interfaz` bloquea ANTES del `askyesno` con
-  aviso educativo ("Git necesita que una persona decida...,
-  GestorGit no elige una versión automáticamente");
-- microcorrección: `tiene_comando_prohibido()` examina SOLO los
-  argumentos anteriores al primer `--` y compara verbos exactos
-  (sin substring), por lo que reconoce add/restore/rm detrás de
-  `--literal-pathspecs` y no confunde rutas posteriores a `--`;
-  los asserts de ausencia de add/restore/rm quedan así realmente
-  verificados;
-- prueba GUI SIN Tk real (`pruebas/test_commit_gui_conflicto.py`):
-  showwarning una vez con la ruta del conflicto, sin askyesno y
-  sin llamar a `servicio_git.crear_commit()`;
-- 11 pruebas nuevas en `pruebas/test_servicio_git.py`
-  (PruebasConflictoEstructurado) + 1 prueba GUI = total 267;
-- PRUEBA MANUAL WINDOWS: EXITOSA (repositorio temporal
-  `GestorGit-Prueba-Conflicto-20260820-162507` con UU conflicto.sql
-  y M  normal.sql: tabla/Inspector "No aplica", acciones de
-  staging del conflicto deshabilitadas, commit bloqueado antes de
-  la confirmación, índice unmerged intacto con las tres entradas
-  stage 1/2/3 y HEAD sin cambios; las operaciones normales sobre
-  archivos no conflictivos se conservan);
-- commit de cierre: "Corrige manejo seguro de conflictos en
-  staging" (consultar git log -1 --oneline); SIN PUSH.
-
-## Filosofía
-
-```text
-ver cambios -> preparar -> commit -> Fetch -> Pull si hace falta -> Push cuando sea seguro
-```
-
-Seguridad y comprensión primero; bloquear y explicar antes que ejecutar algo potencialmente destructivo.
+`METODO_TRABAJO_AGENTES.md` define el procedimiento extendido y se lee solo
+en incorporación, cambio de método o cuando el prompt lo solicite.

@@ -280,6 +280,38 @@ TEXTOS_AYUDA_GIT_V1 = {
         "Requiere repositorio limpio. El nombre se valida con "
         "git check-ref-format antes de crearla."
     ),
+    "publicar_rama": (
+        "Publicar rama local...\n\n"
+        "Comando:\n"
+        "git push --porcelain --set-upstream <remoto> "
+        "<rama>:refs/heads/<rama>\n"
+        "(antes se consulta el remoto, solo lectura, con "
+        "git ls-remote --heads, para comprobar que la rama "
+        "todavía no exista)\n\n"
+        "Qué hace:\n"
+        "Crea la rama remota refs/heads/<rama> con los commits de "
+        "la rama local actual y configura su upstream: la rama "
+        "queda vinculada a <remoto>/<rama>.\n"
+        "El Push enviado apunta únicamente a refs/heads/<rama>.\n\n"
+        "Concepto:\n"
+        "El upstream es el vínculo entre una rama local y la rama "
+        "remota que Git usa por defecto para Pull y Push. Una rama "
+        "creada con GestorGit es solamente local; publicarla la "
+        "hace existir en el remoto y crea ese vínculo.\n\n"
+        "Qué cambia:\n"
+        "En el remoto aparece una rama nueva refs/heads/<rama> y la "
+        "rama local queda vinculada a <remoto>/<rama>.\n\n"
+        "No hace:\n"
+        "No usa --all, --tags, --mirror, --delete, --force ni "
+        "--force-with-lease, no cambia de rama, no crea commits y "
+        "no modifica el working tree.\n\n"
+        "Requisitos / seguridad:\n"
+        "Requiere un Fetch manual exitoso previo y el repositorio "
+        "totalmente limpio. GestorGit vuelve a consultar el remoto "
+        "justo antes de publicar y bloquea si la rama ya tiene "
+        "upstream o si la rama remota ya existe. Puede publicarse "
+        "aunque la rama no tenga commits exclusivos."
+    ),
     "ramas": (
         "Ramas...\n\n"
         "Comando:\n"
@@ -891,7 +923,9 @@ class AplicacionGit:
         self.boton_descartar_sin_preparar = None
 
         # Ventana única de ramas locales. Se cierra al cambiar de
-        # repositorio y no ejecuta operaciones remotas.
+        # repositorio. Las operaciones de ramas son locales; la
+        # publicación de la rama actual es la única acción remota
+        # de esta ventana.
         self.ventana_ramas = None
         self.tabla_ramas = None
         self.variable_estado_ramas = None
@@ -900,6 +934,8 @@ class AplicacionGit:
         self.entrada_nueva_rama = None
         self.boton_cambiar_rama = None
         self.boton_crear_rama = None
+        self.boton_actualizar_ramas = None
+        self.boton_publicar_rama = None
         self.rama_actual_ventana_actual = ""
 
         # Ventana única de la leyenda de estados Git (ventana
@@ -2498,8 +2534,12 @@ class AplicacionGit:
             "Ramas locales - Gestor Git"
         )
 
+        # La segunda fila de acciones (Publicar rama local...) añadió
+        # altura natural que el 520 original no contemplaba; 560
+        # restaura el margen y rowconfigure(3, weight=1) garantiza
+        # que la tabla absorba cualquier redimensionamiento.
         self.ventana_ramas.geometry(
-            "580x520"
+            "580x560"
         )
 
         self.ventana_ramas.minsize(
@@ -2531,21 +2571,35 @@ class AplicacionGit:
             weight=1
         )
 
+        # La tabla (fila 3) es la zona verticalmente flexible: absorbe
+        # el espacio extra al agrandar y cede altura primero al
+        # reducir, de modo que Nueva rama y las acciones inferiores
+        # (incluido Publicar rama local...) nunca queden recortadas
+        # por el borde inferior.
+        marco_ramas.rowconfigure(
+            3,
+            weight=1
+        )
+
         ttk.Label(
             marco_ramas,
             text=(
                 "GestorGit trabaja con ramas LOCALES.\n\n"
                 "Cambiar de rama actualiza los archivos del "
                 "working tree. Solo es posible cuando el "
-                "repositorio está completamente limpio (sin "
-                "cambios, sin archivos preparados y sin archivos "
-                "nuevos).\n\n"
+                "repositorio está completamente limpio.\n\n"
                 "Crear una rama la crea DESDE el commit actual "
-                "y GestorGit cambia a ella. La rama nueva "
-                "SOLO vive en este repositorio local: no se "
-                "publica en GitHub ni recibe upstream.\n\n"
-                "No se ejecuta Fetch, Pull, Push, Merge ni "
-                "Rebase desde esta ventana."
+                "y GestorGit cambia a ella. Nace local y sin "
+                "upstream; para crear su rama remota y "
+                "vincularla, use explícitamente \"Publicar rama "
+                "local...\".\n\n"
+                "Listar, actualizar, crear y cambiar ramas son "
+                "operaciones LOCALES.\n"
+                "\"Publicar rama local...\" es la única acción "
+                "REMOTA de esta ventana: consulta el remoto y, "
+                "si las comprobaciones pasan, puede ejecutar "
+                "Push. No hace Fetch automático, Pull, Merge "
+                "ni Rebase."
             ),
             wraplength=540,
             justify="left"
@@ -2788,6 +2842,30 @@ class AplicacionGit:
             padx=(10, 0)
         )
 
+        # La publicación de la rama actual es una acción remota
+        # explícita y separada del Push normal; queda visualmente
+        # asociada a las acciones de ramas de esta ventana.
+        self.boton_publicar_rama = ttk.Button(
+            marco_acciones,
+            text="Publicar rama local...",
+            command=self.confirmar_publicacion_rama,
+            state=tk.DISABLED
+        )
+
+        self.boton_publicar_rama.grid(
+            row=1,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(8, 0)
+        )
+
+        AyudaEmergente(
+            self.boton_publicar_rama,
+            TEXTOS_AYUDA_GIT_V1["publicar_rama"],
+            ancho_texto=620
+        )
+
         self.cargar_lista_ramas()
 
     def cargar_lista_ramas(self):
@@ -2877,8 +2955,9 @@ class AplicacionGit:
 
     def actualizar_estado_botones_ventana_ramas(self, _evento=None):
         """
-        Habilita Cambiar/Crear según la selección, el texto de
-        la entrada y las operaciones remotas en curso.
+        Habilita Cambiar/Crear/Publicar según la selección, el
+        texto de la entrada, el estado de sincronización conocido
+        y las operaciones remotas en curso.
 
         Segura si la ventana de ramas no existe.
         """
@@ -2897,6 +2976,15 @@ class AplicacionGit:
             self.boton_crear_rama.config(
                 state=tk.DISABLED
             )
+
+            self.boton_publicar_rama.config(
+                state=tk.DISABLED
+            )
+
+            if self.boton_actualizar_ramas is not None:
+                self.boton_actualizar_ramas.config(
+                    state=tk.DISABLED
+                )
 
             return
 
@@ -2932,6 +3020,62 @@ class AplicacionGit:
                 else tk.DISABLED
             )
         )
+
+        if self.boton_actualizar_ramas is not None:
+            self.boton_actualizar_ramas.config(
+                state=tk.NORMAL
+            )
+
+        self.boton_publicar_rama.config(
+            state=(
+                tk.NORMAL
+                if self.puede_publicar_rama_actual()
+                else tk.DISABLED
+            )
+        )
+
+    def puede_publicar_rama_actual(self):
+        """
+        Decide con la información LOCAL disponible si la publicación
+        de la rama actual puede ofrecerse.
+
+        No exige commits por enviar: publicar una rama significa
+        crear la referencia remota y configurar su upstream, y puede
+        hacerse aunque la rama apunte al mismo commit que otra rama.
+        El servicio vuelve a validar todo al hacer clic.
+        """
+
+        if not self.rama_actual_ventana_actual:
+            return False
+
+        if not self.ruta_repositorio:
+            return False
+
+        # Remoto determinable sin ambigüedad: exactamente un
+        # remoto configurado (nunca se elige uno al azar).
+        if len(self.remotos_repositorio) != 1:
+            return False
+
+        if not self.fetch_exitoso_en_sesion:
+            return False
+
+        estado = self.estado_sincronizacion_actual
+
+        if estado is None or not estado.exitoso:
+            return False
+
+        if estado.rama_local != self.rama_actual_ventana_actual:
+            return False
+
+        # Solamente ramas todavía no vinculadas (sin upstream) y
+        # sin una rama remota homónima conocida localmente.
+        if estado.upstream_configurado:
+            return False
+
+        if estado.rama_remota_existe:
+            return False
+
+        return True
 
     def confirmar_cambio_rama(self):
         """
@@ -3031,9 +3175,9 @@ class AplicacionGit:
                 f"{nombre_rama}\n\n"
                 "desde el commit actual y GestorGit cambiará "
                 "a ella.\n\n"
-                "La rama NO se publicará en GitHub y no tendrá "
-                "upstream hasta que se implemente o ejecute "
-                "explícitamente la publicación de ramas.\n\n"
+                "La rama NO se publicará en el remoto y no tendrá "
+                "upstream hasta que ejecute explícitamente "
+                "\"Publicar rama local...\".\n\n"
                 "GestorGit realizará la creación únicamente si "
                 "el repositorio continúa limpio; el servicio "
                 "volverá a comprobarlo antes de ejecutar "
@@ -3075,6 +3219,114 @@ class AplicacionGit:
             resultado.mensaje
         )
 
+    def confirmar_publicacion_rama(self):
+        """
+        Confirma y ejecuta la publicación de la rama local ACTUAL.
+
+        La publicación crea refs/heads/<rama> en el remoto mediante
+        un Push normal con --set-upstream. Es una operación de red
+        explícita, distinta del Push normal; la operación real se
+        ejecuta en un hilo secundario.
+        """
+
+        if self.operacion_remota_en_curso:
+            self.variable_estado.set(
+                "Espere a que termine la operación remota en "
+                "curso antes de publicar la rama."
+            )
+
+            return
+
+        if not self.ruta_repositorio:
+            return
+
+        if (
+            self.ventana_ramas is None
+            or not self.ventana_ramas.winfo_exists()
+        ):
+            return
+
+        rama = self.rama_actual_ventana_actual
+
+        if not rama:
+            return
+
+        if not self.fetch_exitoso_en_sesion:
+            messagebox.showinfo(
+                "Fetch requerido",
+                (
+                    "Antes de publicar una rama debe ejecutar Fetch "
+                    "para conocer el estado del remoto."
+                ),
+                parent=self.ventana_ramas
+            )
+
+            return
+
+        if len(self.remotos_repositorio) != 1:
+            return
+
+        remoto = self.remotos_repositorio[0]
+
+        confirmado = messagebox.askyesno(
+            "Publicar rama local",
+            (
+                "Se publicará la rama local ACTUAL en el remoto:\n\n"
+                f"Rama local: {rama}\n"
+                f"Remoto: {remoto}\n"
+                f"Destino remoto: refs/heads/{rama}\n\n"
+                "Esta acción realizará una operación de red:\n\n"
+                "- GestorGit volverá a consultar el remoto antes de "
+                f"publicar, para verificar que la rama '{rama}' "
+                "todavía no exista;\n"
+                "- si la rama remota ya existe, la publicación se "
+                "cancelará;\n"
+                "- se creará la rama remota y se configurará su "
+                f"upstream ({rama} quedará vinculada a "
+                f"{remoto}/{rama}).\n\n"
+                "El Push apuntará únicamente a:\n"
+                f"refs/heads/{rama}\n\n"
+                "GestorGit no usará --all, --tags, --mirror, "
+                "--delete ni Push forzado.\n\n"
+                "¿Desea continuar?"
+            ),
+            parent=self.ventana_ramas
+        )
+
+        if not confirmado:
+            return
+
+        # Copias estables para el hilo: la confirmación se hizo
+        # sobre esta rama y este remoto; el servicio los revalida
+        # contra el repositorio real antes del Push.
+        ruta_repositorio = (
+            self.ruta_repositorio
+        )
+
+        self.operacion_remota_en_curso = True
+
+        self.actualizar_controles_operacion_remota()
+
+        self.variable_estado.set(
+            f"Publicando rama local '{rama}' en '{remoto}'..."
+        )
+
+        self.variable_ultima_consulta.set(
+            "Publicación de rama en curso..."
+        )
+
+        hilo_publicar = threading.Thread(
+            target=self.trabajo_publicar_rama,
+            args=(
+                ruta_repositorio,
+                remoto,
+                rama
+            ),
+            daemon=True
+        )
+
+        hilo_publicar.start()
+
     def refrescar_despues_de_ramas(self):
         """
         Recarga el estado LOCAL tras cambiar o crear una rama.
@@ -3111,6 +3363,8 @@ class AplicacionGit:
         self.entrada_nueva_rama = None
         self.boton_cambiar_rama = None
         self.boton_crear_rama = None
+        self.boton_actualizar_ramas = None
+        self.boton_publicar_rama = None
         self.rama_actual_ventana_actual = ""
 
         if (
@@ -6426,6 +6680,44 @@ class AplicacionGit:
         )
 
     # =============================================================
+    # PUBLICAR RAMA LOCAL
+    # =============================================================
+
+    def trabajo_publicar_rama(
+        self,
+        ruta_repositorio,
+        remoto,
+        rama
+    ):
+        """
+        Ejecuta la publicación de la rama local fuera del hilo
+        principal.
+
+        Este método nunca modifica controles Tkinter. Sin Fetch
+        automático: la consulta remota fresca previa al Push la
+        realiza el propio servicio con ls-remote, y después de un
+        Push exitoso la aplicación exige un Fetch manual nuevo.
+        """
+
+        resultado_publicacion = (
+            self.servicio_git.publicar_rama_local(
+                ruta_repositorio,
+                remoto,
+                rama
+            )
+        )
+
+        self.cola_resultados.put(
+            (
+                "publicar_rama",
+                ruta_repositorio,
+                remoto,
+                rama,
+                resultado_publicacion
+            )
+        )
+
+    # =============================================================
     # COLA DE RESULTADOS
     # =============================================================
 
@@ -6454,6 +6746,11 @@ class AplicacionGit:
 
                 elif tipo_operacion == "push":
                     self.procesar_resultado_push(
+                        *elemento[1:]
+                    )
+
+                elif tipo_operacion == "publicar_rama":
+                    self.procesar_resultado_publicar_rama(
                         *elemento[1:]
                     )
 
@@ -6496,6 +6793,12 @@ class AplicacionGit:
 
             self.actualizar_estado_botones_sincronizacion()
 
+            # Los datos finales ya quedaron actualizados: recalcular
+            # AHORA los botones de la ventana de ramas (el recálculo
+            # temprano de actualizar_controles_operacion_remota
+            # ocurrió con información anterior al Fetch fallido).
+            self.actualizar_estado_botones_ventana_ramas()
+
             detalle = (
                 resultado_fetch.error
                 if resultado_fetch.error
@@ -6512,6 +6815,12 @@ class AplicacionGit:
         self.fetch_exitoso_en_sesion = True
 
         if estado_sincronizacion is None:
+            # Sin estado nuevo calculable no existe información
+            # confiable para decisiones GUI: el estado anterior
+            # (aunque fuera exitoso) no debe hacer parecer
+            # publicable la rama.
+            self.estado_sincronizacion_actual = None
+
             self.variable_estado.set(
                 (
                     "Fetch completado, pero no se pudo "
@@ -6520,6 +6829,8 @@ class AplicacionGit:
             )
 
             self.actualizar_estado_botones_sincronizacion()
+
+            self.actualizar_estado_botones_ventana_ramas()
 
             return
 
@@ -6542,6 +6853,11 @@ class AplicacionGit:
                     "no pudo calcularse."
                 )
             )
+
+        # El estado de sincronización ya está aplicado: recalcular
+        # los botones de la ventana de ramas con los datos finales
+        # (incluido Publicar rama local...).
+        self.actualizar_estado_botones_ventana_ramas()
 
     def procesar_resultado_pull(
         self,
@@ -6731,6 +7047,112 @@ class AplicacionGit:
                 "No se utilizó Push forzado.\n\n"
                 "La información de sincronización fue actualizada."
             )
+        )
+
+    def procesar_resultado_publicar_rama(
+        self,
+        ruta_repositorio,
+        remoto,
+        rama,
+        resultado_publicacion
+    ):
+        """
+        Actualiza la interfaz cuando termina la publicación de la
+        rama local.
+
+        Sin Fetch automático después del Push (ni exitoso ni
+        fallido): la sesión queda esperando un Fetch manual nuevo
+        antes del próximo Pull/Push, conforme al modelo de la
+        aplicación.
+        """
+
+        self.operacion_remota_en_curso = False
+
+        self.actualizar_controles_operacion_remota()
+
+        if ruta_repositorio != self.ruta_repositorio:
+            return
+
+        # La publicación realizó (o intentó) una consulta remota y
+        # un Push: la frescura de la información remota queda
+        # incierta y se exige un Fetch manual nuevo.
+        self.fetch_exitoso_en_sesion = False
+
+        padre = None
+
+        if (
+            self.ventana_ramas is not None
+            and self.ventana_ramas.winfo_exists()
+        ):
+            padre = self.ventana_ramas
+
+        if not resultado_publicacion.exitoso:
+            self.cargar_estado_sincronizacion_local()
+
+            self.actualizar_estado_botones_sincronizacion()
+
+            # Datos finales actualizados (fetch invalidado): el
+            # botón Publicar debe quedar deshabilitado de inmediato,
+            # no con el estado calculado al liberar la operación.
+            self.actualizar_estado_botones_ventana_ramas()
+
+            self.variable_estado.set(
+                "Publicación de rama no realizada."
+            )
+
+            self.variable_ultima_consulta.set(
+                (
+                    "Publicación no realizada. Ejecute Fetch "
+                    "nuevamente antes de Pull o Push."
+                )
+            )
+
+            detalle = (
+                resultado_publicacion.error
+                if resultado_publicacion.error
+                else resultado_publicacion.salida
+            )
+
+            messagebox.showerror(
+                "Publicación de rama no realizada",
+                detalle,
+                parent=padre
+            )
+
+            return
+
+        # Refresco LOCAL solamente: cierra las ventanas dependientes
+        # de la rama, recarga el estado con reinicio de Fetch y
+        # refresca la lista de ramas. La ventana de ramas permanece
+        # abierta.
+        self.refrescar_despues_de_ramas()
+
+        self.variable_estado.set(
+            f"Rama '{rama}' publicada en '{remoto}'."
+        )
+
+        self.variable_ultima_consulta.set(
+            (
+                "Publicación completada. Ejecute Fetch nuevamente "
+                "antes de Pull o Push."
+            )
+        )
+
+        messagebox.showinfo(
+            "Rama publicada",
+            (
+                f"Antes:\n"
+                f"{rama} era solamente local.\n\n"
+                f"Después:\n"
+                f"{rama} (local)\n"
+                f"    ↕ upstream\n"
+                f"{remoto}/{rama} (remota)\n\n"
+                "La rama quedó publicada y su upstream fue "
+                "configurado.\n\n"
+                "Para enviar commits futuros de esta rama utilice "
+                "Push normal."
+            ),
+            parent=padre
         )
 
     # =============================================================

@@ -2,6 +2,55 @@ import tkinter as tk
 from tkinter import ttk
 
 
+def calcular_posicion_ayuda(
+    ancla_x,
+    ancla_y,
+    ancla_y_arriba,
+    ancho,
+    alto,
+    pantalla_ancho,
+    pantalla_alto,
+    margen=8
+):
+    """
+    Calcula la posición final de una ayuda emergente para que
+    todo el tooltip quede dentro de la zona visible de la
+    pantalla.
+
+    ancla_x / ancla_y: posición normal de la ayuda (debajo del
+    control). ancla_y_arriba: coordenada Y justo encima del
+    control, base para recolocar la ayuda por arriba cuando no
+    cabe debajo.
+
+    Reglas:
+
+    - si la posición normal desborda por abajo, la ayuda se
+      coloca por encima del control;
+    - si desborda por la derecha, se desplaza hacia la izquierda;
+    - las coordenadas resultantes nunca son menores que margen.
+
+    Devuelve (x, y).
+    """
+
+    x = ancla_x
+
+    if x + ancho > pantalla_ancho - margen:
+        x = pantalla_ancho - margen - ancho
+
+    if x < margen:
+        x = margen
+
+    y = ancla_y
+
+    if y + alto > pantalla_alto - margen:
+        y = ancla_y_arriba - alto
+
+    if y < margen:
+        y = margen
+
+    return (x, y)
+
+
 class AyudaEmergente:
     """
     Muestra una pequeña ventana de ayuda cuando el mouse
@@ -50,7 +99,15 @@ class AyudaEmergente:
         self.identificador_after = None
 
     def mostrar(self):
-        """Muestra la ayuda debajo del control."""
+        """
+        Muestra la ayuda cerca del control sin salirse de la
+        pantalla.
+
+        La geometría se fija DESPUÉS de conocer el tamaño
+        requerido real del tooltip: si no cabe debajo del control
+        se recoloca por arriba y, si desborda lateralmente, se
+        desplaza hacia la izquierda.
+        """
 
         self.identificador_after = None
 
@@ -58,12 +115,13 @@ class AyudaEmergente:
             return
 
         try:
-            posicion_x = self.control.winfo_rootx() + 12
-            posicion_y = (
+            ancla_x = self.control.winfo_rootx() + 12
+            ancla_y = (
                 self.control.winfo_rooty()
                 + self.control.winfo_height()
                 + 8
             )
+            ancla_y_arriba = self.control.winfo_rooty() - 8
         except tk.TclError:
             return
 
@@ -74,10 +132,6 @@ class AyudaEmergente:
             self.ventana_ayuda.attributes("-topmost", True)
         except tk.TclError:
             pass
-
-        self.ventana_ayuda.wm_geometry(
-            f"+{posicion_x}+{posicion_y}"
-        )
 
         etiqueta = tk.Label(
             self.ventana_ayuda,
@@ -94,6 +148,25 @@ class AyudaEmergente:
         )
 
         etiqueta.pack()
+
+        # Actualizar las tareas pendientes para que el tamaño
+        # requerido del tooltip ya esté calculado antes de fijar
+        # su posición definitiva.
+        self.ventana_ayuda.update_idletasks()
+
+        posicion_x, posicion_y = calcular_posicion_ayuda(
+            ancla_x=ancla_x,
+            ancla_y=ancla_y,
+            ancla_y_arriba=ancla_y_arriba,
+            ancho=self.ventana_ayuda.winfo_reqwidth(),
+            alto=self.ventana_ayuda.winfo_reqheight(),
+            pantalla_ancho=self.control.winfo_screenwidth(),
+            pantalla_alto=self.control.winfo_screenheight()
+        )
+
+        self.ventana_ayuda.wm_geometry(
+            f"+{posicion_x}+{posicion_y}"
+        )
 
     def ocultar(self, _evento=None):
         """Oculta la ayuda."""
