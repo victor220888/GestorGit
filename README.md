@@ -195,12 +195,15 @@ Publicar rama local V1
 ```
 
 Implementada, validada manualmente en Windows (A–F, layout, texto y
-tooltips) y cerrada documentalmente. El commit local de cierre está
-pendiente de autorización; hasta entonces el HEAD sigue en:
+tooltips), cerrada documentalmente y con commit local creado:
 
 ```text
-4cd1ca5 Agrega leyenda contextual de estados Git V1
+7c603fd Agrega publicación segura de rama local V1
 ```
+
+El estado remoto no fue modificado al crear ese commit (`ahead 9` respecto
+de `origin/master`); Push queda pendiente de una decisión/autorización
+explícita.
 
 Suite del último cierre validado:
 
@@ -212,11 +215,19 @@ Suite del último cierre validado:
 
 ## Próximo paso
 
-La publicación segura de ramas locales ya está implementada y validada.
-El siguiente paso operativo es la revisión de staging y el commit local de
-la etapa (solo con autorización explícita; Push no autorizado). La evolución
-posterior prevista es avanzar hacia una visión de colaboración de equipo para
-desarrollo Oracle/PLSQL sin perder la filosofía de seguridad y comprensión.
+La publicación segura de ramas locales ya está implementada, validada y
+commiteada localmente. Push sigue pendiente de decisión/autorización
+explícita.
+
+Las operaciones Git productivas que GestorGit soporta sobre su propio
+repositorio (staging, commit, Fetch, Pull/Push seguros y ramas) se realizan
+por el usuario desde la propia aplicación, con auditoría de solo lectura de
+los agentes antes y después; los agentes no las sustituyen por CLI salvo
+excepción declarada de forma explícita.
+
+La evolución posterior prevista es avanzar hacia una visión de colaboración
+de equipo para desarrollo Oracle/PLSQL sin perder la filosofía de seguridad
+y comprensión.
 
 ## Arquitectura principal
 
@@ -325,7 +336,8 @@ ZCode / OpenCode / otros agentes compatibles:
 No leer `AGENTS.md` y `CLAUDE.md` a la vez por defecto.
 `METODO_TRABAJO_AGENTES.md` es documentación estable de coordinación y se
 consulta al incorporar un agente, cambiar el método o resolver una duda de
-coordinación.
+coordinación. La guía de onboarding para el propietario del proyecto
+(humano) es `GUIA_TRABAJO_CON_AGENTES.md`.
 
 ## Seguimiento de prompts
 

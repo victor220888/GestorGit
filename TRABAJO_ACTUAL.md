@@ -14,54 +14,34 @@ defecto.
 
 Antes de trabajar consultar Git real.
 
-Último HEAD informado al terminar GG-PROMPT-012 (cierre documental):
+HEAD conocido (creado por GG-PROMPT-015):
 
 ```text
-4cd1ca5 Agrega leyenda contextual de estados Git V1
+7c603fd Agrega publicación segura de rama local V1
 ```
 
-Rama informada:
-
-```text
-master
-```
-
-Relación conocida:
-
-```text
-ahead 8 respecto de origin/master
-```
-
-Staging informado: vacío.
-`.git/index.lock`: inexistente.
+Rama: `master`. Ahead conocido: 9 respecto de `origin/master`.
+Staging informado: vacío. `.git/index.lock`: inexistente.
 
 Estos datos son referencia; verificar de nuevo.
 
-## Etapa activa
+## Etapa
 
 ```text
-Publicar rama local V1 = CERRADA
+Publicar rama local V1 = CERRADA Y COMMIT LOCAL CREADO
+Push = NO autorizado
 ```
 
-Cierre documental: GG-PROMPT-012 (2026-08-21). Implementación,
-auditorías/microcorrecciones, pruebas automáticas, prueba manual
-A–F, retest visual de layout/texto y retest visual del tooltip:
-todo OK.
+GG-PROMPT-015 creó el commit local `7c603fd` con exactamente 12 archivos
+(3 de código, 4 de pruebas, 5 de documentación). Quedaron FUERA, sin
+versionar, los cuatro administrativos:
 
-Resumen del comportamiento cerrado:
-
-- publica únicamente la rama local ACTUAL;
-- requiere Fetch manual exitoso en la sesión;
-- bloquea si ya existe upstream o si la rama remota homónima ya
-  existe en el remoto;
-- consulta `ls-remote --heads` fresca justo antes del Push;
-- Push exacto con `--set-upstream` y una única ref de destino
-  (`<rama>:refs/heads/<rama>`);
-- nunca force / all / tags / mirror / delete;
-- después de éxito o de fallo exige un Fetch nuevo;
-- GUI no modal y trabajo remoto fuera del hilo Tkinter;
-- tooltips reposicionados dentro de la pantalla (corrección
-  general de `AyudaEmergente`).
+```text
+.zcode/
+CONTINUIDAD_CHATGPT.md
+seguimiento_prompts/
+GestorGit_plan_continuidad_y_modo_equipo.md
+```
 
 Pruebas finales de la etapa:
 
@@ -73,96 +53,76 @@ prueba manual A-F: OK
 retest visual final: OK
 ```
 
-No usar 426 como constante eterna: confirmar el total real cuando
-una tarea vuelva a ejecutar la suite.
+No usar 426 como constante eterna: confirmar el total real cuando una tarea
+vuelva a ejecutar la suite.
+
+## Decisión vigente de método (GG-PROMPT-016 = ACEPTADO)
+
+Desde ahora, las operaciones Git PRODUCTIVAS sobre GestorGit que la propia
+aplicación soporta (staging/unstaging, commit, Fetch, Pull seguro, Push
+seguro y operaciones de ramas soportadas) las ejecuta el USUARIO desde
+GestorGit:
 
 ```text
-siguiente paso = revisión de staging / commit local
-Push = NO autorizado
+agente/ChatGPT audita -> usuario ejecuta en GestorGit -> agente/ChatGPT audita
 ```
 
-La historia completa de la etapa (GG-PROMPT-003..011) vive en
-`seguimiento_prompts/` y en Git; no se duplica aquí.
+Los agentes no las ejecutan por CLI por defecto (excepción solo si el prompt
+la declara de forma explícita y, con escritura o red, con autorización
+expresa del usuario). Las consultas Git de solo lectura siguen siendo
+obligatorias.
 
-## Working tree esperado antes del commit
+## Bloque documental de método/onboarding (candidato al commit)
 
-Último `git status --short` informado por ZCode:
+GG-PROMPT-016 fue ACEPTADO por ChatGPT. La tarea directa del usuario
+(memoria del método + onboarding) fue revisada por ChatGPT y se consolida
+mediante GG-PROMPT-017-REV1 (mismo bloque).
+
+Candidato al futuro commit local: exactamente SEIS archivos versionables:
 
 ```text
- M AGENTS.md
- M CLAUDE.md
- M TRABAJO_ACTUAL.md
- M ayuda_interfaz.py
- M principal.py
- M pruebas/test_ayuda_tooltips_v1.py
- M pruebas/test_leyenda_estados_git.py
- M servicio_remoto_git.py
-?? .zcode/
-?? CONTINUIDAD_CHATGPT.md
-?? GestorGit_plan_continuidad_y_modo_equipo.md
-?? METODO_TRABAJO_AGENTES.md
-?? README.md
-?? pruebas/test_ayuda_emergente.py
-?? pruebas/test_publicar_rama_git.py
-?? seguimiento_prompts/
+AGENTS.md
+CLAUDE.md
+METODO_TRABAJO_AGENTES.md
+README.md
+TRABAJO_ACTUAL.md
+GUIA_TRABAJO_CON_AGENTES.md
 ```
 
-`AGENTS.md` y `CLAUDE.md` aparecen modificados por la compactación
-documental del orquestador: es ESPERABLE y no es una anomalía.
+Los cuatro administrativos conocidos siguen EXCLUIDOS:
 
-No interpretar estos cambios documentales como anomalía si coinciden con esta
-compactación.
+```text
+.zcode/
+CONTINUIDAD_CHATGPT.md
+seguimiento_prompts/
+GestorGit_plan_continuidad_y_modo_equipo.md
+```
 
-## Archivos funcionales acumulados de la etapa
+No hay staging todavía. Una vez que ChatGPT acepte GG-PROMPT-017-REV1, el
+cierre del bloque es:
 
-Cambios de implementación que se esperan antes del commit:
+```text
+usuario prepara exactamente los 6 documentos desde GestorGit
+        ↓
+auditoría de solo lectura del staged set
+        ↓
+usuario crea UN commit local desde GestorGit
+        ↓
+auditoría postcommit de solo lectura
+```
 
-- `servicio_remoto_git.py`
-- `principal.py`
-- `ayuda_interfaz.py`
-- `pruebas/test_publicar_rama_git.py`
-- `pruebas/test_ayuda_emergente.py`
-- `pruebas/test_ayuda_tooltips_v1.py`
-- `pruebas/test_leyenda_estados_git.py`
-- `TRABAJO_ACTUAL.md`
-
-Documentación estable candidata a incluir en el commit local de la
-etapa (esta clasificación NO autoriza staging por iniciativa del
-agente):
-
-- `AGENTS.md`
-- `CLAUDE.md`
-- `METODO_TRABAJO_AGENTES.md` (documentación estable de
-  coordinación: proceso, bitácora y política de tokens; se consulta
-  al incorporar un agente, cambiar el método o resolver una duda de
-  coordinación)
-
-Documentación de producto actualizada en el cierre y candidata a
-incluir en el commit local de la etapa:
-
-- `README.md` (menciona la funcionalidad visible
-  `Publicar rama local...`; sin staging por iniciativa del agente:
-  el commit requerirá autorización explícita del usuario)
-
-Administrativos/no versionar automáticamente:
-
-- `.zcode/`
-- `CONTINUIDAD_CHATGPT.md`
-- `seguimiento_prompts/`
-- `GestorGit_plan_continuidad_y_modo_equipo.md`
-
-No hacer staging de estos administrativos por iniciativa del agente.
+Push = NO autorizado.
 
 ## Reserva actual
 
-No hay un agente programador ejecutando una modificación en este momento.
+No hay un agente programador ejecutando una modificación de código.
 
-Siguiente trabajo previsto: prompt separado de COMMIT (revisión de
-staging + commit local solo con autorización explícita; Push NO
-autorizado).
+Siguiente trabajo previsto: auditoría de ChatGPT sobre GG-PROMPT-017-REV1
+y, una vez aceptada, cierre del bloque documental de 6 archivos desde
+GestorGit (ver la sección anterior). Push NO autorizado.
 
-Si después se abre una nueva tarea de código, el prompt deberá declarar sus
-archivos autorizados.
+Si se abre una nueva tarea de código, el prompt deberá declarar sus archivos
+autorizados.
 
 ## Deuda técnica fuera del alcance
 
@@ -170,13 +130,13 @@ Existen comprobaciones históricas en Push/Pull relacionadas con texto de
 conflicto. No tocarlas por iniciativa propia: la funcionalidad actual tiene
 otras defensas y cualquier corrección debe ser una tarea separada.
 
-## Seguridad durante el cierre
+## Seguridad
 
 Hasta autorización explícita:
 
-- no `git add`;
+- no `git add` ni staging por CLI;
 - no commit;
-- no Push;
+- no Fetch/Pull/Push;
 - no reset/clean;
 - no borrar locks;
 - no modificar remotos reales.

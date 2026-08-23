@@ -131,6 +131,25 @@ No ejecutar sobre GestorGit `git add`, staging, commit, Fetch, Pull o Push
 salvo autorización explícita de la tarea ACTUAL. Una autorización anterior
 no se hereda.
 
+## Operaciones Git productivas sobre GestorGit
+
+Las consultas Git de SOLO LECTURA siguen siendo obligatorias para verificar
+el estado real.
+
+Para las operaciones Git PRODUCTIVAS sobre el repositorio de GestorGit que la
+propia aplicación ya soporta (staging/unstaging, commit, Fetch, Pull seguro,
+Push seguro y operaciones de ramas soportadas), el flujo normal es:
+
+```text
+agente/ChatGPT audita -> usuario ejecuta en GestorGit -> agente/ChatGPT audita
+```
+
+Claude Code NO ejecuta esas operaciones por CLI por defecto. Una excepción
+(recuperación, diagnóstico u operación todavía no soportada por GestorGit)
+debe declararse de forma explícita en el prompt y, cuando implique una acción
+Git de escritura o remota, requerir autorización expresa del usuario.
+Esta regla no limita los comandos Git de solo lectura usados para auditoría.
+
 ## Reglas funcionales que no deben degradarse
 
 - Pull únicamente con `--ff-only`.

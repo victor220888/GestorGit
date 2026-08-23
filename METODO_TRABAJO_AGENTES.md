@@ -74,6 +74,8 @@ Git conserva además la historia versionada del proyecto.
 - decide objetivos y prioridades;
 - guarda los archivos descargables;
 - ejecuta pruebas manuales/visuales;
+- ejecuta desde GestorGit las operaciones Git productivas que la
+  aplicación soporta;
 - autoriza staging, commit y Push;
 - trae informes de agentes a ChatGPT.
 
@@ -88,7 +90,9 @@ Git conserva además la historia versionada del proyecto.
 ### Agente programador
 
 - lee su archivo de configuración + `TRABAJO_ACTUAL.md`;
-- revisa Git real;
+- revisa Git real (auditoría de solo lectura);
+- no sustituye a GestorGit por CLI en operaciones productivas soportadas,
+  salvo excepción declarada de forma explícita en el prompt;
 - ejecuta solo el alcance del prompt;
 - prueba;
 - informa;
@@ -115,10 +119,84 @@ prueba manual si corresponde
         ↓
 cierre documental
         ↓
-staging/commit solo con autorización
+operación Git productiva soportada por GestorGit:
+agente/ChatGPT audita
+        ↓
+usuario ejecuta en GestorGit (solo con autorización cuando aplique)
+        ↓
+agente/ChatGPT audita
 ```
 
+Las operaciones productivas no soportadas por GestorGit, o las excepciones
+por recuperación/diagnóstico, se declaran de forma explícita en el prompt y
+requieren autorización expresa del usuario cuando implican escritura o red.
+
 Un informe del agente no significa “tarea aceptada” hasta la auditoría.
+
+## Patrón de ciclo de vida de una etapa
+
+Patrón validado en la práctica (GG-PROMPT-001..016, etapa Publicar rama
+local V1):
+
+```text
+incorporación del agente (solo lectura, sin reservas, informe de reconstrucción)
+        ↓
+análisis de la etapa futura (sin implementar nada)
+        ↓
+implementación con prompt: decisiones YA aprobadas, archivos autorizados
+explícitos, comandos productivos exactos, pruebas enumeradas, prohibiciones
+        ↓
+ADDENDUM/REV del prompt si hace falta (PREVALECE sobre el prompt base)
+        ↓
+auditoría de ChatGPT → microcorrecciones mínimas (funcionales, visuales,
+de estado GUI, pedagógicas o documentales), cada una con alcance propio
+        ↓
+prueba manual del usuario (batería funcional + retests visuales cortos;
+el agente nunca ejecuta la GUI contra el repositorio real)
+        ↓
+cierre documental (TRABAJO_ACTUAL compacto; README solo si está desactualizado)
+        ↓
+microcorrección documental precommit si la auditoría la pide
+        ↓
+cierre del bloque documental:
+auditoría pre-operación de solo lectura
+        ↓
+autorización explícita del usuario cuando aplique
+        ↓
+usuario ejecuta staging selectivo desde GestorGit (lista exacta)
+        ↓
+auditoría de solo lectura del staged set
+        ↓
+usuario crea UN commit local desde GestorGit
+        ↓
+auditoría postcommit de solo lectura
+        ↓
+cierre documental postcommit (+ registro de cambios de método estables)
+```
+
+Invariantes que no se negocian:
+
+- Git real manda sobre cualquier documento.
+- Toda autorización es explícita, textual y NO se hereda entre tareas.
+- Archivos autorizados/prohibidos declarados por tarea; reserva visible en
+  `TRABAJO_ACTUAL.md` cuando corresponda. Si surge la necesidad de tocar
+  un archivo no autorizado: DETENERSE y ampliar explícitamente el alcance
+  ANTES de modificarlo; nunca se autoriza ni registra retrospectivamente
+  una modificación no autorizada.
+- Nunca `git add .` ni `git add -A`; el conjunto preparado se verifica
+  exacto (sin faltantes ni extras) ANTES del commit.
+- Contradicción material con Git o con el prompt: detenerse y reportar;
+  no improvisar ni “arreglar” el estado por iniciativa propia.
+- Cambio funcional: pruebas focalizadas + suite completa. Microcorrección:
+  focalizadas. Tarea documental: comprobaciones de diff, sin suite.
+- Los avisos CR-at-EOL históricos se documentan; no se normalizan archivos
+  para silenciarlos.
+- Desde GG-PROMPT-016, las operaciones Git productivas soportadas las
+  ejecuta el usuario desde GestorGit; los agentes auditan antes/después
+  (solo lectura) y no las sustituyen por CLI salvo excepción declarada.
+
+Guía de onboarding para el propietario del proyecto (humano):
+`GUIA_TRABAJO_CON_AGENTES.md`.
 
 ## Bitácora
 
