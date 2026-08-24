@@ -14,36 +14,41 @@ defecto.
 
 Antes de trabajar consultar Git real.
 
-HEAD conocido (creado por GG-PROMPT-015):
+Commit auditado que cerró el bloque documental de método/onboarding:
 
 ```text
-7c603fd Agrega publicación segura de rama local V1
+89e5672 Documenta método y onboarding de agentes
 ```
 
-Rama: `master`. Ahead conocido: 9 respecto de `origin/master`.
-Staging informado: vacío. `.git/index.lock`: inexistente.
+`89e5672` identifica ese cierre auditado; NO es una constante: después de
+commits futuros el HEAD real se consulta con `git log`, nunca se asume.
 
-Estos datos son referencia; verificar de nuevo.
+Snapshot observado en la auditoría de GG-PROMPT-019:
+
+```text
+rama: master
+ahead: 10 respecto de origin/master
+staging: vacío
+working tree versionado: limpio
+.git/index.lock: inexistente
+```
+
+Estos datos son referencia; verificar de nuevo en cada tarea.
 
 ## Etapa
 
 ```text
-Publicar rama local V1 = CERRADA Y COMMIT LOCAL CREADO
+Publicar rama local V1 = CERRADA (commit funcional 7c603fd, auditado)
+Bloque método/onboarding = CERRADO Y AUDITADO (commit 89e5672)
 Push = NO autorizado
 ```
 
-GG-PROMPT-015 creó el commit local `7c603fd` con exactamente 12 archivos
-(3 de código, 4 de pruebas, 5 de documentación). Quedaron FUERA, sin
-versionar, los cuatro administrativos:
+GG-PROMPT-015 creó `7c603fd` con exactamente 12 archivos (3 de código, 4 de
+pruebas, 5 de documentación). GG-PROMPT-018 auditó el staged set y
+GG-PROMPT-019 auditó el commit `89e5672` (exactamente 6 documentos de
+método/onboarding); ambas auditorías aceptadas por ChatGPT.
 
-```text
-.zcode/
-CONTINUIDAD_CHATGPT.md
-seguimiento_prompts/
-GestorGit_plan_continuidad_y_modo_equipo.md
-```
-
-Pruebas finales de la etapa:
+Pruebas finales de la etapa funcional:
 
 ```text
 test_publicar_rama_git.py: 70 OK
@@ -58,10 +63,9 @@ vuelva a ejecutar la suite.
 
 ## Decisión vigente de método (GG-PROMPT-016 = ACEPTADO)
 
-Desde ahora, las operaciones Git PRODUCTIVAS sobre GestorGit que la propia
-aplicación soporta (staging/unstaging, commit, Fetch, Pull seguro, Push
-seguro y operaciones de ramas soportadas) las ejecuta el USUARIO desde
-GestorGit:
+Las operaciones Git PRODUCTIVAS sobre GestorGit que la propia aplicación
+soporta (staging/unstaging, commit, Fetch, Pull seguro, Push seguro y
+operaciones de ramas soportadas) las ejecuta el USUARIO desde GestorGit:
 
 ```text
 agente/ChatGPT audita -> usuario ejecuta en GestorGit -> agente/ChatGPT audita
@@ -72,24 +76,7 @@ la declara de forma explícita y, con escritura o red, con autorización
 expresa del usuario). Las consultas Git de solo lectura siguen siendo
 obligatorias.
 
-## Bloque documental de método/onboarding (candidato al commit)
-
-GG-PROMPT-016 fue ACEPTADO por ChatGPT. La tarea directa del usuario
-(memoria del método + onboarding) fue revisada por ChatGPT y se consolida
-mediante GG-PROMPT-017-REV1 (mismo bloque).
-
-Candidato al futuro commit local: exactamente SEIS archivos versionables:
-
-```text
-AGENTS.md
-CLAUDE.md
-METODO_TRABAJO_AGENTES.md
-README.md
-TRABAJO_ACTUAL.md
-GUIA_TRABAJO_CON_AGENTES.md
-```
-
-Los cuatro administrativos conocidos siguen EXCLUIDOS:
+## Administrativos fuera del versionado
 
 ```text
 .zcode/
@@ -98,28 +85,13 @@ seguimiento_prompts/
 GestorGit_plan_continuidad_y_modo_equipo.md
 ```
 
-No hay staging todavía. Una vez que ChatGPT acepte GG-PROMPT-017-REV1, el
-cierre del bloque es:
-
-```text
-usuario prepara exactamente los 6 documentos desde GestorGit
-        ↓
-auditoría de solo lectura del staged set
-        ↓
-usuario crea UN commit local desde GestorGit
-        ↓
-auditoría postcommit de solo lectura
-```
-
-Push = NO autorizado.
-
 ## Reserva actual
 
-No hay un agente programador ejecutando una modificación de código.
+No hay tarea de código activa.
 
-Siguiente trabajo previsto: auditoría de ChatGPT sobre GG-PROMPT-017-REV1
-y, una vez aceptada, cierre del bloque documental de 6 archivos desde
-GestorGit (ver la sección anterior). Push NO autorizado.
+Push sigue NO autorizado. El próximo trabajo funcional o la eventual
+publicación remota se decidirán con una tarea/autorización nueva; no iniciar
+ninguna de esas acciones por iniciativa propia.
 
 Si se abre una nueva tarea de código, el prompt deberá declarar sus archivos
 autorizados.
@@ -140,6 +112,3 @@ Hasta autorización explícita:
 - no reset/clean;
 - no borrar locks;
 - no modificar remotos reales.
-
-El repositorio temporal de las pruebas ya no es necesario para el cierre y
-puede eliminarse manualmente cuando el usuario quiera.

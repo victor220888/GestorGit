@@ -10,7 +10,7 @@ No sustituye a los otros documentos: es la puerta de entrada humana.
 
 ```text
 este archivo          -> onboarding humano (usted está aquí)
-AGENTS.md             -> reglas del agente ZCode/OpenCode (se carga sola)
+AGENTS.md             -> reglas del agente ZCode/OpenCode/Autoclaw (se carga sola)
 CLAUDE.md             -> reglas del agente Claude Code
 TRABAJO_ACTUAL.md     -> estado dinámico del trabajo (leer SIEMPRE)
 METODO_TRABAJO_AGENTES.md -> método extendido de coordinación
@@ -31,8 +31,8 @@ destructivo.
 | Actor | Rol |
 |---|---|
 | Propietario (usted) | decide prioridades, ejecuta pruebas manuales, ejecuta las operaciones Git productivas desde GestorGit y autoriza staging/commit/Push |
-| ChatGPT | orquestador: diseña los prompts (GG-PROMPT-XXX), audita resultados y genera los documentos de resultado |
-| Agente programador (ZCode, Claude Code, OpenCode) | implementa SOLO el alcance autorizado de cada prompt, valida, informa compacto y se detiene |
+| ChatGPT | orquestador: prepara el prompt y las indicaciones para ZCode, audita el informe del agente y genera el documento de resultado |
+| Agente programador (ZCode, Claude Code, OpenCode, Autoclaw) | implementa SOLO el alcance autorizado de cada prompt, valida, informa compacto y se detiene |
 
 Solo un agente programador modifica el repositorio a la vez.
 
@@ -101,6 +101,78 @@ Para tareas sin prompt formal, indique al menos: objetivo, archivos
 autorizados, archivos prohibidos, validaciones esperadas y que se detenga
 al informar. El agente debe leer `TRABAJO_ACTUAL.md` y verificar Git real
 antes de tocar nada.
+
+## Archivos obligatorios de cada GG-PROMPT
+
+Cada tarea formal `GG-PROMPT-XXX` debe quedar documentada con **tres archivos**
+dentro de la carpeta propia de esa tarea en `seguimiento_prompts/`:
+
+```text
+GG-PROMPT-XXX.md
+INDICACIONES_ZCODE_GG-PROMPT-XXX.md
+GG-PROMPT-XXX-RESULTADO.md
+```
+
+El flujo obligatorio es:
+
+1. ChatGPT prepara `GG-PROMPT-XXX.md` con el alcance completo de la tarea.
+2. ChatGPT prepara `INDICACIONES_ZCODE_GG-PROMPT-XXX.md` con la instrucción
+   breve que el propietario entrega al agente.
+3. El propietario entrega ambos archivos a ZCode/agente y recibe su informe.
+4. El propietario trae ese informe a ChatGPT.
+5. ChatGPT audita el informe y **solo después de aceptarlo o rechazarlo** genera
+   `GG-PROMPT-XXX-RESULTADO.md`.
+6. El propietario guarda el resultado junto al prompt y las indicaciones.
+7. Solo entonces se decide y prepara el siguiente `GG-PROMPT`.
+
+El archivo `-RESULTADO.md` no se sustituye por el informe del agente: contiene
+el veredicto auditado de ChatGPT y forma parte obligatoria de la historia de la
+tarea. Si existe una `REV`/`ADDENDUM`, debe conservarse también junto con los
+archivos de la tarea correspondiente.
+
+## Organización física de `seguimiento_prompts/`
+
+El propietario mantiene la bitácora organizada físicamente **por carpetas**, una
+por ID/tarea. La convención observada y vigente es:
+
+```text
+seguimiento_prompts/
+├── 001_incorporacion_zcode/
+├── 002_analisis_publicar_rama_local/
+├── 003_implementacion_publicar_rama_local/
+├── ...
+├── 020_cierre_dinamico_postcommit/
+├── 021_auditoria_staging_cierre_dinamico/
+├── archivo/
+└── README.md
+```
+
+Reglas de organización:
+
+- cada ID numérico conserva su propia carpeta `NNN_descripcion_corta/`;
+- el prompt, las indicaciones para ZCode y el resultado auditado se guardan dentro
+  de esa carpeta, no sueltos en la raíz de `seguimiento_prompts/`;
+- una `REV`/`ADDENDUM` del mismo ID se conserva en **la misma carpeta** del ID
+  original, junto al archivo sustituido/obsoleto;
+- un prompt obsoleto **no se borra**: queda en su carpeta como histórico;
+- `seguimiento_prompts/README.md` permanece en la raíz como índice vivo y se
+  reemplaza por su versión más reciente;
+- `archivo/` y otros documentos administrativos/históricos de apoyo pueden quedar
+  en la raíz cuando no pertenecen a un único GG-PROMPT.
+
+Ejemplo para la situación actual:
+
+```text
+seguimiento_prompts/021_auditoria_staging_cierre_dinamico/
+├── GG-PROMPT-021.md                         # OBSOLETO — NO EJECUTADO
+├── INDICACIONES_ZCODE_GG-PROMPT-021.md
+├── GG-PROMPT-021-REV1.md                    # versión vigente
+├── INDICACIONES_ZCODE_GG-PROMPT-021-REV1.md
+└── GG-PROMPT-021-REV1-RESULTADO.md          # se crea solo tras auditoría ChatGPT
+```
+
+Esta estructura física es parte de la continuidad del proyecto: una sesión futura
+debe respetarla al generar archivos nuevos.
 
 ## Comandos habituales
 
