@@ -10,7 +10,9 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from modelos_configuracion import ConfiguracionModoEquipo
 from servicio_configuracion import ServicioConfiguracion
 from servicio_git import ServicioGit
 
@@ -167,26 +169,41 @@ class TestConfiguracion(unittest.TestCase):
         self.assertFalse(resultado.exitoso)
         self.assertEqual(resultado.ruta_repositorio, "")
 
-    def test_guardar_configuracion_solo_escribe_ruta_repositorio(self):
+    def test_guardar_ultimo_repositorio_preserva_claves(self):
         """
-        La escritura siempre debe conservar únicamente
-        la clave ruta_repositorio.
+        guardar_ultimo_repositorio actualiza ruta_repositorio,
+        preserva las claves conocidas de Modo Equipo y preserva
+        una clave desconocida segura. El servicio no agrega
+        secretos por si mismo.
         """
 
-        repositorio = self._crear_repositorio_git()
-
-        self._escribir_configuracion({
-            "ruta_repositorio": str(repositorio),
-            "token": "secreto"
-        })
-
-        resultado_guardado = (
-            self.servicio.guardar_ultimo_repositorio(
-                str(repositorio)
-            )
+        repositorio_inicial = self._crear_repositorio_git(
+            nombre="inicial"
+        )
+        repositorio_nuevo = self._crear_repositorio_git(
+            nombre="nuevo"
         )
 
-        self.assertTrue(resultado_guardado.exitoso)
+        self._escribir_configuracion({
+            "ruta_repositorio": str(repositorio_inicial),
+            "modo_equipo_habilitado": True,
+            "backend_reservas_url": (
+                "https://ejemplo.com/reservas.git"
+            ),
+            "alias_equipo": "mi-equipo",
+            "ttl_reservas_segundos": 1800,
+            "renovacion_reservas_segundos": 600,
+            "margen_minimo_reserva_segundos": 300,
+            "frescura_reservas_segundos": 60,
+            "margen_gracia_vencimiento_segundos": 600,
+            "campo_futuro": {"version": 2}
+        })
+
+        resultado = self.servicio.guardar_ultimo_repositorio(
+            str(repositorio_nuevo)
+        )
+
+        self.assertTrue(resultado.exitoso)
 
         datos = json.loads(
             self.servicio.ruta_configuracion.read_text(
@@ -195,13 +212,19 @@ class TestConfiguracion(unittest.TestCase):
         )
 
         self.assertEqual(
-            set(datos.keys()),
-            {"ruta_repositorio"}
-        )
-
-        self.assertEqual(
             Path(datos["ruta_repositorio"]).resolve(),
-            repositorio.resolve()
+            repositorio_nuevo.resolve()
+        )
+        self.assertTrue(datos["modo_equipo_habilitado"])
+        self.assertEqual(
+            datos["backend_reservas_url"],
+            "https://ejemplo.com/reservas.git"
+        )
+        self.assertEqual(datos["alias_equipo"], "mi-equipo")
+        self.assertEqual(datos["ttl_reservas_segundos"], 1800)
+        self.assertEqual(
+            datos["campo_futuro"],
+            {"version": 2}
         )
 
         for clave in (
@@ -210,7 +233,8 @@ class TestConfiguracion(unittest.TestCase):
             "password",
             "usuario",
             "remoto",
-            "correo"
+            "correo",
+            "email"
         ):
             self.assertNotIn(clave, datos)
 
@@ -262,6 +286,127 @@ class TestConfiguracion(unittest.TestCase):
         resultado = self.servicio.cargar_ultimo_repositorio()
 
         self.assertFalse(resultado.exitoso)
+        self.assertEqual(resultado.ruta_repositorio, "")
+
+    def test_cargar_configuracion_rechaza_ruta_null(self):
+        """
+        Una ruta_repositorio null (clave presente pero con valor
+        invalido) debe fallar de forma controlada: la clave
+        ausente es valida, pero null explicito no lo es.
+        """
+
+        self._escribir_configuracion({
+            "ruta_repositorio": None
+        })
+
+        resultado = self.servicio.cargar_ultimo_repositorio()
+
+        self.assertFalse(resultado.exitoso)
+        self.assertEqual(resultado.ruta_repositorio, "")
+
+    def test_cargar_config_solo_modo_equipo_sin_ruta_repositorio(self):
+        """
+        Un config.json valido de Modo Equipo sin la clave
+        ruta_repositorio debe cargar como exitoso con ruta
+        vacia: la clave es opcional y su ausencia representa
+        que todavia no hay repositorio recordado.
+        """
+
+        self._escribir_configuracion({
+            "modo_equipo_habilitado": True,
+            "backend_reservas_url": (
+                "https://ejemplo.com/reservas.git"
+            ),
+            "alias_equipo": "equipo",
+            "ttl_reservas_segundos": 1800,
+            "renovacion_reservas_segundos": 600,
+            "margen_minimo_reserva_segundos": 300,
+            "frescura_reservas_segundos": 60,
+            "margen_gracia_vencimiento_segundos": 600
+        })
+
+        resultado = self.servicio.cargar_ultimo_repositorio()
+
+        self.assertTrue(resultado.exitoso)
+        self.assertEqual(resultado.ruta_repositorio, "")
+        self.assertTrue(resultado.mensaje)
+
+    def test_guardar_equipo_sobre_config_inexistente_luego_cargar_repositorio(self):
+        """
+        Guardar configuracion de Modo Equipo sin config.json
+        previo y despues cargar el ultimo repositorio debe ser
+        exitoso con ruta vacia: el archivo creado sin
+        ruta_repositorio sigue siendo un estado valido.
+        """
+
+        resultado_guardado = (
+            self.servicio.guardar_configuracion_modo_equipo(
+                ConfiguracionModoEquipo()
+            )
+        )
+
+        self.assertTrue(resultado_guardado.exitoso)
+
+        resultado = self.servicio.cargar_ultimo_repositorio()
+
+        self.assertTrue(resultado.exitoso)
+        self.assertEqual(resultado.ruta_repositorio, "")
+
+    def test_cargar_configuracion_error_inspeccion_oserror(self):
+        """
+        Si la inspeccion de la ruta de config.json lanza OSError
+        (por ejemplo una ruta demasiado larga), el resultado es
+        un error controlado: la excepcion no debe escapar hacia
+        la GUI.
+        """
+
+        with mock.patch.object(
+            Path,
+            "exists",
+            side_effect=OSError("simulado")
+        ):
+            resultado = self.servicio.cargar_ultimo_repositorio()
+
+        self.assertFalse(resultado.exitoso)
+        self.assertTrue(resultado.error)
+        self.assertEqual(resultado.ruta_repositorio, "")
+
+    def test_cargar_configuracion_error_inspeccion_valueerror(self):
+        """
+        Si la inspeccion de la ruta de config.json lanza
+        ValueError, el resultado es un error controlado sin
+        excepcion propagada.
+        """
+
+        with mock.patch.object(
+            Path,
+            "exists",
+            side_effect=ValueError("simulado")
+        ):
+            resultado = self.servicio.cargar_ultimo_repositorio()
+
+        self.assertFalse(resultado.exitoso)
+        self.assertTrue(resultado.error)
+        self.assertEqual(resultado.ruta_repositorio, "")
+
+    def test_cargar_configuracion_read_text_valueerror_controlado(self):
+        """
+        Si config.json existe pero Path.read_text() lanza
+        ValueError, el resultado es un error controlado:
+        la excepcion no debe escapar hacia la GUI.
+        """
+
+        self._escribir_configuracion({"ruta_repositorio": ""})
+
+        with mock.patch.object(
+            Path,
+            "read_text",
+            side_effect=ValueError("simulado-read")
+        ):
+            resultado = self.servicio.cargar_ultimo_repositorio()
+
+        self.assertFalse(resultado.exitoso)
+        self.assertTrue(resultado.error)
         self.assertEqual(resultado.ruta_repositorio, "")
 
 
