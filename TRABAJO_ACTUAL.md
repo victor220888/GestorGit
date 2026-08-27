@@ -14,43 +14,33 @@ defecto.
 
 Git real manda siempre.
 
-Último HEAD observado durante la auditoría final de GG-PROMPT-027-REV2:
+Último HEAD observado durante el cierre documental postcommit (GG-PROMPT-034):
 
 ```text
-f4ac293 Cierra estado postcommit y actualiza onboarding de agentes
+971dbd4 Agrega base de reservas de Modo Equipo Oracle V1
 ```
 
 Snapshot auditado:
 
 ```text
-rama: master
-ahead: 11 respecto de origin/master
-staging: vacío
+HEAD observado -> 971dbd4 Agrega base de reservas de Modo Equipo Oracle V1
+rama -> master
+staging -> vacío
 .git/index.lock: inexistente
-Push: NO autorizado
+Push -> NO autorizado
 ```
 
-Cambios de implementación actualmente no comprometidos (Bloques A+B+C):
+Cierre Git A+B+C:
 
 ```text
- M modelos_configuracion.py
- M servicio_configuracion.py
- M pruebas/test_configuracion.py
-
-?? modelos_reservas.py
-?? servicio_manifiesto_proyecto.py
-?? servicio_objetos_oracle.py
-?? pruebas/test_modelos_reservas.py
-?? pruebas/test_servicio_manifiesto_proyecto.py
-?? pruebas/test_servicio_objetos_oracle.py
-
-?? servicio_identidad_equipo.py
-?? pruebas/test_servicio_identidad_equipo.py
-?? pruebas/test_configuracion_modo_equipo.py
-
-?? modelos_backend_reservas.py
-?? servicio_backend_reservas.py
-?? pruebas/test_servicio_backend_reservas.py
+commit -> 971dbd4 Agrega base de reservas de Modo Equipo Oracle V1
+padre -> f4ac293
+rutas en commit -> 16/16 exactas
+staging postcommit -> vacío
+working tree funcional -> limpio
+GG-PROMPT-031 -> auditoría pre-staging A+B+C ACEPTADA
+GG-PROMPT-032 -> staged set exacto ACEPTADO
+GG-PROMPT-033 -> auditoría postcommit ACEPTADA
 ```
 
 Estos datos son un snapshot; verificar Git de nuevo al iniciar cada tarea.
@@ -61,9 +51,9 @@ Estos datos son un snapshot; verificar Git de nuevo al iniciar cada tarea.
 Publicar rama local V1 -> CERRADA
 Método/onboarding -> CERRADO Y AUDITADO
 Modo Equipo Oracle V1 / arquitectura -> CERRADA Y APROBADA
-Bloque A -> CERRADO
-Bloque B -> CERRADO
-Bloque C -> CERRADO TÉCNICAMENTE
+Bloque A -> CERRADO Y COMMITTEADO
+Bloque B -> CERRADO Y COMMITTEADO
+Bloque C -> CERRADO Y COMMITTEADO
 Bloque D -> NO INICIADO
 Push -> NO autorizado
 ```
@@ -77,9 +67,14 @@ GG-PROMPT-026-REV2 -> Bloque B cerrado
 GG-PROMPT-027-REV2 -> Bloque C cerrado técnicamente
 GG-PROMPT-028 -> cierre documental POST-027 aceptado
 GG-PROMPT-029 -> auditoría de evidencias 026-REV2 aceptada
+GG-PROMPT-030 -> cierre documental recuperación 026 aceptado
+GG-PROMPT-031 -> auditoría pre-staging A+B+C ACEPTADA
+GG-PROMPT-032 -> staged set exacto A+B+C ACEPTADO
+GG-PROMPT-033 -> auditoría postcommit A+B+C ACEPTADA
+commit -> 971dbd4 Agrega base de reservas de Modo Equipo Oracle V1
 ```
 
-Los Bloques A+B+C continúan SIN COMMIT mientras Git lo confirme.
+A+B+C CERRADOS Y COMMITTEADOS en 971dbd4.
 
 ## Resultado final Bloque B (resumen)
 
@@ -107,19 +102,21 @@ ruta dentro de la base (H1), consulta fail-safe de remotes sin ambigüedad
 `git remote get-url --push --all origin` == [backend_reservas_url] (H3).
 Cero red, cero Git global/system, cero dependencia de ServicioGit.
 
-## Evidencia auditada del cierre 027
+## Evidencia técnica del commit A+B+C (971dbd4)
 
-Registrada del resultado auditado `GG-PROMPT-027-REV2-RESULTADO.md` (no
-re-ejecutada por este cierre documental):
+Última validación real aplicable al contenido del commit, ejecutada en
+GG-PROMPT-031 sobre el mismo árbol (sin cambios de contenido posteriores):
 
 ```text
-focal Bloque C -> 56/56 OK
-regresión A    -> 148/148 OK
-regresión B    -> 106/106 OK
+py_compile A+B+C -> OK
+Bloque A -> 148/148 OK
+Bloque B -> 106/106 OK
+Bloque C -> 56/56 OK
 suite completa -> 728/728 OK
-py_compile     -> OK
-git diff --check -> OK
-H1/H2/H3       -> ACEPTADOS
+```
+
+No son constantes eternas: confirmar la suite real en cada nueva
+implementación.
 
 ## Evidencia histórica diferenciada
 
@@ -169,14 +166,15 @@ GestorGit_plan_continuidad_y_modo_equipo.md
 ## Próximo paso
 
 ```text
-AUDITORÍA PRE-STAGING A+B+C
+CIERRE GIT DOCUMENTAL POSTCOMMIT DE TRABAJO_ACTUAL.md
 ```
 
-Siguiente operación: auditoría previa de solo lectura del conjunto
-A+B+C antes de cualquier cierre Git. Bloque D sigue NO INICIADO y no
-se anuncia todavía un ID funcional para él. Staging/commit solo con
-autorización expresa del propietario y ejecutados por el propietario
-desde GestorGit.
+Antes de iniciar Bloque D debe cerrarse/versionarse este cambio
+documental postcommit (TRABAJO_ACTUAL.md + índice vivo) en un commit
+local del propietario. Bloque D sigue NO INICIADO y no se anuncia
+todavía un ID funcional para él. Staging/commit solo con autorización
+expresa del propietario y ejecutados por el propietario desde
+GestorGit.
 
 ## Seguridad
 
