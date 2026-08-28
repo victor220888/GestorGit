@@ -14,16 +14,16 @@ defecto.
 
 Git real manda siempre.
 
-Último HEAD observado durante el cierre documental postcommit (GG-PROMPT-034):
+Último HEAD observado durante GG-PROMPT-036-REV3:
 
 ```text
-971dbd4 Agrega base de reservas de Modo Equipo Oracle V1
+c3d5903 Actualiza estado postcommit de Modo Equipo Oracle
 ```
 
 Snapshot auditado:
 
 ```text
-HEAD observado -> 971dbd4 Agrega base de reservas de Modo Equipo Oracle V1
+HEAD base observado -> c3d5903 Actualiza estado postcommit de Modo Equipo Oracle
 rama -> master
 staging -> vacío
 .git/index.lock: inexistente
@@ -54,7 +54,7 @@ Modo Equipo Oracle V1 / arquitectura -> CERRADA Y APROBADA
 Bloque A -> CERRADO Y COMMITTEADO
 Bloque B -> CERRADO Y COMMITTEADO
 Bloque C -> CERRADO Y COMMITTEADO
-Bloque D -> NO INICIADO
+Bloque D -> IMPLEMENTADO, PENDIENTE DE AUDITORÍA CHATGPT
 Push -> NO autorizado
 ```
 
@@ -101,6 +101,68 @@ ruta dentro de la base (H1), consulta fail-safe de remotes sin ambigüedad
 (H2) y unicidad efectiva del destino de Push con
 `git remote get-url --push --all origin` == [backend_reservas_url] (H3).
 Cero red, cero Git global/system, cero dependencia de ServicioGit.
+
+## Resultado Bloque D (resumen, PENDIENTE DE AUDITORÍA CHATGPT)
+
+Implementado sobre el working tree (SIN commit; HEAD base c3d5903).
+
+Archivos del Bloque D:
+
+```text
+creados -> servicio_remoto_reservas.py
+           servicio_reservas.py
+           pruebas/test_servicio_remoto_reservas.py
+           pruebas/test_servicio_reservas.py
+modificados -> modelos_reservas.py
+               pruebas/test_modelos_reservas.py
+               METODO_TRABAJO_AGENTES.md (ADDENDUM-1)
+               GUIA_TRABAJO_CON_AGENTES.md (ADDENDUM-1)
+```
+
+APIs principales:
+
+```text
+modelos_reservas: ClasificacionReservaObservada,
+    EstadoReservaPersistido, ReservaPayloadV1, validar_payload_reserva,
+    calcular_ref_reserva (sha256(project_uuid + "\0" + clave),
+    sin truncar), parsear/formatear_timestamp_utc (RFC3339 V1 exacto)
+ServicioRemotoReservas: fetch_reservas (refspec V1), leer_head_reserva,
+    crear_commit_reserva (validación fail-safe ANTES de hash-object),
+    publicar_reserva (Push normal, sin force)
+ServicioReservas: consultar_reserva, reservar, renovar, liberar,
+    tomar_vencida (las cuatro con operation_id opcional e
+    idempotencia), validar_reserva_propia_fresca (100% local),
+    debe_renovar; CoordinadorOperacionesRed (mutex atómico
+    threading.Lock)
+```
+
+Correcciones REV3 aplicadas sobre el trabajo heredado: fórmula SHA-256
+exacta con separador NUL, TTL reutilizado de modelos_configuracion
+(sin 1800 mágico), validación fail-safe del payload antes del primer
+comando Git de escritura, mutex con concurrencia real (hilos +
+Barrier), idempotencia por operation_id reconocida en reintentos de
+las cuatro operaciones (payload incompatible -> NO_VERIFICABLE),
+aislamiento Git de tests desde antes del primer git init
+(GIT_CONFIG_GLOBAL temporal + GIT_CONFIG_NOSYSTEM=1), RFC3339
+estricto y docstring de modelos actualizado.
+
+Validaciones ejecutadas (totales reales):
+
+```text
+py_compile focalizado -> OK
+focal modelos -> 59/59 OK
+focal remoto -> 35/35 OK
+focal máquina/mutex -> 49/49 OK
+focal D conjunta -> 143/143 OK
+regresión A -> 182/182 OK
+regresión B -> 106/106 OK
+regresión C -> 56/56 OK
+suite completa -> 846/846 OK
+git diff --check / --cached --check -> limpios
+staging -> vacío
+```
+
+Pruebas del Bloque D: 118 nuevas (728 previas + 118 = 846).
 
 ## Evidencia técnica del commit A+B+C (971dbd4)
 
@@ -166,15 +228,15 @@ GestorGit_plan_continuidad_y_modo_equipo.md
 ## Próximo paso
 
 ```text
-CIERRE GIT DOCUMENTAL POSTCOMMIT DE TRABAJO_ACTUAL.md
+AUDITORÍA CHATGPT GG-PROMPT-036-REV3
 ```
 
-Antes de iniciar Bloque D debe cerrarse/versionarse este cambio
-documental postcommit (TRABAJO_ACTUAL.md + índice vivo) en un commit
-local del propietario. Bloque D sigue NO INICIADO y no se anuncia
-todavía un ID funcional para él. Staging/commit solo con autorización
-expresa del propietario y ejecutados por el propietario desde
-GestorGit.
+Bloque D está IMPLEMENTADO y validado técnicamente en el working
+tree; NO está aceptado ni cerrado hasta la auditoría ChatGPT. Esta
+actualización documental queda pendiente para el siguiente commit
+natural (regla de cierre documental no recursivo, ADDENDUM-1).
+Staging/commit solo con autorización expresa del propietario y
+ejecutados por el propietario desde GestorGit.
 
 ## Seguridad
 

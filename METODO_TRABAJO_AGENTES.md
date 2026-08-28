@@ -172,7 +172,13 @@ usuario crea UN commit local desde GestorGit
 auditoría postcommit de solo lectura
         ↓
 cierre documental postcommit (+ registro de cambios de método estables)
+        ↓
+continuar con la siguiente etapa
 ```
+
+El cierre documental postcommit NO genera por defecto un nuevo ciclo
+staging/commit/postcommit exclusivamente documental (regla de cierre
+documental no recursivo; ver invariantes).
 
 Invariantes que no se negocian:
 
@@ -194,6 +200,11 @@ Invariantes que no se negocian:
 - Desde GG-PROMPT-016, las operaciones Git productivas soportadas las
   ejecuta el usuario desde GestorGit; los agentes auditan antes/después
   (solo lectura) y no las sustituyen por CLI salvo excepción declarada.
+- **Cierre documental no recursivo:** las actualizaciones documentales
+  posteriores a un commit no abren por sí solas otro ciclo completo de
+  staging/commit/postcommit. Se acumulan para el siguiente commit natural
+  salvo contradicción material, necesidad de entrega/recuperación, petición
+  expresa del propietario o justificación de riesgo documentada por ChatGPT.
 
 Guía de onboarding para el propietario del proyecto (humano):
 `GUIA_TRABAJO_CON_AGENTES.md`.
@@ -291,6 +302,12 @@ Actualizar `AGENTS.md`/`CLAUDE.md` solo cuando cambie una regla ESTABLE:
 - convención transversal.
 
 Actualizar `TRABAJO_ACTUAL.md` cuando cambie el estado de la tarea.
+
+Actualizar `TRABAJO_ACTUAL.md` cuando cambie el estado sigue siendo
+obligatorio, pero versionar ese cambio inmediatamente no lo es por defecto.
+Un cambio documental postcommit puede quedar pendiente e incorporarse al
+siguiente commit natural si está claramente identificado y no contradice
+Git real.
 
 Cuando `TRABAJO_ACTUAL.md` crezca demasiado:
 

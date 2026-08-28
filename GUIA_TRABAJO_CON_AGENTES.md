@@ -58,6 +58,8 @@ local V1"):
    selectivo desde GestorGit (lista exacta) → auditoría del staged set →
    USTED crea UN commit local desde GestorGit → auditoría postcommit
 10. cierre documental postcommit
+11. continuar con la siguiente etapa; el cierre documental NO abre
+    automáticamente otro ciclo Git solo para versionar el propio cierre
 ```
 
 ## Reglas de oro que usted debe hacer valer
@@ -85,6 +87,11 @@ local V1"):
   automáticos, guardar tokens.
 - **Git manda**: si un documento contradice a Git, se detiene el trabajo y
   se reporta; no se "corrige" el estado por iniciativa propia.
+- **No entrar en cierres recursivos**: después de un commit, la
+  actualización documental puede quedar pendiente para el siguiente commit
+  natural. Solo se hace un commit documental independiente si realmente
+  hace falta por seguridad, entrega, contradicción material o decisión
+  expresa del propietario/ChatGPT.
 
 ## Cómo encargar una tarea a un agente
 
@@ -207,6 +214,10 @@ operaciones productivas se hacen desde la propia aplicación.
   agente audita antes/después. Excepciones: solo declaradas y autorizadas.
 - **¿Puedo trabajar con dos agentes a la vez?** Solo uno modifica; el
   otro, como máximo, en modo solo lectura autorizado.
+- **¿Cada cierre documental necesita otro commit?** No. Por defecto se
+  evita ese ciclo recursivo. El cambio documental se incorpora al siguiente
+  commit natural, salvo que exista una razón concreta para cerrarlo por
+  separado.
 - **¿Dónde está la historia de decisiones?** En `seguimiento_prompts/`
   (prompts, REV/ADDENDUM y resultados) y en el historial Git.
 - **¿El agente "recuerda" entre sesiones?** No hay memoria personal
