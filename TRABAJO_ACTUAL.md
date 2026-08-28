@@ -14,16 +14,16 @@ defecto.
 
 Git real manda siempre.
 
-Último HEAD observado durante GG-PROMPT-036-REV3:
+Último HEAD observado durante GG-PROMPT-039 (Bloque E):
 
 ```text
-c3d5903 Actualiza estado postcommit de Modo Equipo Oracle
+b0c2bbb Implementa backend remoto de reservas de Modo Equipo Oracle
 ```
 
 Snapshot auditado:
 
 ```text
-HEAD base observado -> c3d5903 Actualiza estado postcommit de Modo Equipo Oracle
+HEAD base observado -> b0c2bbb Implementa backend remoto de reservas de Modo Equipo Oracle
 rama -> master
 staging -> vacío
 .git/index.lock: inexistente
@@ -54,7 +54,9 @@ Modo Equipo Oracle V1 / arquitectura -> CERRADA Y APROBADA
 Bloque A -> CERRADO Y COMMITTEADO
 Bloque B -> CERRADO Y COMMITTEADO
 Bloque C -> CERRADO Y COMMITTEADO
-Bloque D -> IMPLEMENTADO, PENDIENTE DE AUDITORÍA CHATGPT
+Bloque D -> CERRADO Y COMMITTEADO (b0c2bbb)
+Bloque E -> IMPLEMENTADO, PENDIENTE DE AUDITORÍA CHATGPT
+Bloque F -> NO iniciado
 Push -> NO autorizado
 ```
 
@@ -102,7 +104,7 @@ ruta dentro de la base (H1), consulta fail-safe de remotes sin ambigüedad
 `git remote get-url --push --all origin` == [backend_reservas_url] (H3).
 Cero red, cero Git global/system, cero dependencia de ServicioGit.
 
-## Resultado Bloque D (resumen, PENDIENTE DE AUDITORÍA CHATGPT)
+## Resultado Bloque D (resumen, CERRADO Y COMMITTEADO en b0c2bbb)
 
 Implementado sobre el working tree (SIN commit; HEAD base c3d5903).
 
@@ -225,13 +227,92 @@ seguimiento_prompts/
 GestorGit_plan_continuidad_y_modo_equipo.md
 ```
 
+## Resultado Bloque E (resumen, PENDIENTE DE AUDITORÍA CHATGPT REV4)
+
+Implementado sobre el working tree (SIN commit; HEAD base b0c2bbb).
+
+Archivos del Bloque E:
+
+```text
+creados -> servicio_proteccion_reservas_git.py
+           pruebas/test_servicio_proteccion_reservas_git.py
+modificados -> servicio_git.py
+               pruebas/test_servicio_git.py
+               TRABAJO_ACTUAL.md
+```
+
+Arquitectura:
+
+```text
+capa nueva -> ServicioProteccionReservasGit (sin Tkinter, sin Git
+              propio, 100% local): rutas -> ServicioObjetosOracle
+              (inyectado) -> validar_reserva_propia_fresca()
+              (única API de Bloque D usada) -> PERMITIR/BLOQUEAR
+staging protegido -> agregar_archivos y actualizar_archivos_preparados
+              exigen protección ANTES del primer git add; renames
+              incluyen el lado origen vía ruta_anterior; unstaging
+              conserva comportamiento histórico
+commit revalidado -> crear_commit lee el staged set REAL
+              (git diff --cached --name-status -z -C
+              --find-copies-harder, parser fail-safe A/M/D/T +
+              R/C con ambas rutas), valida reservas y relee el
+              staged set; si cambió, BLOQUEAR y pedir reintento
+ejecutor público -> con protector, GRAMÁTICA POSITIVA POR
+              COMANDO/CALL SITE con default deny; diff ->
+              familias positivas exactas (staged set exacto de
+              _leer_staged_set; vista de UNA ruta con
+              --no-ext-diff/--no-textconv obligatorios), las
+              formas patch exigen --no-ext-diff/--no-textconv y
+              cualquier variante no reconocida BLOQUEA
+              (aliases y --output/--ext-diff/--textconv
+              incluidos)
+copy en staging -> origen detectado ANTES del primer write con
+              ls-tree -r -z HEAD + hash-object sin -w (solo
+              lectura); copy inequívoca exige ambas reservas,
+              copy ambigua o no determinable BLOQUEA
+integración -> por inyección opcional (protector_reservas=None
+              conserva el comportamiento histórico; Bloque F
+              conectará la GUI)
+```
+
+Correcciones REV1 aplicadas (sobre la base 039, sin reiniciar):
+ejecutor interno para escritores productivos, detección deliberada
+de copies en commit, fail-safe estricto de resultados
+(ResultadoValidacionReservaPropia con valida EXACTAMENTE True) y
+barreras de mensajes sin excepción cruda. Fixtures montan estado
+con servicio SIN protector.
+
+Correcciones REV4 aplicadas (sobre REV3, sin reiniciar): gramática
+diff cerrada en DOS FAMILIAS positivas exactas — staged set exacto
+(--cached --name-status -z -C --find-copies-harder, sin rutas) y
+vista de UNA ruta (--no-ext-diff/--no-textconv obligatorios;
+--no-color --unified=3 o --numstat según call sites reales;
+--numstat y --unified=3 no coexisten). Formas parciales como
+diff/diff --cached/diff --unified=3 quedan bloqueadas; test REAL
+con diff.external (helper sh + marcador) demuestra que el helper
+se ejecuta sin protector y NO se ejecuta en las formas seguras ni
+en las bloqueadas. Copy y protector intactos. Convención CRLF
+homogénea preservada; 0 whitespace real añadido.
+
+Validaciones ejecutadas (totales reales):
+
+```text
+py_compile focalizado -> OK
+focal E conjunta -> 141/141 OK (35 protección + 106 servicio_git)
+regresión D -> 143/143 OK
+suite completa -> 953/953 OK
+staging -> vacío
+```
+
+Pruebas del Bloque E: 107 nuevas (846 previas + 107 = 953).
+
 ## Próximo paso
 
 ```text
-AUDITORÍA CHATGPT GG-PROMPT-036-REV3
+AUDITORÍA CHATGPT GG-PROMPT-039 (BLOQUE E)
 ```
 
-Bloque D está IMPLEMENTADO y validado técnicamente en el working
+Bloque E está IMPLEMENTADO y validado técnicamente en el working
 tree; NO está aceptado ni cerrado hasta la auditoría ChatGPT. Esta
 actualización documental queda pendiente para el siguiente commit
 natural (regla de cierre documental no recursivo, ADDENDUM-1).
