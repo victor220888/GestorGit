@@ -1,4 +1,5 @@
 import queue
+import socket
 import threading
 import tkinter as tk
 import webbrowser
@@ -9,13 +10,23 @@ from tkinter import messagebox
 from tkinter import ttk
 
 from ayuda_interfaz import AyudaEmergente, configurar_estilos
+from modelos_configuracion import ConfiguracionModoEquipo
+from servicio_backend_reservas import ServicioBackendReservas
 from servicio_cambios_locales_git import ServicioCambiosLocalesGit
 from servicio_configuracion import ServicioConfiguracion
 from servicio_descarte_cambios_git import ServicioDescarteCambiosGit
 from servicio_exportacion_historial import ServicioExportacionHistorial
 from servicio_historial_git import ServicioHistorialGit
+from servicio_identidad_equipo import ServicioIdentidadEquipo
+from servicio_manifiesto_proyecto import ServicioManifiestoProyecto
+from servicio_objetos_oracle import ServicioObjetosOracle
+from servicio_proteccion_reservas_git import (
+    ServicioProteccionReservasGit,
+)
 from servicio_ramas_git import ServicioRamasGit
 from servicio_remoto_git import ServicioRemotoGit
+from servicio_remoto_reservas import ServicioRemotoReservas
+from servicio_reservas import CoordinadorOperacionesRed, ServicioReservas
 
 
 # Textos didácticos V1 para las acciones Git más críticas.
@@ -575,6 +586,157 @@ TEXTOS_AYUDA_GIT_V1 = {
         "Una operación fallida no significa que la información "
         "remota se haya actualizado."
     ),
+
+
+    # ---------------------------------------------------------
+    # Bloque F: Modo Equipo Oracle V1
+    # ---------------------------------------------------------
+    "modo_equipo_oracle": (
+        "Abre la ventana de Modo Equipo Oracle.\n\n"
+        "Modo Equipo protege los objetos Oracle del proyecto "
+        "(por ejemplo Paquetes/FINI004.pls -> PACKAGE|FINI004) "
+        "mediante reservas compartidas por el equipo.\n\n"
+        "- Con Modo Equipo deshabilitado, GestorGit se comporta "
+        "como siempre.\n"
+        "- Con Modo Equipo habilitado y el contexto válido, las "
+        "acciones Preparar, Actualizar preparados y Crear commit "
+        "sobre objetos Oracle pasan obligatoriamente por la "
+        "protección de reservas.\n"
+        "- La ventana permite configurar el modo y realizar "
+        "operaciones explícitas de reservas.\n\n"
+        "Esta ventana NO es modal: puede dejarla abierta y seguir "
+        "usando la ventana principal."
+    ),
+
+    "modo_equipo_habilitado": (
+        "Habilita o deshabilita el Modo Equipo Oracle.\n\n"
+        "- Deshabilitado: comportamiento histórico; no se crea "
+        "ningún backend ni identidad.\n"
+        "- Habilitado: al seleccionar un repositorio se construye "
+        "el contexto (manifiesto desde HEAD, project_uuid, backend "
+        "local de reservas y servicio protegido).\n\n"
+        "Si el contexto no puede construirse, las operaciones "
+        "sobre objetos Oracle quedan BLOQUEADAS: nunca se vuelve "
+        "en silencio al Git normal."
+    ),
+
+    "modo_equipo_backend_url": (
+        "URL del repositorio Git bare de reservas del equipo "
+        "(backend_reservas_url).\n\n"
+        "Es la URL que el equipo acordó para las reservas. En V1 "
+        "solo se valida sintácticamente y no se conecta nada al "
+        "guardar; no escriba credenciales en la URL."
+    ),
+
+    "modo_equipo_alias": (
+        "Alias del equipo: metadata HUMANA de auditoría.\n\n"
+        "La propiedad real de una reserva depende exclusivamente "
+        "del id_cliente (identidad técnica de esta instalación); "
+        "el alias no decide nada."
+    ),
+
+    "modo_equipo_guardar": (
+        "Guarda la configuración local de Modo Equipo en "
+        "config.json mediante el servicio de configuración.\n\n"
+        "Guardar NO ejecuta Fetch, NO hace Push y NO realiza "
+        "ninguna reserva: solo persiste la configuración local."
+    ),
+
+    "modo_equipo_estado_proyecto": (
+        "Estado del contexto de Modo Equipo para el repositorio "
+        "seleccionado.\n\n"
+        "- project_uuid: identidad compartida del proyecto; se lee "
+        "del manifiesto versionado en HEAD:.gestorgit/proyecto.json "
+        "(nunca del working tree) y es INMUTABLE dentro de una "
+        "misma ruta de repositorio.\n"
+        "- id_cliente: identidad técnica de esta instalación "
+        "(%APPDATA%\\GestorGit\\identidad_instalacion.json); es la "
+        "única propiedad técnica de las reservas.\n"
+        "- Backend local: cache Git bare de reservas del proyecto "
+        "(%APPDATA%\\GestorGit\\reservas\\<project_uuid>\\"
+        "backend.git); su preparación es 100% local, sin red.\n\n"
+        "Contexto bloqueado: las operaciones protegidas quedan "
+        "bloqueadas hasta resolver el motivo; nunca se degrada a "
+        "Git normal."
+    ),
+
+    "modo_equipo_ruta_objeto": (
+        "Ruta relativa del repositorio del objeto Oracle a "
+        "reservar (por ejemplo Paquetes/FINI004.pls).\n\n"
+        "La clave Oracle se deriva SIEMPRE con el resolvedor "
+        "(ServicioObjetosOracle); no se aceptan claves PACKAGE|... "
+        "escritas a mano. Para objetos sin cambios pendientes "
+        "puede escribir la ruta relativa conocida."
+    ),
+
+    "modo_equipo_usar_seleccion": (
+        "Copia a la casilla de ruta la ruta del cambio "
+        "seleccionado en la tabla principal.\n\n"
+        "Exige una selección inequívoca (un solo archivo). "
+        "Después, la clave se resuelve localmente al usar cualquier "
+        "acción de reserva."
+    ),
+
+    "modo_equipo_clave_resuelta": (
+        "Clave Oracle canónica derivada por el resolvedor a partir "
+        "de la ruta indicada (por ejemplo PACKAGE|FINI004).\n\n"
+        "Si la ruta no es un objeto Oracle resoluble de forma "
+        "segura, las acciones de reserva quedan bloqueadas con el "
+        "motivo correspondiente."
+    ),
+
+    "modo_equipo_consultar": (
+        "Consulta el estado actual de la reserva del objeto: "
+        "ejecuta un Fetch del backend de reservas y clasifica el "
+        "head (LIBRE, RESERVADO_POR_MÍ, RESERVADO_POR_OTRO, "
+        "VENCIDO...).\n\n"
+        "Esta acción SÍ usa red contra el backend de reservas; "
+        "nunca modifica nada y nunca reserva nada "
+        "automáticamente.\n\n"
+        "La propiedad real se muestra por id_cliente; alias, "
+        "hostname y user_name son solo metadata humana."
+    ),
+
+    "modo_equipo_reservar": (
+        "Reserva el objeto para esta instalación (id_cliente): "
+        "publica una reserva ACTIVA propia en el backend.\n\n"
+        "Esta acción SÍ usa red y es EXPLÍCITA: solo se ejecuta al "
+        "pulsar el botón. Staging y commit nunca reservan "
+        "automáticamente."
+    ),
+
+    "modo_equipo_renovar": (
+        "Renueva una reserva propia ACTIVA todavía vigente: "
+        "actualiza su heartbeat y vence el plazo de nuevo.\n\n"
+        "Esta acción SÍ usa red y es EXPLÍCITA. Una reserva propia "
+        "ya vencida no se renueva: use Tomar vencida."
+    ),
+
+    "modo_equipo_liberar": (
+        "Libera una reserva propia ACTIVA: publica su estado "
+        "LIBERADA en el backend (la reserva no se borra: queda "
+        "para auditoría).\n\n"
+        "Esta acción SÍ usa red y es EXPLÍCITA."
+    ),
+
+    "modo_equipo_tomar_vencida": (
+        "Toma una reserva VENCIDA (propia o de otro) una vez "
+        "transcurrido el margen de gracia acordado: publica una "
+        "reserva ACTIVA nueva a nombre de esta instalación.\n\n"
+        "Esta acción SÍ usa red y es EXPLÍCITA; antes del margen "
+        "de gracia el servicio la bloquea."
+    ),
+
+    "modo_equipo_acciones_red": (
+        "Las acciones de reservas usan red contra el backend de "
+        "reservas y comparten un único mutex con Fetch, Pull, Push "
+        "y Publicar rama: mientras haya una operación en curso, "
+        "las demás se bloquean.\n\n"
+        "Staging y commit NO adquieren, renuevan ni liberan "
+        "reservas automáticamente: si la protección bloquea por "
+        "falta o frescura de reserva, realice aquí la acción "
+        "explícita que corresponda y reintente la operación Git."
+    ),
 }
 
 
@@ -786,6 +948,7 @@ CONTENIDO_AYUDA_ESTADOS_GIT_V1 = {
         "no incorpora automáticamente los cambios posteriores no "
         "preparados."
     ),
+
 }
 
 
@@ -993,6 +1156,76 @@ class AplicacionGit:
 
         # Evita ejecutar varias operaciones remotas simultáneamente.
         self.operacion_remota_en_curso = False
+
+        # =========================================================
+        # Bloque F: Modo Equipo Oracle V1
+        # =========================================================
+
+        # Estado del Modo Equipo para el selector fail-closed de
+        # escrituras locales:
+        #   "no_cargada"    -> configuración ilegible/incierto.
+        #   "deshabilitado" -> comportamiento histórico.
+        #   "bloqueado"     -> habilitado pero contexto inválido.
+        #   "listo"         -> habilitado y contexto válido.
+        self.modo_equipo_estado = "no_cargada"
+        self.modo_equipo_mensaje = ""
+
+        # Configuración cargada (ConfiguracionModoEquipo o None).
+        self.configuracion_modo_equipo = None
+
+        # Servicios auxiliares del contexto (sin I/O al crearse).
+        self.servicio_identidad_equipo = ServicioIdentidadEquipo()
+        self.servicio_backend_reservas = ServicioBackendReservas()
+        self.servicio_manifiesto = ServicioManifiestoProyecto(
+            self.servicio_git
+        )
+
+        # Contexto activo de Modo Equipo (válido solo con estado
+        # "listo"). Se reconstruye al cambiar de repositorio y se
+        # limpia al limpiar el repositorio.
+        self.id_cliente = ""
+        self.project_uuid_activo = ""
+        self.ruta_backend_reservas = ""
+        self.ruta_repositorio_modo_equipo = ""
+        self.resolvedor_oracle = None
+        self.servicio_reservas = None
+        self.protector_reservas = None
+        self.servicio_git_protegido = None
+
+        # REV1 B2: firma de la configuración EFECTIVA con la que
+        # se construyó el contexto. Un contexto solo puede
+        # reutilizarse si ruta + project_uuid + firma coinciden;
+        # un cambio de configuración lo invalida y fuerza su
+        # reconstrucción local.
+        self.firma_configuracion_contexto = None
+
+        # Mutex ÚNICO de operaciones de red (compartido por
+        # reservas y por Fetch/Pull/Push/Publicar). Vive toda la
+        # sesión para que la liberación siempre alcance la misma
+        # instancia aunque el contexto se reconstruya.
+        self.coordinador_modo_equipo = CoordinadorOperacionesRed()
+
+        # Flag GUI: existe un worker de reservas pendiente. NO
+        # sustituye al CoordinadorOperacionesRed; solo evita doble
+        # clic y bloquea staging/commit mientras la acción dura.
+        self.operacion_reservas_gui_en_curso = False
+
+        # Ventana única de Modo Equipo Oracle (reutilizable, NO
+        # modal: sin grab_set ni wait_window).
+        self.ventana_modo_equipo = None
+        self.variable_modo_equipo_habilitado = None
+        self.variable_modo_equipo_backend_url = None
+        self.variable_modo_equipo_alias = None
+        self.variable_modo_equipo_estado = None
+        self.variable_modo_equipo_project_uuid = None
+        self.variable_modo_equipo_id_cliente = None
+        self.variable_modo_equipo_backend = None
+        self.variable_modo_equipo_ruta_objeto = None
+        self.variable_modo_equipo_clave = None
+        self.variable_modo_equipo_clasificacion = None
+        self.variable_modo_equipo_propietario = None
+        self.variable_modo_equipo_vencimiento = None
+        self.botones_acciones_reservas = []
 
         self.configurar_ventana()
         self.crear_interfaz()
@@ -1275,6 +1508,26 @@ class AplicacionGit:
         AyudaEmergente(
             self.boton_ramas,
             TEXTOS_AYUDA_GIT_V1["ramas"],
+            ancho_texto=620
+        )
+
+        self.boton_modo_equipo = ttk.Button(
+            marco_informacion,
+            text="Modo Equipo Oracle...",
+            command=self.abrir_ventana_modo_equipo,
+            style="Accion.TButton"
+        )
+
+        self.boton_modo_equipo.grid(
+            row=0,
+            column=8,
+            sticky="e",
+            padx=(30, 0)
+        )
+
+        AyudaEmergente(
+            self.boton_modo_equipo,
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_oracle"],
             ancho_texto=620
         )
 
@@ -2302,6 +2555,11 @@ class AplicacionGit:
 
         self.actualizar_historial_si_abierto()
 
+        # Bloque F: al cargar (o recargar) un repositorio se
+        # consolida el estado de Modo Equipo y se construye el
+        # contexto si está habilitado. Local y silencioso.
+        self._refrescar_estado_modo_equipo()
+
         if guardar_configuracion:
             resultado_guardado = (
                 self.servicio_configuracion.guardar_ultimo_repositorio(
@@ -3302,6 +3560,11 @@ class AplicacionGit:
         ruta_repositorio = (
             self.ruta_repositorio
         )
+
+        # Bloque F: mutex único de red compartido con las
+        # operaciones de reservas de Modo Equipo.
+        if not self._adquirir_mutex_red_para_remota():
+            return
 
         self.operacion_remota_en_curso = True
 
@@ -6207,6 +6470,11 @@ class AplicacionGit:
             self.ruta_repositorio
         )
 
+        # Bloque F: mutex único de red compartido con las
+        # operaciones de reservas de Modo Equipo.
+        if not self._adquirir_mutex_red_para_remota():
+            return
+
         self.operacion_remota_en_curso = True
 
         self.actualizar_controles_operacion_remota()
@@ -6403,6 +6671,11 @@ class AplicacionGit:
         ruta_repositorio = (
             self.ruta_repositorio
         )
+
+        # Bloque F: mutex único de red compartido con las
+        # operaciones de reservas de Modo Equipo.
+        if not self._adquirir_mutex_red_para_remota():
+            return
 
         self.operacion_remota_en_curso = True
 
@@ -6603,6 +6876,11 @@ class AplicacionGit:
             self.ruta_repositorio
         )
 
+        # Bloque F: mutex único de red compartido con las
+        # operaciones de reservas de Modo Equipo.
+        if not self._adquirir_mutex_red_para_remota():
+            return
+
         self.operacion_remota_en_curso = True
 
         self.actualizar_controles_operacion_remota()
@@ -6754,6 +7032,11 @@ class AplicacionGit:
                         *elemento[1:]
                     )
 
+                elif tipo_operacion == "modo_equipo_reserva":
+                    self.procesar_resultado_reserva(
+                        *elemento[1:]
+                    )
+
         except queue.Empty:
             pass
 
@@ -6772,6 +7055,10 @@ class AplicacionGit:
         """
         Actualiza la interfaz cuando Fetch termina.
         """
+
+        # Bloque F: liberación del mutex compartido de red. Debe
+        # ocurrir SIEMPRE, incluso ante un resultado obsoleto.
+        self._liberar_mutex_red_de_remota()
 
         self.operacion_remota_en_curso = False
 
@@ -6870,6 +7157,10 @@ class AplicacionGit:
         Actualiza la interfaz cuando Pull termina.
         """
 
+        # Bloque F: liberación del mutex compartido de red. Debe
+        # ocurrir SIEMPRE, incluso ante un resultado obsoleto.
+        self._liberar_mutex_red_de_remota()
+
         self.operacion_remota_en_curso = False
 
         self.actualizar_controles_operacion_remota()
@@ -6943,6 +7234,11 @@ class AplicacionGit:
         self.cargar_cambios()
         self.actualizar_historial_si_abierto()
 
+        # Bloque F: un Pull exitoso cambia HEAD; el contexto de
+        # Modo Equipo se revalida en silencio (sin avisos de
+        # Bloque G). Fetch/Push no llegan aquí: no cambian HEAD.
+        self._refrescar_estado_modo_equipo()
+
         self.variable_estado.set(
             "Pull completado correctamente mediante fast-forward."
         )
@@ -6967,6 +7263,10 @@ class AplicacionGit:
         """
         Actualiza la interfaz cuando Push termina.
         """
+
+        # Bloque F: liberación del mutex compartido de red. Debe
+        # ocurrir SIEMPRE, incluso ante un resultado obsoleto.
+        self._liberar_mutex_red_de_remota()
 
         self.operacion_remota_en_curso = False
 
@@ -7065,6 +7365,10 @@ class AplicacionGit:
         antes del próximo Pull/Push, conforme al modelo de la
         aplicación.
         """
+
+        # Bloque F: liberación del mutex compartido de red. Debe
+        # ocurrir SIEMPRE, incluso ante un resultado obsoleto.
+        self._liberar_mutex_red_de_remota()
 
         self.operacion_remota_en_curso = False
 
@@ -7755,13 +8059,26 @@ class AplicacionGit:
         if not confirmado:
             return
 
+        # Bloque F: selector fail-closed de escrituras locales.
+        # Con Modo Equipo deshabilitado usa el servicio histórico;
+        # con contexto válido usa el servicio Git protegido; con
+        # contexto inválido/incierto BLOQUEA sin fallback.
+        servicio_escrituras, mensaje_bloqueo = (
+            self._resolver_servicio_escrituras()
+        )
+
+        if servicio_escrituras is None:
+            self._mostrar_bloqueo_modo_equipo(mensaje_bloqueo)
+
+            return
+
         self.variable_estado.set(
             "Preparando archivos..."
         )
 
         self.ventana_principal.update_idletasks()
 
-        resultado = self.servicio_git.agregar_archivos(
+        resultado = servicio_escrituras.agregar_archivos(
             self.ruta_repositorio,
             rutas_archivos
         )
@@ -7967,6 +8284,17 @@ class AplicacionGit:
         if not confirmado:
             return
 
+        # Bloque F: selector fail-closed de escrituras locales
+        # (mismo contrato que Preparar).
+        servicio_escrituras, mensaje_bloqueo = (
+            self._resolver_servicio_escrituras()
+        )
+
+        if servicio_escrituras is None:
+            self._mostrar_bloqueo_modo_equipo(mensaje_bloqueo)
+
+            return
+
         self.variable_estado.set(
             "Actualizando archivos preparados..."
         )
@@ -7974,7 +8302,7 @@ class AplicacionGit:
         self.ventana_principal.update_idletasks()
 
         resultado = (
-            self.servicio_git.actualizar_archivos_preparados(
+            servicio_escrituras.actualizar_archivos_preparados(
                 self.ruta_repositorio,
                 rutas_archivos
             )
@@ -8099,13 +8427,25 @@ class AplicacionGit:
         if not confirmado:
             return
 
+        # Bloque F: selector fail-closed de escrituras locales
+        # (mismo contrato que Preparar). El commit revalida el
+        # staged set real dentro del servicio protegido.
+        servicio_escrituras, mensaje_bloqueo = (
+            self._resolver_servicio_escrituras()
+        )
+
+        if servicio_escrituras is None:
+            self._mostrar_bloqueo_modo_equipo(mensaje_bloqueo)
+
+            return
+
         self.variable_estado.set(
             "Creando commit..."
         )
 
         self.ventana_principal.update_idletasks()
 
-        resultado = self.servicio_git.crear_commit(
+        resultado = servicio_escrituras.crear_commit(
             self.ruta_repositorio,
             mensaje_commit
         )
@@ -8156,6 +8496,1428 @@ class AplicacionGit:
                 f"Hash: {hash_commit}\n\n"
                 "El commit existe solamente en el repositorio local.\n"
                 "Utilice Push cuando desee enviarlo al remoto."
+            )
+        )
+
+    # =============================================================
+    # MODO EQUIPO ORACLE V1 (Bloque F)
+    # =============================================================
+
+    def _refrescar_estado_modo_equipo(self):
+        """
+        Recarga la configuración local de Modo Equipo y ajusta el
+        estado del selector fail-closed.
+
+        Lectura 100% local (config.json); sin red. Ante
+        configuración ilegible/incierta NO se asume
+        "deshabilitado": el estado pasa a "no_cargada" y las
+        escrituras protegidas quedan bloqueadas.
+        """
+
+        resultado = (
+            self.servicio_configuracion.cargar_configuracion_modo_equipo()
+        )
+
+        if (
+            not resultado.exitoso
+            or resultado.configuracion is None
+        ):
+            self.modo_equipo_estado = "no_cargada"
+            self.modo_equipo_mensaje = (
+                "La configuración de Modo Equipo no pudo leerse "
+                "(config.json corrupto o inválido).\n\n"
+                "Por seguridad, Preparar, Actualizar preparados y "
+                "Crear commit quedan bloqueados hasta que la "
+                "configuración sea válida."
+            )
+
+            self._limpiar_contexto_modo_equipo()
+
+            return
+
+        self.configuracion_modo_equipo = resultado.configuracion
+
+        if not self.configuracion_modo_equipo.modo_equipo_habilitado:
+            self.modo_equipo_estado = "deshabilitado"
+            self.modo_equipo_mensaje = ""
+
+            self._limpiar_contexto_modo_equipo()
+
+            return
+
+        # Habilitado: el contexto definitivo (listo/bloqueado) se
+        # construye con el repositorio seleccionado.
+        self._asegurar_contexto_modo_equipo()
+
+    def _limpiar_contexto_modo_equipo(self):
+        """
+        Descarta las referencias runtime del contexto de Modo
+        Equipo para que nunca queden asociadas a otro
+        repositorio. La configuración y el coordinador (sesión
+        completa) no se tocan aquí. La firma de configuración del
+        contexto también se resetea (REV1 B2).
+        """
+
+        self.id_cliente = ""
+        self.project_uuid_activo = ""
+        self.ruta_backend_reservas = ""
+        self.ruta_repositorio_modo_equipo = ""
+        self.resolvedor_oracle = None
+        self.servicio_reservas = None
+        self.protector_reservas = None
+        self.servicio_git_protegido = None
+        self.firma_configuracion_contexto = None
+
+    @staticmethod
+    def _firma_configuracion(config):
+        """
+        REV1 B2: firma inmutable de la configuración EFECTIVA que
+        determina el contexto de Modo Equipo. Un contexto solo
+        puede reutilizarse si ruta + project_uuid + esta firma
+        coinciden; cambiar backend_reservas_url, alias o
+        cualquier valor temporal invalida el contexto y fuerza
+        su reconstrucción local.
+        """
+
+        return (
+            config.modo_equipo_habilitado,
+            config.backend_reservas_url,
+            config.alias_equipo,
+            config.ttl_reservas_segundos,
+            config.renovacion_reservas_segundos,
+            config.margen_minimo_reserva_segundos,
+            config.frescura_reservas_segundos,
+            config.margen_gracia_vencimiento_segundos,
+        )
+
+    def _asegurar_contexto_modo_equipo(self):
+        """
+        Construye (o mantiene) el contexto completo de Modo Equipo
+        para el repositorio seleccionado.
+
+        Secuencia obligatoria (todas las APIs ya aceptadas):
+
+            1. identidad técnica de instalación (id_cliente);
+            2. manifiesto desde HEAD:.gestorgit/proyecto.json;
+            3. project_uuid (inmutable dentro de la misma ruta);
+            4. resolvedor de objetos Oracle;
+            5. backend bare local (100% local, sin red);
+            6. ServicioRemotoReservas + ServicioReservas con el
+               coordinador compartido;
+            7. ServicioProteccionReservasGit;
+            8. servicio Git protegido SEPARADO del histórico.
+
+        Cualquier error deja el estado en "bloqueado" con mensaje
+        pedagógico: nunca hay fallback silencioso a Git normal.
+        """
+
+        config = self.configuracion_modo_equipo
+
+        if config is None or not config.modo_equipo_habilitado:
+            return
+
+        if not self.ruta_repositorio:
+            self.modo_equipo_estado = "bloqueado"
+            self.modo_equipo_mensaje = (
+                "Modo Equipo está habilitado pero no hay un "
+                "repositorio seleccionado.\n\n"
+                "Seleccione el repositorio del proyecto para "
+                "construir el contexto de reservas."
+            )
+
+            return
+
+        resultado_manifiesto = self.servicio_manifiesto.leer_manifiesto_head(
+            self.ruta_repositorio
+        )
+
+        if (
+            not resultado_manifiesto.exitoso
+            or resultado_manifiesto.manifiesto is None
+        ):
+            self.modo_equipo_estado = "bloqueado"
+            self.modo_equipo_mensaje = (
+                "No fue posible leer el manifiesto del proyecto "
+                "desde HEAD:.gestorgit/proyecto.json.\n\n"
+                f"Motivo: {resultado_manifiesto.mensaje}\n\n"
+                "El manifiesto del working tree nunca se usa como "
+                "fuente de autorización; las operaciones sobre "
+                "objetos Oracle quedan bloqueadas."
+            )
+
+            return
+
+        project_uuid = resultado_manifiesto.manifiesto.project_uuid
+
+        # project_uuid INMUTABLE dentro de la misma ruta de
+        # repositorio: un cambio tras recargar HEAD bloquea el
+        # contexto en lugar de cambiar silenciosamente de backend.
+        # La relectura del manifiesto ocurre SIEMPRE (también con
+        # contexto vigente) para detectar ese cambio.
+        if (
+            self.ruta_repositorio_modo_equipo
+            == self.ruta_repositorio
+            and self.project_uuid_activo
+            and project_uuid != self.project_uuid_activo
+        ):
+            self.modo_equipo_estado = "bloqueado"
+            self.modo_equipo_mensaje = (
+                "El project_uuid del manifiesto cambió dentro de "
+                "la misma ruta de repositorio.\n\n"
+                f"Contexto vigente: {self.project_uuid_activo}\n"
+                f"Manifiesto actual: {project_uuid}\n\n"
+                "El project_uuid es INMUTABLE en V1: no se cambia "
+                "de backend silenciosamente. Reinicie GestorGit o "
+                "restaure el manifiesto correcto."
+            )
+
+            return
+
+        # Contexto vigente para esta misma ruta, el mismo
+        # project_uuid Y la misma configuración efectiva (REV1
+        # B2): solo entonces se conserva sin reconstruir
+        # servicios. Un cambio de backend_reservas_url, alias o
+        # valores temporales invalida el contexto anterior y
+        # fuerza su reconstrucción local.
+        if (
+            self.modo_equipo_estado == "listo"
+            and self.ruta_repositorio_modo_equipo
+            == self.ruta_repositorio
+            and self.project_uuid_activo == project_uuid
+            and self.firma_configuracion_contexto
+            == self._firma_configuracion(config)
+        ):
+            return
+
+        resultado_identidad = (
+            self.servicio_identidad_equipo.obtener_o_crear_identidad()
+        )
+
+        if (
+            not resultado_identidad.exitoso
+            or not resultado_identidad.id_cliente
+        ):
+            self.modo_equipo_estado = "bloqueado"
+            self.modo_equipo_mensaje = (
+                "No fue posible obtener la identidad técnica de la "
+                "instalación (id_cliente).\n\n"
+                f"Motivo: {resultado_identidad.mensaje}\n\n"
+                "Las operaciones sobre objetos Oracle quedan "
+                "bloqueadas: no se degradará al Git normal."
+            )
+
+            return
+
+        resultado_backend = (
+            self.servicio_backend_reservas.preparar_backend_local(
+                project_uuid,
+                config.backend_reservas_url
+            )
+        )
+
+        if (
+            not resultado_backend.exitoso
+            or not resultado_backend.ruta_backend
+        ):
+            self.modo_equipo_estado = "bloqueado"
+            self.modo_equipo_mensaje = (
+                "No fue posible preparar el backend local de "
+                "reservas del proyecto.\n\n"
+                f"Motivo: {resultado_backend.mensaje}\n\n"
+                "Esta preparación es 100% local (sin Fetch ni "
+                "Push); las operaciones sobre objetos Oracle "
+                "quedan bloqueadas."
+            )
+
+            return
+
+        resolvedor = ServicioObjetosOracle(
+            resultado_manifiesto.manifiesto
+        )
+
+        user_name = self._leer_user_name_informativo()
+
+        servicio_reservas = ServicioReservas(
+            remoto=ServicioRemotoReservas(
+                resultado_backend.ruta_backend
+            ),
+            id_cliente=resultado_identidad.id_cliente,
+            alias=config.alias_equipo,
+            hostname=socket.gethostname(),
+            user_name=user_name,
+            coordinador=self.coordinador_modo_equipo,
+            ttl_segundos=config.ttl_reservas_segundos,
+            renovacion_segundos=config.renovacion_reservas_segundos,
+            margen_minimo_segundos=(
+                config.margen_minimo_reserva_segundos
+            ),
+            frescura_segundos=config.frescura_reservas_segundos,
+            margen_gracia_segundos=(
+                config.margen_gracia_vencimiento_segundos
+            ),
+        )
+
+        protector = ServicioProteccionReservasGit(
+            resolvedor_oracle=resolvedor,
+            servicio_reservas=servicio_reservas,
+            project_uuid=project_uuid,
+        )
+
+        # Instancia Git SEPARADA con protector, destinada
+        # exclusivamente a Preparar / Actualizar preparados /
+        # Crear commit. La instancia histórica self.servicio_git
+        # permanece SIN protector para el resto de operaciones.
+        self.id_cliente = resultado_identidad.id_cliente
+        self.project_uuid_activo = project_uuid
+        self.ruta_backend_reservas = resultado_backend.ruta_backend
+        self.ruta_repositorio_modo_equipo = self.ruta_repositorio
+        self.firma_configuracion_contexto = (
+            self._firma_configuracion(config)
+        )
+        self.resolvedor_oracle = resolvedor
+        self.servicio_reservas = servicio_reservas
+        self.protector_reservas = protector
+        self.servicio_git_protegido = ServicioRemotoGit(
+            protector_reservas=protector
+        )
+
+        self.modo_equipo_estado = "listo"
+        self.modo_equipo_mensaje = ""
+
+    def _leer_user_name_informativo(self):
+        """
+        Lee user.name de Git (SOLO lectura) como metadata humana
+        informativa para las reservas.
+
+        Un fallo devuelve cadena vacía: nunca se inventa identidad
+        ni se reemplaza id_cliente. Nunca se lee ni guarda
+        user.email.
+        """
+
+        resultado = self.servicio_git.ejecutar_git(
+            argumentos=["config", "--get", "user.name"],
+            ruta_repositorio=self.ruta_repositorio
+        )
+
+        if not resultado.exitoso:
+            return ""
+
+        return resultado.salida.strip()
+
+    def _resolver_servicio_escrituras(self):
+        """
+        Selector fail-closed de las escrituras locales
+        (Preparar / Actualizar preparados / Crear commit).
+
+        Devuelve (servicio, "") cuando la operación puede
+        continuar, o (None, mensaje) cuando debe BLOQUEARSE:
+
+        - deshabilitado -> servicio histórico;
+        - habilitado + contexto válido -> servicio Git protegido;
+        - habilitado + contexto inválido -> None (nunca el
+          servicio histórico);
+        - configuración ilegible/incierto -> None (no se asume
+          deshabilitado);
+        - worker de reservas pendiente -> None.
+        """
+
+        if self.operacion_reservas_gui_en_curso:
+            return (
+                None,
+                (
+                    "Hay una operación de reservas de Modo Equipo "
+                    "en curso.\n\n"
+                    "Espere a que termine antes de preparar, "
+                    "actualizar preparados o crear un commit."
+                ),
+            )
+
+        self._refrescar_estado_modo_equipo()
+
+        if self.modo_equipo_estado == "deshabilitado":
+            return (self.servicio_git, "")
+
+        if self.modo_equipo_estado == "listo":
+            return (self.servicio_git_protegido, "")
+
+        return (
+            None,
+            self.modo_equipo_mensaje or (
+                "Modo Equipo Oracle no está disponible en este "
+                "momento; las operaciones sobre objetos Oracle "
+                "quedan bloqueadas por seguridad."
+            ),
+        )
+
+    def _mostrar_bloqueo_modo_equipo(self, mensaje):
+        """
+        Muestra un bloqueo de Modo Equipo como mensaje pedagógico.
+        Nunca ejecuta red ni continúa la operación automáticamente.
+        """
+
+        self.variable_estado.set(
+            "Operación bloqueada por Modo Equipo Oracle."
+        )
+
+        messagebox.showwarning(
+            "Modo Equipo Oracle",
+            mensaje
+        )
+
+    def _adquirir_mutex_red_para_remota(self):
+        """
+        Adquiere el mutex compartido de red para Fetch/Pull/Push/
+        Publicar rama.
+
+        Sin Modo Equipo activo no hay mutex (comportamiento
+        histórico). Devuelve True si la operación puede iniciarse.
+        """
+
+        coordinador = getattr(
+            self, "coordinador_modo_equipo", None
+        )
+
+        if coordinador is None:
+            return True
+
+        if coordinador.intentar_iniciar_remota():
+            return True
+
+        messagebox.showwarning(
+            "Operación de red en curso",
+            (
+                "Ya existe una operación de red o de reservas de "
+                "Modo Equipo en curso.\n\n"
+                "Espere a que termine antes de iniciar otra "
+                "operación de red."
+            )
+        )
+
+        return False
+
+    def _liberar_mutex_red_de_remota(self):
+        """
+        Libera el mutex compartido de red al terminar Fetch/Pull/
+        Push/Publicar. Debe invocarse al procesar el resultado,
+        ANTES de cualquier retorno por resultado obsoleto.
+        """
+
+        coordinador = getattr(
+            self, "coordinador_modo_equipo", None
+        )
+
+        if coordinador is not None:
+            coordinador.finalizar_remota()
+
+    # ---------------------------------------------------------
+    # Ventana Modo Equipo Oracle
+    # ---------------------------------------------------------
+
+    def abrir_ventana_modo_equipo(self):
+        """
+        Abre (o trae al frente) la ventana de Modo Equipo Oracle.
+        Puede abrirse incluso sin repositorio para configurar el
+        modo. NO modal: sin grab_set ni wait_window.
+        """
+
+        self._refrescar_estado_modo_equipo()
+
+        if (
+            self.ventana_modo_equipo is not None
+            and self.ventana_modo_equipo.winfo_exists()
+        ):
+            self._refrescar_ventana_modo_equipo()
+
+            self.ventana_modo_equipo.lift()
+
+            return
+
+        self.crear_ventana_modo_equipo()
+
+    def crear_ventana_modo_equipo(self):
+        """
+        Crea la ventana única de Modo Equipo Oracle con las tres
+        secciones: configuración local, estado del proyecto y
+        objeto Oracle / reserva.
+        """
+
+        self.ventana_modo_equipo = tk.Toplevel(
+            self.ventana_principal
+        )
+
+        self.ventana_modo_equipo.title(
+            "Modo Equipo Oracle V1"
+        )
+
+        self.ventana_modo_equipo.geometry("760x620")
+
+        marco = ttk.Frame(
+            self.ventana_modo_equipo,
+            padding=10
+        )
+
+        marco.pack(
+            fill=tk.BOTH,
+            expand=True
+        )
+
+        # ---- Sección A: configuración local --------------------
+        marco_configuracion = ttk.LabelFrame(
+            marco,
+            text="Configuración local",
+            padding=10
+        )
+
+        marco_configuracion.pack(
+            fill=tk.X
+        )
+
+        self.variable_modo_equipo_habilitado = tk.BooleanVar(
+            value=False
+        )
+
+        self.check_modo_equipo_habilitado = ttk.Checkbutton(
+            marco_configuracion,
+            text="Modo Equipo habilitado",
+            variable=self.variable_modo_equipo_habilitado
+        )
+
+        self.check_modo_equipo_habilitado.grid(
+            row=0,
+            column=0,
+            columnspan=2,
+            sticky="w"
+        )
+
+        ttk.Label(
+            marco_configuracion,
+            text="backend_reservas_url:"
+        ).grid(
+            row=1,
+            column=0,
+            sticky="w",
+            padx=(0, 5)
+        )
+
+        self.variable_modo_equipo_backend_url = tk.StringVar()
+
+        self.entrada_modo_equipo_backend_url = ttk.Entry(
+            marco_configuracion,
+            textvariable=self.variable_modo_equipo_backend_url,
+            width=70
+        )
+
+        self.entrada_modo_equipo_backend_url.grid(
+            row=1,
+            column=1,
+            sticky="ew",
+            pady=2
+        )
+
+        ttk.Label(
+            marco_configuracion,
+            text="alias_equipo:"
+        ).grid(
+            row=2,
+            column=0,
+            sticky="w",
+            padx=(0, 5)
+        )
+
+        self.variable_modo_equipo_alias = tk.StringVar()
+
+        self.entrada_modo_equipo_alias = ttk.Entry(
+            marco_configuracion,
+            textvariable=self.variable_modo_equipo_alias,
+            width=40
+        )
+
+        self.entrada_modo_equipo_alias.grid(
+            row=2,
+            column=1,
+            sticky="w",
+            pady=2
+        )
+
+        boton_guardar = ttk.Button(
+            marco_configuracion,
+            text="Guardar configuración",
+            command=self.guardar_configuracion_modo_equipo_desde_gui,
+            style="Accion.TButton"
+        )
+
+        boton_guardar.grid(
+            row=3,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(6, 0)
+        )
+
+        marco_configuracion.columnconfigure(1, weight=1)
+
+        # ---- Sección B: estado del proyecto/equipo -------------
+        marco_estado = ttk.LabelFrame(
+            marco,
+            text="Estado del proyecto y del equipo",
+            padding=10
+        )
+
+        marco_estado.pack(
+            fill=tk.X,
+            pady=(10, 0)
+        )
+
+        self.variable_modo_equipo_estado = tk.StringVar(
+            value="-"
+        )
+
+        self.variable_modo_equipo_project_uuid = tk.StringVar(
+            value="-"
+        )
+
+        self.variable_modo_equipo_id_cliente = tk.StringVar(
+            value="-"
+        )
+
+        self.variable_modo_equipo_backend = tk.StringVar(
+            value="-"
+        )
+
+        for fila, titulo in (
+            (0, "Estado:"),
+            (1, "project_uuid:"),
+            (2, "id_cliente:"),
+            (3, "Backend local:"),
+        ):
+            ttk.Label(
+                marco_estado,
+                text=titulo
+            ).grid(
+                row=fila,
+                column=0,
+                sticky="w",
+                padx=(0, 5)
+            )
+
+        for fila, variable in (
+            (0, self.variable_modo_equipo_estado),
+            (1, self.variable_modo_equipo_project_uuid),
+            (2, self.variable_modo_equipo_id_cliente),
+            (3, self.variable_modo_equipo_backend),
+        ):
+            ttk.Label(
+                marco_estado,
+                textvariable=variable
+            ).grid(
+                row=fila,
+                column=1,
+                sticky="w"
+            )
+
+        # ---- Sección C: objeto Oracle / reserva -----------------
+        marco_objeto = ttk.LabelFrame(
+            marco,
+            text="Objeto Oracle y reserva",
+            padding=10
+        )
+
+        marco_objeto.pack(
+            fill=tk.BOTH,
+            expand=True,
+            pady=(10, 0)
+        )
+
+        ttk.Label(
+            marco_objeto,
+            text="Ruta relativa del objeto:"
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(0, 5)
+        )
+
+        self.variable_modo_equipo_ruta_objeto = tk.StringVar()
+
+        self.entrada_modo_equipo_ruta_objeto = ttk.Entry(
+            marco_objeto,
+            textvariable=self.variable_modo_equipo_ruta_objeto,
+            width=50
+        )
+
+        self.entrada_modo_equipo_ruta_objeto.grid(
+            row=0,
+            column=1,
+            sticky="ew",
+            padx=(0, 5)
+        )
+
+        boton_usar_seleccion = ttk.Button(
+            marco_objeto,
+            text="Usar selección",
+            command=self._usar_seleccion_como_ruta_objeto,
+            style="Accion.TButton"
+        )
+
+        boton_usar_seleccion.grid(
+            row=0,
+            column=2,
+            sticky="w"
+        )
+
+        ttk.Label(
+            marco_objeto,
+            text="Clave Oracle resuelta:"
+        ).grid(
+            row=1,
+            column=0,
+            sticky="w",
+            padx=(0, 5)
+        )
+
+        self.variable_modo_equipo_clave = tk.StringVar(
+            value="(sin resolver)"
+        )
+
+        self.etiqueta_modo_equipo_clave = ttk.Label(
+            marco_objeto,
+            textvariable=self.variable_modo_equipo_clave
+        )
+
+        self.etiqueta_modo_equipo_clave.grid(
+            row=1,
+            column=1,
+            columnspan=2,
+            sticky="w"
+        )
+
+        self.variable_modo_equipo_clasificacion = tk.StringVar(
+            value="Sin consultar."
+        )
+
+        self.variable_modo_equipo_propietario = tk.StringVar(
+            value=""
+        )
+
+        self.variable_modo_equipo_vencimiento = tk.StringVar(
+            value=""
+        )
+
+        ttk.Label(
+            marco_objeto,
+            textvariable=self.variable_modo_equipo_clasificacion
+        ).grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            sticky="w"
+        )
+
+        ttk.Label(
+            marco_objeto,
+            textvariable=self.variable_modo_equipo_propietario
+        ).grid(
+            row=3,
+            column=0,
+            columnspan=3,
+            sticky="w"
+        )
+
+        ttk.Label(
+            marco_objeto,
+            textvariable=self.variable_modo_equipo_vencimiento
+        ).grid(
+            row=4,
+            column=0,
+            columnspan=3,
+            sticky="w"
+        )
+
+        marco_acciones = ttk.Frame(
+            marco_objeto
+        )
+
+        marco_acciones.grid(
+            row=5,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(8, 0)
+        )
+
+        especificaciones = (
+            ("Consultar estado", "consultar"),
+            ("Reservar", "reservar"),
+            ("Renovar", "renovar"),
+            ("Liberar", "liberar"),
+            ("Tomar vencida", "tomar_vencida"),
+        )
+
+        self.botones_acciones_reservas = []
+
+        for texto_boton, tipo in especificaciones:
+            boton = ttk.Button(
+                marco_acciones,
+                text=texto_boton,
+                command=lambda tipo=tipo: (
+                    self.iniciar_accion_reserva(tipo)
+                ),
+                style="Accion.TButton"
+            )
+
+            boton.pack(
+                side=tk.LEFT,
+                padx=(0, 6)
+            )
+
+            self.botones_acciones_reservas.append(boton)
+
+        ttk.Label(
+            marco_objeto,
+            text=(
+                "La propiedad real de una reserva depende "
+                "exclusivamente del id_cliente; alias, hostname y "
+                "user_name son metadata humana."
+            )
+        ).grid(
+            row=6,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(8, 0)
+        )
+
+        marco_objeto.columnconfigure(1, weight=1)
+
+        # Ayudas: cada clave de TEXTOS_AYUDA_GIT_V1 conectada
+        # exactamente una vez, siempre sobre widgets reales.
+        AyudaEmergente(
+            self.check_modo_equipo_habilitado,
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_habilitado"]
+        )
+
+        AyudaEmergente(
+            self.entrada_modo_equipo_backend_url,
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_backend_url"]
+        )
+
+        AyudaEmergente(
+            self.entrada_modo_equipo_alias,
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_alias"]
+        )
+
+        AyudaEmergente(
+            boton_guardar,
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_guardar"]
+        )
+
+        AyudaEmergente(
+            marco_estado,
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_estado_proyecto"],
+            ancho_texto=620
+        )
+
+        AyudaEmergente(
+            self.entrada_modo_equipo_ruta_objeto,
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_ruta_objeto"]
+        )
+
+        AyudaEmergente(
+            boton_usar_seleccion,
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_usar_seleccion"]
+        )
+
+        AyudaEmergente(
+            self.etiqueta_modo_equipo_clave,
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_clave_resuelta"]
+        )
+
+        AyudaEmergente(
+            self.botones_acciones_reservas[0],
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_consultar"],
+            ancho_texto=620
+        )
+
+        AyudaEmergente(
+            self.botones_acciones_reservas[1],
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_reservar"],
+            ancho_texto=620
+        )
+
+        AyudaEmergente(
+            self.botones_acciones_reservas[2],
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_renovar"],
+            ancho_texto=620
+        )
+
+        AyudaEmergente(
+            self.botones_acciones_reservas[3],
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_liberar"],
+            ancho_texto=620
+        )
+
+        AyudaEmergente(
+            self.botones_acciones_reservas[4],
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_tomar_vencida"],
+            ancho_texto=620
+        )
+
+        AyudaEmergente(
+            marco_acciones,
+            TEXTOS_AYUDA_GIT_V1["modo_equipo_acciones_red"],
+            ancho_texto=620
+        )
+
+        self._refrescar_ventana_modo_equipo()
+
+    def cerrar_ventana_modo_equipo(self):
+        """
+        Cierra la ventana de Modo Equipo y libera sus referencias.
+        """
+
+        ventana = self.ventana_modo_equipo
+
+        self.ventana_modo_equipo = None
+        self.variable_modo_equipo_habilitado = None
+        self.check_modo_equipo_habilitado = None
+        self.variable_modo_equipo_backend_url = None
+        self.entrada_modo_equipo_backend_url = None
+        self.variable_modo_equipo_alias = None
+        self.entrada_modo_equipo_alias = None
+        self.variable_modo_equipo_estado = None
+        self.variable_modo_equipo_project_uuid = None
+        self.variable_modo_equipo_id_cliente = None
+        self.variable_modo_equipo_backend = None
+        self.variable_modo_equipo_ruta_objeto = None
+        self.entrada_modo_equipo_ruta_objeto = None
+        self.variable_modo_equipo_clave = None
+        self.etiqueta_modo_equipo_clave = None
+        self.variable_modo_equipo_clasificacion = None
+        self.variable_modo_equipo_propietario = None
+        self.variable_modo_equipo_vencimiento = None
+        self.botones_acciones_reservas = []
+
+        if (
+            ventana is not None
+            and ventana.winfo_exists()
+        ):
+            ventana.destroy()
+
+    def _refrescar_ventana_modo_equipo(self):
+        """
+        Refresca los controles de la ventana con el estado vigente.
+        """
+
+        if (
+            self.ventana_modo_equipo is None
+            or not self.ventana_modo_equipo.winfo_exists()
+        ):
+            return
+
+        config = self.configuracion_modo_equipo
+
+        if config is not None:
+            self.variable_modo_equipo_habilitado.set(
+                config.modo_equipo_habilitado
+            )
+
+            self.variable_modo_equipo_backend_url.set(
+                config.backend_reservas_url
+            )
+
+            self.variable_modo_equipo_alias.set(
+                config.alias_equipo
+            )
+
+        estados_legibles = {
+            "no_cargada": (
+                "Configuración no disponible (bloqueado por "
+                "seguridad)."
+            ),
+            "deshabilitado": (
+                "Modo Equipo deshabilitado (comportamiento "
+                "histórico)."
+            ),
+            "bloqueado": (
+                "Modo Equipo habilitado, contexto BLOQUEADO."
+            ),
+            "listo": (
+                "Modo Equipo habilitado, contexto LISTO."
+            ),
+        }
+
+        self.variable_modo_equipo_estado.set(
+            estados_legibles.get(
+                self.modo_equipo_estado,
+                self.modo_equipo_estado
+            )
+            + (
+                f"\n{self.modo_equipo_mensaje}"
+                if self.modo_equipo_mensaje
+                else ""
+            )
+        )
+
+        self.variable_modo_equipo_project_uuid.set(
+            self.project_uuid_activo or "-"
+        )
+
+        self.variable_modo_equipo_id_cliente.set(
+            self.id_cliente or "-"
+        )
+
+        self.variable_modo_equipo_backend.set(
+            self.ruta_backend_reservas or "-"
+        )
+
+    def guardar_configuracion_modo_equipo_desde_gui(self):
+        """
+        Guarda la configuración local de Modo Equipo mediante el
+        servicio de configuración. NO Fetch, NO Push, NO reserva.
+        """
+
+        if self.operacion_reservas_gui_en_curso:
+            messagebox.showinfo(
+                "Operación de reservas en curso",
+                (
+                    "Hay una operación de reservas en curso; "
+                    "espere a que termine antes de cambiar la "
+                    "configuración."
+                )
+            )
+
+            return
+
+        config_base = (
+            self.configuracion_modo_equipo
+            or ConfiguracionModoEquipo()
+        )
+
+        config_nueva = ConfiguracionModoEquipo(
+            modo_equipo_habilitado=(
+                self.variable_modo_equipo_habilitado.get()
+            ),
+            backend_reservas_url=(
+                self.variable_modo_equipo_backend_url.get().strip()
+            ),
+            alias_equipo=(
+                self.variable_modo_equipo_alias.get().strip()
+            ),
+            ttl_reservas_segundos=config_base.ttl_reservas_segundos,
+            renovacion_reservas_segundos=(
+                config_base.renovacion_reservas_segundos
+            ),
+            margen_minimo_reserva_segundos=(
+                config_base.margen_minimo_reserva_segundos
+            ),
+            frescura_reservas_segundos=(
+                config_base.frescura_reservas_segundos
+            ),
+            margen_gracia_vencimiento_segundos=(
+                config_base.margen_gracia_vencimiento_segundos
+            ),
+        )
+
+        resultado = (
+            self.servicio_configuracion.guardar_configuracion_modo_equipo(
+                config_nueva
+            )
+        )
+
+        if not resultado.exitoso:
+            messagebox.showerror(
+                "No fue posible guardar la configuración",
+                resultado.mensaje
+            )
+
+            return
+
+        # Reconsolidar el estado a partir de la configuración
+        # guardada (limpia/reconstruye el contexto según proceda).
+        self._refrescar_estado_modo_equipo()
+
+        if self.ventana_modo_equipo is not None:
+            self._refrescar_ventana_modo_equipo()
+
+        messagebox.showinfo(
+            "Configuración guardada",
+            (
+                "La configuración de Modo Equipo fue guardada "
+                "correctamente.\n\n"
+                "No se ejecutó ninguna operación de red."
+            )
+        )
+
+    def _usar_seleccion_como_ruta_objeto(self):
+        """
+        Copia la ruta del cambio seleccionado (selección
+        inequívoca) a la casilla de ruta del objeto.
+        """
+
+        if self.tabla_cambios is None:
+            return
+
+        seleccion = self.tabla_cambios.selection()
+
+        if len(seleccion) != 1:
+            messagebox.showinfo(
+                "Selección requerida",
+                (
+                    "Seleccione exactamente un archivo en la "
+                    "tabla de cambios para usar su ruta."
+                )
+            )
+
+            return
+
+        cambio = self.cambios_por_elemento.get(seleccion[0])
+
+        if cambio is None:
+            return
+
+        self.variable_modo_equipo_ruta_objeto.set(
+            cambio.ruta
+        )
+
+        self._resolver_clave_objeto_desde_gui()
+
+    def _resolver_clave_objeto_desde_gui(self):
+        """
+        Deriva la clave Oracle de la ruta indicada usando
+        exclusivamente ServicioObjetosOracle.
+
+        Devuelve la clave canónica o None con mensaje pedagógico.
+        """
+
+        ruta = self.variable_modo_equipo_ruta_objeto.get().strip()
+
+        if not ruta:
+            messagebox.showinfo(
+                "Ruta requerida",
+                "Escriba la ruta relativa del objeto Oracle."
+            )
+
+            return None
+
+        resolvedor = getattr(self, "resolvedor_oracle", None)
+
+        if resolvedor is None:
+            messagebox.showwarning(
+                "Modo Equipo Oracle",
+                (
+                    "El contexto de Modo Equipo no está listo: "
+                    "no hay resolvedor de objetos Oracle.\n\n"
+                    f"{self.modo_equipo_mensaje}"
+                )
+            )
+
+            return None
+
+        resultado = resolvedor.resolver(ruta)
+
+        if not resultado.es_ruta_valida:
+            messagebox.showwarning(
+                "Ruta inválida",
+                resultado.mensaje
+            )
+
+            return None
+
+        if not resultado.es_objeto_oracle:
+            messagebox.showinfo(
+                "No es un objeto Oracle",
+                (
+                    f"La ruta '{ruta}' no corresponde a un objeto "
+                    "Oracle según el manifiesto del proyecto.\n\n"
+                    "Las reservas solo aplican a objetos Oracle "
+                    "reservables."
+                )
+            )
+
+            return None
+
+        if not resultado.es_reservable or resultado.objeto is None:
+            messagebox.showwarning(
+                "Objeto Oracle no resoluble",
+                resultado.mensaje
+            )
+
+            return None
+
+        clave = resultado.objeto.canonica()
+
+        self.variable_modo_equipo_clave.set(clave)
+
+        return clave
+
+    # ---------------------------------------------------------
+    # Acciones explícitas de reservas (asíncronas)
+    # ---------------------------------------------------------
+
+    def iniciar_accion_reserva(self, tipo):
+        """
+        Inicia una acción explícita de reservas (consultar,
+        reservar, renovar, liberar, tomar_vencida) en un hilo
+        secundario.
+
+        Resuelve primero la ruta localmente, exige objeto Oracle
+        reservable y usa el contexto vigente. Nunca se llama desde
+        staging/commit.
+        """
+
+        if self.operacion_reservas_gui_en_curso:
+            messagebox.showinfo(
+                "Operación de reservas en curso",
+                (
+                    "Ya existe una operación de reservas en "
+                    "curso; espere a que termine."
+                )
+            )
+
+            return
+
+        self._refrescar_estado_modo_equipo()
+
+        if self.modo_equipo_estado != "listo":
+            self._mostrar_bloqueo_modo_equipo(
+                self.modo_equipo_mensaje or (
+                    "El contexto de Modo Equipo no está listo."
+                )
+            )
+
+            return
+
+        clave = self._resolver_clave_objeto_desde_gui()
+
+        if clave is None:
+            return
+
+        # Snapshot estable para el worker: el worker nunca lee el
+        # estado mutable de la GUI ni toca widgets.
+        servicio_reservas = self.servicio_reservas
+        ruta_repositorio = self.ruta_repositorio
+        project_uuid = self.project_uuid_activo
+        ruta_objeto = self.variable_modo_equipo_ruta_objeto.get().strip()
+
+        self.operacion_reservas_gui_en_curso = True
+
+        self._actualizar_controles_reservas_gui()
+
+        self.variable_estado.set(
+            f"Operación de reservas '{tipo}' en curso..."
+        )
+
+        hilo_reservas = threading.Thread(
+            target=self._trabajo_accion_reserva,
+            args=(
+                tipo,
+                servicio_reservas,
+                ruta_repositorio,
+                project_uuid,
+                clave,
+                ruta_objeto
+            ),
+            daemon=True
+        )
+
+        hilo_reservas.start()
+
+    def _trabajo_accion_reserva(
+        self,
+        tipo,
+        servicio_reservas,
+        ruta_repositorio,
+        project_uuid,
+        clave,
+        ruta_objeto
+    ):
+        """
+        Trabajo de la acción de reservas fuera del hilo Tkinter.
+
+        NO toca widgets, NO llama messagebox, NO modifica
+        StringVar: solo ejecuta el servicio y deposita un
+        resultado estructurado en la cola.
+        """
+
+        if tipo == "consultar":
+            resultado = servicio_reservas.consultar_reserva(
+                project_uuid,
+                clave
+            )
+
+        elif tipo == "reservar":
+            resultado = servicio_reservas.reservar(
+                project_uuid,
+                clave
+            )
+
+        elif tipo == "renovar":
+            resultado = servicio_reservas.renovar(
+                project_uuid,
+                clave
+            )
+
+        elif tipo == "liberar":
+            resultado = servicio_reservas.liberar(
+                project_uuid,
+                clave
+            )
+
+        elif tipo == "tomar_vencida":
+            resultado = servicio_reservas.tomar_vencida(
+                project_uuid,
+                clave
+            )
+
+        else:
+            resultado = None
+
+        self.cola_resultados.put(
+            (
+                "modo_equipo_reserva",
+                tipo,
+                ruta_repositorio,
+                project_uuid,
+                clave,
+                ruta_objeto,
+                resultado
+            )
+        )
+
+    def _actualizar_controles_reservas_gui(self):
+        """
+        Habilita/deshabilita los controles de la ventana de Modo
+        Equipo mientras hay un worker de reservas pendiente.
+        """
+
+        estado_boton = (
+            tk.DISABLED
+            if self.operacion_reservas_gui_en_curso
+            else tk.NORMAL
+        )
+
+        for boton in self.botones_acciones_reservas:
+            if boton is not None and boton.winfo_exists():
+                boton.config(state=estado_boton)
+
+    def procesar_resultado_reserva(
+        self,
+        tipo,
+        ruta_repositorio,
+        project_uuid,
+        clave,
+        ruta_objeto,
+        resultado
+    ):
+        """
+        Procesa el resultado de una acción de reservas.
+
+        El flag GUI se libera SIEMPRE, incluso si el resultado
+        pertenece a un repositorio/project_uuid obsoleto (en ese
+        caso se ignora sin actualizar la GUI vigente).
+        """
+
+        self.operacion_reservas_gui_en_curso = False
+
+        self._actualizar_controles_reservas_gui()
+
+        if (
+            ruta_repositorio != self.ruta_repositorio
+            or project_uuid != self.project_uuid_activo
+        ):
+            # Resultado obsoleto: pertenece a otro repositorio o
+            # a otro project_uuid; no actualiza la GUI vigente.
+            return
+
+        if self.variable_modo_equipo_clasificacion is None:
+            return
+
+        self.variable_modo_equipo_ruta_objeto.set(ruta_objeto)
+
+        self.variable_modo_equipo_clave.set(clave)
+
+        if resultado is None:
+            self.variable_modo_equipo_clasificacion.set(
+                "Operación no reconocida."
+            )
+
+            return
+
+        if not getattr(resultado, "exitoso", False):
+            mensaje = (
+                getattr(resultado, "mensaje", "")
+                or getattr(resultado, "error", "")
+                or "La operación no pudo completarse."
+            )
+
+            self.variable_modo_equipo_clasificacion.set(
+                f"Sin éxito: {mensaje}"
+            )
+
+            self.variable_modo_equipo_propietario.set("")
+
+            self.variable_modo_equipo_vencimiento.set("")
+
+            messagebox.showwarning(
+                "Modo Equipo Oracle",
+                (
+                    f"La operación '{tipo}' no se completó:\n\n"
+                    f"{mensaje}\n\n"
+                    "Consulte el estado y reintente si procede."
+                )
+            )
+
+            return
+
+        payload = getattr(resultado, "payload", None)
+
+        clasificacion = getattr(
+            resultado,
+            "clasificacion",
+            None
+        )
+
+        nombre_clasificacion = (
+            clasificacion.value
+            if clasificacion is not None
+            else "-"
+        )
+
+        self.variable_modo_equipo_clasificacion.set(
+            f"Clasificación: {nombre_clasificacion}"
+        )
+
+        propietario = ""
+
+        vencimiento = ""
+
+        if payload is not None:
+            propietario = (
+                f"Reserva de: alias={payload.alias} | "
+                f"hostname={payload.hostname} | "
+                f"user_name={payload.user_name}\n"
+                "(metadata humana; la propiedad real es por "
+                f"id_cliente: {payload.id_cliente})"
+            )
+
+            vencimiento = f"Vencimiento: {payload.vencimiento}"
+
+        self.variable_modo_equipo_propietario.set(propietario)
+
+        self.variable_modo_equipo_vencimiento.set(vencimiento)
+
+        self.variable_estado.set(
+            f"Operación de reservas '{tipo}' completada."
+        )
+
+        messagebox.showinfo(
+            "Modo Equipo Oracle",
+            (
+                f"La operación '{tipo}' se completó "
+                "correctamente.\n\n"
+                f"Clasificación: {nombre_clasificacion}\n\n"
+                "Revise el estado de la reserva en esta ventana."
             )
         )
 
@@ -8411,6 +10173,13 @@ class AplicacionGit:
 
         self.limpiar_estado_sincronizacion()
 
+        # Bloque F: las referencias runtime de Modo Equipo se
+        # limpian para que nunca queden asociadas al siguiente
+        # repositorio.
+        self._limpiar_contexto_modo_equipo()
+
+        self._refrescar_estado_modo_equipo()
+
         self.cerrar_configuracion_github()
 
         self.cerrar_historial()
@@ -8418,6 +10187,8 @@ class AplicacionGit:
         self.cerrar_detalle_commit()
 
         self.cerrar_ventana_ramas()
+
+        self.cerrar_ventana_modo_equipo()
 
     # =============================================================
     # MENSAJES DE CONFIRMACIÓN

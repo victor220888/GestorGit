@@ -565,12 +565,32 @@ class TestLeyendaCableadoEstatico(unittest.TestCase):
     def test_tooltips_existentes_siguen_siendo_38(self):
         # HISTÓRICO: al cerrar la Leyenda V1 el diccionario tenía
         # 37 claves; la clave 38 ("publicar_rama") fue añadida
-        # POSTERIORMENTE por la etapa "Publicar rama local". Esta
-        # prueba sigue garantizando que la Leyenda no añadió
-        # ninguna clave propia.
+        # POSTERIORMENTE por la etapa "Publicar rama local" y las
+        # claves "modo_equipo_*" por el Bloque F. Esta prueba sigue
+        # garantizando que la Leyenda no añadió ninguna clave
+        # propia: el total HISTÓRICO (38) se conserva y solo se
+        # suman las claves autorizadas del Bloque F.
+        claves_no_f = [
+            clave
+            for clave in principal.TEXTOS_AYUDA_GIT_V1
+            if not clave.startswith("modo_equipo")
+        ]
+
         self.assertEqual(
-            len(principal.TEXTOS_AYUDA_GIT_V1),
+            len(claves_no_f),
             38
+        )
+
+        claves_f = [
+            clave
+            for clave in principal.TEXTOS_AYUDA_GIT_V1
+            if clave.startswith("modo_equipo")
+        ]
+
+        self.assertGreaterEqual(
+            len(claves_f),
+            15,
+            "El Bloque F debe mantener sus ayudas conectadas."
         )
 
     def test_leyenda_y_tooltips_son_diccionarios_independientes(self):
@@ -583,13 +603,21 @@ class TestLeyendaCableadoEstatico(unittest.TestCase):
     def test_no_se_agregan_llamadas_nuevas_a_ayuda_emergente(self):
         # HISTÓRICO: al cerrar la Leyenda V1 había 37 llamadas; la
         # llamada 38 (publicar_rama) pertenece a la etapa posterior
-        # "Publicar rama local". El total exacto se sigue vigilando
-        # para que la Leyenda no haya añadido llamadas propias.
+        # "Publicar rama local" y las llamadas "modo_equipo_*" al
+        # Bloque F. La Leyenda sigue sin añadir llamadas propias.
         total = _llamadas_a("AyudaEmergente")
+
+        claves_f = [
+            clave
+            for clave in principal.TEXTOS_AYUDA_GIT_V1
+            if clave.startswith("modo_equipo")
+        ]
+
         self.assertEqual(
             len(total),
-            38,
-            "Las llamadas a AyudaEmergente deben seguir siendo 38."
+            38 + len(claves_f),
+            "Las llamadas a AyudaEmergente deben ser las 38 "
+            "históricas más las del Bloque F."
         )
 
     def test_metodos_de_la_ayuda_no_usan_ayuda_emergente(self):

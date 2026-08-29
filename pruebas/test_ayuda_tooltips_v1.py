@@ -472,9 +472,32 @@ CLAVES_2B_ESPERADAS = {
 # es 38 por esta ayuda posterior.
 CLAVES_PUBLICAR_ESPERADAS = {"publicar_rama"}
 
+# Claves añadidas por el Bloque F (Modo Equipo Oracle V1). Cada
+# una está conectada exactamente una vez a un widget real.
+CLAVES_MODO_EQUIPO_ESPERADAS = {
+    "modo_equipo_oracle",
+    "modo_equipo_habilitado",
+    "modo_equipo_backend_url",
+    "modo_equipo_alias",
+    "modo_equipo_guardar",
+    "modo_equipo_estado_proyecto",
+    "modo_equipo_ruta_objeto",
+    "modo_equipo_usar_seleccion",
+    "modo_equipo_clave_resuelta",
+    "modo_equipo_consultar",
+    "modo_equipo_reservar",
+    "modo_equipo_renovar",
+    "modo_equipo_liberar",
+    "modo_equipo_tomar_vencida",
+    "modo_equipo_acciones_red",
+}
+
 # Total ACTUAL de claves del diccionario:
-# 13 (P0/P1) + 24 (P2/P3) + 1 (Publicar rama local, posterior a V1).
-CLAVES_TOTALES_ESPERADAS = 38
+# 13 (P0/P1) + 24 (P2/P3) + 1 (Publicar rama local)
+# + 15 (Bloque F: Modo Equipo Oracle).
+CLAVES_TOTALES_ESPERADAS = (
+    38 + len(CLAVES_MODO_EQUIPO_ESPERADAS)
+)
 
 
 class TestTooltipsV2BCompletitud(unittest.TestCase):
@@ -916,11 +939,12 @@ class TestTooltipsPublicarRama(unittest.TestCase):
 
         self.assertTrue(texto("publicar_rama").strip())
 
-    def test_el_total_es_la_suma_historica_mas_la_clave_nueva(self):
+    def test_el_total_es_la_suma_historica_mas_las_claves_nuevas(self):
         self.assertEqual(
             CLAVES_TOTALES_ESPERADAS,
             13 + len(CLAVES_2B_ESPERADAS)
             + len(CLAVES_PUBLICAR_ESPERADAS)
+            + len(CLAVES_MODO_EQUIPO_ESPERADAS)
         )
 
     def test_explica_el_comando_real_con_set_upstream(self):
@@ -1020,11 +1044,45 @@ class TestTooltipsPublicarRamaCableado(unittest.TestCase):
             "una vez en una llamada a AyudaEmergente."
         )
 
-    def test_el_total_de_llamadas_cubre_las_38_claves(self):
+    def test_el_total_de_llamadas_cubre_las_claves(self):
         self.assertEqual(
             len(self.llamadas),
             CLAVES_TOTALES_ESPERADAS
         )
+
+    def test_las_38_claves_historicas_siguen_presentes(self):
+        # GG-PROMPT-042: las 38 ayudas históricas (13 P0/P1 + 24
+        # P2/P3 + publicar_rama) se preservan íntegras; las nuevas
+        # del Bloque F se suman sin sustituirlas.
+        claves_actuales = set(principal.TEXTOS_AYUDA_GIT_V1.keys())
+
+        self.assertEqual(
+            len(claves_actuales - CLAVES_MODO_EQUIPO_ESPERADAS),
+            38,
+        )
+        self.assertTrue(
+            CLAVES_MODO_EQUIPO_ESPERADAS <= claves_actuales
+        )
+
+    def test_cada_clave_esta_conectada_exactamente_una_vez(self):
+        claves_uso = [clave for _, clave in self.llamadas]
+
+        self.assertEqual(len(claves_uso), len(set(claves_uso)))
+
+        self.assertEqual(
+            set(claves_uso),
+            set(principal.TEXTOS_AYUDA_GIT_V1.keys()),
+        )
+
+    def test_las_claves_modo_equipo_estan_conectadas(self):
+        claves_uso = [clave for _, clave in self.llamadas]
+
+        for clave in CLAVES_MODO_EQUIPO_ESPERADAS:
+            self.assertEqual(
+                claves_uso.count(clave),
+                1,
+                f"La clave '{clave}' debe conectarse una sola vez.",
+            )
 
 
 if __name__ == "__main__":

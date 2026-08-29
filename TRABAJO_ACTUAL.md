@@ -55,8 +55,9 @@ Bloque A -> CERRADO Y COMMITTEADO
 Bloque B -> CERRADO Y COMMITTEADO
 Bloque C -> CERRADO Y COMMITTEADO
 Bloque D -> CERRADO Y COMMITTEADO (b0c2bbb)
-Bloque E -> IMPLEMENTADO, PENDIENTE DE AUDITORÍA CHATGPT
-Bloque F -> NO iniciado
+Bloque E -> CERRADO Y COMMITTEADO (0d8042d)
+Bloque F -> IMPLEMENTADO, PENDIENTE DE AUDITORÍA CHATGPT
+Bloque G -> NO iniciado
 Push -> NO autorizado
 ```
 
@@ -227,7 +228,7 @@ seguimiento_prompts/
 GestorGit_plan_continuidad_y_modo_equipo.md
 ```
 
-## Resultado Bloque E (resumen, PENDIENTE DE AUDITORÍA CHATGPT REV4)
+## Resultado Bloque E (resumen, CERRADO Y COMMITTEADO en 0d8042d)
 
 Implementado sobre el working tree (SIN commit; HEAD base b0c2bbb).
 
@@ -306,13 +307,100 @@ staging -> vacío
 
 Pruebas del Bloque E: 107 nuevas (846 previas + 107 = 953).
 
+## Resultado Bloque F (resumen, PENDIENTE DE AUDITORÍA CHATGPT REV1)
+
+Implementado sobre el working tree (SIN commit; HEAD base 0d8042d).
+Integración GUI del Modo Equipo Oracle V1 en principal.py, sin
+tocar los servicios D/E ni ayuda_interfaz.py.
+
+```text
+creados -> pruebas/test_modo_equipo_gui.py
+modificados -> principal.py
+               pruebas/test_ayuda_tooltips_v1.py (total 38+15 F)
+               pruebas/test_leyenda_estados_git.py (ídem)
+               pruebas/test_ayuda_emergente.py (ídem, misma regla
+               de preservar 38 históricas)
+               TRABAJO_ACTUAL.md
+```
+
+Arquitectura aplicada:
+
+```text
+estado Modo Equipo -> no_cargada / deshabilitado / bloqueado /
+              listo (config.json + contexto por repositorio)
+selector fail-closed -> Preparar / Actualizar preparados / Commit
+              pasan por _resolver_servicio_escrituras: deshabilitado
+              -> servicio histórico; listo -> servicio Git PROTEGIDO
+              (ServicioRemotoGit con protector E, instancia SEPARADA,
+              nunca mutando self.servicio_git); contexto inválido o
+              config corrupta -> BLOQUEO sin fallback
+contexto -> identidad (id_cliente) + manifiesto HEAD + project_uuid
+              INMUTABLE por ruta + resolvedor + backend local (sin
+              red) + ServicioReservas + protector
+mutex único -> CoordinadorOperacionesRed compartido por reservas y
+              Fetch/Pull/Push/Publicar (adquisición antes del hilo,
+              liberación al procesar el resultado aunque sea obsoleto)
+reservas GUI -> ventana Toplevel no modal con configuración, estado
+              y acciones explícitas Consultar/Reservar/Renovar/
+              Liberar/Tomar vencida; clave SIEMPRE vía
+              ServicioObjetosOracle; worker Thread -> queue ->
+              after, sin tocar Tkinter; resultados obsoletos por
+              repo/project_uuid se ignoran
+ayudas -> 15 claves "modo_equipo_*" nuevas en TEXTOS_AYUDA_GIT_V1
+              (cada una conectada 1 vez); 38 históricas preservadas
+automatismos -> cero: staging/commit no llaman red/reservas; sin
+              scheduler ni auto-renovación
+```
+
+Validaciones ejecutadas (totales reales):
+
+```text
+py_compile focalizado -> OK
+focal GUI F conjunta -> 301/301 OK
+  (modo_equipo_gui 44 + commit_gui_conflicto 1 +
+   publicar_rama_git 70 + ayuda_tooltips_v1 121 +
+   leyenda_estados_git 65)
+ayuda_emergente -> 10/10 OK
+regresión D/E -> 284/284 OK
+suite completa -> 1000/1000 OK
+git diff --check -> 0 avisos reales
+staging -> vacío
+```
+
+Pruebas del Bloque F: 47 nuevas (953 previas + 47 = 1000).
+
+Correcciones REV1 aplicadas (sobre 042, sin reiniciar): B1 —
+import faltante de ServicioIdentidadEquipo corregido y prueba
+AST de arranque (__init__ sin globales sin resolver); B2 —
+firma de configuración efectiva (url/alias/ttl/renovación/
+margen/frescura/grace): el contexto solo se reutiliza si ruta +
+project_uuid + firma coinciden; cambiar alias o backend URL
+reconstruye localmente ServicioReservas/protector/servicio Git
+protegido; fallo de reconstrucción -> bloqueado/fail-closed sin
+fallback; firma reseteada al limpiar contexto; B3 — test del
+mutex con hilo FALSO (sin hilos reales descontrolados, cero
+"Exception in thread", cero traceback asíncrono). Verificación
+de la focal limpia de stderr asíncrono.
+
+Validaciones REV1 (totales reales):
+
+```text
+py_compile -> OK
+focal REV1 (test_modo_equipo_gui) -> 51/51 OK
+focal GUI F conjunta -> 318/318 OK
+regresión D/E -> 284/284 OK
+suite completa -> 1007/1007 OK
+git diff --check -> 0 avisos reales
+staging -> vacío
+```
+
 ## Próximo paso
 
 ```text
-AUDITORÍA CHATGPT GG-PROMPT-039 (BLOQUE E)
+AUDITORÍA CHATGPT GG-PROMPT-042 (BLOQUE F)
 ```
 
-Bloque E está IMPLEMENTADO y validado técnicamente en el working
+Bloque F está IMPLEMENTADO y validado técnicamente en el working
 tree; NO está aceptado ni cerrado hasta la auditoría ChatGPT. Esta
 actualización documental queda pendiente para el siguiente commit
 natural (regla de cierre documental no recursivo, ADDENDUM-1).

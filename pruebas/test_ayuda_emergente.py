@@ -175,9 +175,28 @@ class PruebaTooltipsIntactos(unittest.TestCase):
         ):
             self.assertIn(fragmento, texto)
 
-    def test_el_total_de_tooltips_sigue_siendo_38(self):
+    def test_el_total_de_tooltips_sigue_siendo_38_mas_bloque_f(self):
+        # GG-PROMPT-042: las 38 ayudas históricas se preservan
+        # íntegras; el Bloque F suma las claves "modo_equipo_*".
+        # El cableado completo (biyección llamadas <-> claves)
+        # sigue vigilado por pruebas/test_ayuda_tooltips_v1.py,
+        # que también corre dentro de la suite completa.
+        claves_f = [
+            clave
+            for clave in principal.TEXTOS_AYUDA_GIT_V1
+            if clave.startswith("modo_equipo")
+        ]
+
+        self.assertGreaterEqual(len(claves_f), 15)
+
+        claves_historicas = [
+            clave
+            for clave in principal.TEXTOS_AYUDA_GIT_V1
+            if not clave.startswith("modo_equipo")
+        ]
+
         self.assertEqual(
-            len(principal.TEXTOS_AYUDA_GIT_V1),
+            len(claves_historicas),
             38
         )
 
