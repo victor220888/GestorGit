@@ -14,33 +14,15 @@ defecto.
 
 Git real manda siempre.
 
-Último HEAD observado durante GG-PROMPT-039 (Bloque E):
+Snapshot de inicio de GG-PROMPT-051:
 
 ```text
-b0c2bbb Implementa backend remoto de reservas de Modo Equipo Oracle
-```
-
-Snapshot auditado:
-
-```text
-HEAD base observado -> b0c2bbb Implementa backend remoto de reservas de Modo Equipo Oracle
+HEAD -> d1b2ed3 Advierte sobre reservas antes de operaciones Git
+HEAD completo -> d1b2ed36ffb8745b2fe412a52a239e94823199c1
 rama -> master
 staging -> vacío
 .git/index.lock: inexistente
 Push -> NO autorizado
-```
-
-Cierre Git A+B+C:
-
-```text
-commit -> 971dbd4 Agrega base de reservas de Modo Equipo Oracle V1
-padre -> f4ac293
-rutas en commit -> 16/16 exactas
-staging postcommit -> vacío
-working tree funcional -> limpio
-GG-PROMPT-031 -> auditoría pre-staging A+B+C ACEPTADA
-GG-PROMPT-032 -> staged set exacto ACEPTADO
-GG-PROMPT-033 -> auditoría postcommit ACEPTADA
 ```
 
 Estos datos son un snapshot; verificar Git de nuevo al iniciar cada tarea.
@@ -57,8 +39,8 @@ Bloque C -> CERRADO Y COMMITTEADO
 Bloque D -> CERRADO Y COMMITTEADO (b0c2bbb)
 Bloque E -> CERRADO Y COMMITTEADO (0d8042d)
 Bloque F -> CERRADO Y COMMITTEADO (b547fae)
-Bloque G -> IMPLEMENTADO, PENDIENTE DE AUDITORÍA CHATGPT
-Bloque H -> NO iniciado
+Bloque G -> CERRADO Y COMMITTEADO (d1b2ed3)
+Bloque H -> CIERRE DOCUMENTAL ACEPTADO (GG-PROMPT-050 CON REV2), PENDIENTE DE CIERRE GIT
 Push -> NO autorizado
 ```
 
@@ -79,6 +61,19 @@ commit -> 971dbd4 Agrega base de reservas de Modo Equipo Oracle V1
 ```
 
 A+B+C CERRADOS Y COMMITTEADOS en 971dbd4.
+
+Cierres registrados D-H:
+
+```text
+D -> commit b0c2bbb + auditoría postcommit 038 ACEPTADA
+E -> commit 0d8042d + auditoría postcommit 041 ACEPTADA
+F -> commit b547fae + auditoría postcommit 044 ACEPTADA
+G -> GG-PROMPT-046-REV1 ACEPTADO + 047 ACEPTADO + 048 ACEPTADO
+     + commit d1b2ed3
+GG-PROMPT-049 -> análisis del Bloque H ACEPTADO
+GG-PROMPT-050-REV2 -> ACEPTADO
+GG-PROMPT-050 -> ACEPTADO CON REV2; Bloque H documental aceptado
+```
 
 ## Resultado final Bloque B (resumen)
 
@@ -107,8 +102,6 @@ ruta dentro de la base (H1), consulta fail-safe de remotes sin ambigüedad
 Cero red, cero Git global/system, cero dependencia de ServicioGit.
 
 ## Resultado Bloque D (resumen, CERRADO Y COMMITTEADO en b0c2bbb)
-
-Implementado sobre el working tree (SIN commit; HEAD base c3d5903).
 
 Archivos del Bloque D:
 
@@ -140,33 +133,22 @@ ServicioReservas: consultar_reserva, reservar, renovar, liberar,
     threading.Lock)
 ```
 
-Correcciones REV3 aplicadas sobre el trabajo heredado: fórmula SHA-256
-exacta con separador NUL, TTL reutilizado de modelos_configuracion
-(sin 1800 mágico), validación fail-safe del payload antes del primer
-comando Git de escritura, mutex con concurrencia real (hilos +
-Barrier), idempotencia por operation_id reconocida en reintentos de
-las cuatro operaciones (payload incompatible -> NO_VERIFICABLE),
-aislamiento Git de tests desde antes del primer git init
-(GIT_CONFIG_GLOBAL temporal + GIT_CONFIG_NOSYSTEM=1), RFC3339
-estricto y docstring de modelos actualizado.
+Correcciones REV3 consolidadas: fórmula SHA-256 exacta con separador
+NUL, TTL reutilizado de modelos_configuracion, validación fail-safe
+del payload antes del primer comando Git de escritura, mutex con
+concurrencia real (hilos + Barrier), idempotencia por operation_id
+en las cuatro operaciones (payload incompatible -> NO_VERIFICABLE),
+aislamiento Git de tests (GIT_CONFIG_GLOBAL temporal +
+GIT_CONFIG_NOSYSTEM=1) y RFC3339 estricto.
 
-Validaciones ejecutadas (totales reales):
+Evidencia histórica del cierre (no constantes futuras):
 
 ```text
-py_compile focalizado -> OK
-focal modelos -> 59/59 OK
-focal remoto -> 35/35 OK
-focal máquina/mutex -> 49/49 OK
-focal D conjunta -> 143/143 OK
-regresión A -> 182/182 OK
-regresión B -> 106/106 OK
-regresión C -> 56/56 OK
-suite completa -> 846/846 OK
-git diff --check / --cached --check -> limpios
-staging -> vacío
+focal D conjunta -> 143/143 OK (modelos 59 + remoto 35 + máquina 49)
+regresiones A/B/C -> 182/182, 106/106, 56/56 OK
+suite completa -> 846/846 OK (728 previas + 118 nuevas)
+commit -> b0c2bbb con auditorías 037/038 precommit/postcommit ACEPTADAS
 ```
-
-Pruebas del Bloque D: 118 nuevas (728 previas + 118 = 846).
 
 ## Evidencia técnica del commit A+B+C (971dbd4)
 
@@ -194,7 +176,6 @@ POST-027 -> focal C 56 / regresión A 148 / regresión B 106 / suite 728
 Evidencia histórica documentada de los cierres previos; no son
 constantes eternas: confirmar la suite real en cada nueva
 implementación.
-```
 
 ## Trazabilidad 026-REV2 (resuelta documentalmente)
 
@@ -230,8 +211,6 @@ GestorGit_plan_continuidad_y_modo_equipo.md
 ```
 
 ## Resultado Bloque E (resumen, CERRADO Y COMMITTEADO en 0d8042d)
-
-Implementado sobre el working tree (SIN commit; HEAD base b0c2bbb).
 
 Archivos del Bloque E:
 
@@ -277,36 +256,23 @@ integración -> por inyección opcional (protector_reservas=None
               conectará la GUI)
 ```
 
-Correcciones REV1 aplicadas (sobre la base 039, sin reiniciar):
-ejecutor interno para escritores productivos, detección deliberada
-de copies en commit, fail-safe estricto de resultados
-(ResultadoValidacionReservaPropia con valida EXACTAMENTE True) y
-barreras de mensajes sin excepción cruda. Fixtures montan estado
-con servicio SIN protector.
+Correcciones REV1/REV4 consolidadas: ejecutor interno para
+escritores productivos, detección deliberada de copies en commit,
+fail-safe estricto de resultados (valida EXACTAMENTE True) y
+gramática diff cerrada en DOS FAMILIAS positivas exactas (staged
+set exacto; vista de UNA ruta con --no-ext-diff/--no-textconv
+obligatorios), con test REAL diff.external que demuestra el
+bloqueo de formas no reconocidas. Copy y protector intactos;
+convención CRLF homogénea preservada.
 
-Correcciones REV4 aplicadas (sobre REV3, sin reiniciar): gramática
-diff cerrada en DOS FAMILIAS positivas exactas — staged set exacto
-(--cached --name-status -z -C --find-copies-harder, sin rutas) y
-vista de UNA ruta (--no-ext-diff/--no-textconv obligatorios;
---no-color --unified=3 o --numstat según call sites reales;
---numstat y --unified=3 no coexisten). Formas parciales como
-diff/diff --cached/diff --unified=3 quedan bloqueadas; test REAL
-con diff.external (helper sh + marcador) demuestra que el helper
-se ejecuta sin protector y NO se ejecuta en las formas seguras ni
-en las bloqueadas. Copy y protector intactos. Convención CRLF
-homogénea preservada; 0 whitespace real añadido.
-
-Validaciones ejecutadas (totales reales):
+Evidencia histórica del cierre (no constantes futuras):
 
 ```text
-py_compile focalizado -> OK
 focal E conjunta -> 141/141 OK (35 protección + 106 servicio_git)
 regresión D -> 143/143 OK
-suite completa -> 953/953 OK
-staging -> vacío
+suite completa -> 953/953 OK (846 previas + 107 nuevas)
+commit -> 0d8042d con auditorías 040/041 precommit/postcommit ACEPTADAS
 ```
-
-Pruebas del Bloque E: 107 nuevas (846 previas + 107 = 953).
 
 ## Resultado Bloque F (resumen, CERRADO Y COMMITTEADO en b547fae)
 
@@ -360,55 +326,40 @@ automatismos -> cero: staging/commit no llaman red/reservas; sin
               scheduler ni auto-renovación
 ```
 
-Validaciones ejecutadas (totales reales):
-
-```text
-py_compile focalizado -> OK
-focal GUI F conjunta -> 301/301 OK
-  (modo_equipo_gui 44 + commit_gui_conflicto 1 +
-   publicar_rama_git 70 + ayuda_tooltips_v1 121 +
-   leyenda_estados_git 65)
-ayuda_emergente -> 10/10 OK
-regresión D/E -> 284/284 OK
-suite completa -> 1000/1000 OK
-git diff --check -> 0 avisos reales
-staging -> vacío
-```
-
 Pruebas del Bloque F: 47 nuevas (953 previas + 47 = 1000).
 
-Correcciones REV1 aplicadas (sobre 042, sin reiniciar): B1 —
-import faltante de ServicioIdentidadEquipo corregido y prueba
-AST de arranque (__init__ sin globales sin resolver); B2 —
-firma de configuración efectiva (url/alias/ttl/renovación/
-margen/frescura/grace): el contexto solo se reutiliza si ruta +
-project_uuid + firma coinciden; cambiar alias o backend URL
-reconstruye localmente ServicioReservas/protector/servicio Git
-protegido; fallo de reconstrucción -> bloqueado/fail-closed sin
-fallback; firma reseteada al limpiar contexto; B3 — test del
-mutex con hilo FALSO (sin hilos reales descontrolados, cero
-"Exception in thread", cero traceback asíncrono). Verificación
-de la focal limpia de stderr asíncrono.
+Correcciones REV1 consolidadas: B1 — import de
+ServicioIdentidadEquipo corregido con prueba AST de arranque;
+B2 — firma de configuración efectiva (8 dimensiones: url/alias/ttl/
+renovación/margen/frescura/grace + habilitado): el contexto solo se
+reutiliza si ruta + project_uuid + firma coinciden; cambiar alias o
+backend URL reconstruye localmente ServicioReservas/protector/
+servicio Git protegido y un fallo de reconstrucción es fail-closed
+sin fallback; B3 — test del mutex con hilo FALSO (cero
+"Exception in thread" y cero traceback asíncrono).
 
-Validaciones REV1 (totales reales):
+Evidencia histórica del cierre (no constantes futuras):
 
 ```text
-py_compile -> OK
 focal REV1 (test_modo_equipo_gui) -> 51/51 OK
 focal GUI F conjunta -> 318/318 OK
 regresión D/E -> 284/284 OK
-suite completa -> 1007/1007 OK
-git diff --check -> 0 avisos reales
-staging -> vacío
+suite completa -> 1007/1007 OK (953 previas + pruebas F y REV1)
+commit -> b547fae con auditorías 043/044 precommit/postcommit ACEPTADAS
 ```
 
-## Resultado Bloque G (resumen, IMPLEMENTADO, PENDIENTE DE AUDITORÍA CHATGPT)
+## Resultado Bloque G (resumen, CERRADO Y COMMITTEADO en d1b2ed3)
 
-Implementado sobre el working tree (SIN commit; HEAD base b547fae).
 Aviso pedagógico cancelable de reservas propias activas conocidas
 antes de cambiar/crear rama, Pull, Push, publicar rama y descartar
 cambios sin preparar. Fetch NO entra. Staging/commit/Quitar siguen
 con las barreras E/F intactas.
+
+```text
+commit -> d1b2ed36ffb8745b2fe412a52a239e94823199c1
+mensaje -> Advierte sobre reservas antes de operaciones Git
+auditorías -> 047 precommit ACEPTADA + 048 postcommit ACEPTADA
+```
 
 ```text
 modificados -> servicio_reservas.py
@@ -459,31 +410,32 @@ texto -> N reservas conocidas en esta sesión + lista
 Pruebas del Bloque G: 54 nuevas (20 servicio + 34 GUI;
 1007 previas + 54 = 1061).
 
-Validaciones ejecutadas (totales reales):
+Evidencia histórica del cierre (no constantes futuras):
 
 ```text
-py_compile -> OK (4 archivos modificados)
 focal servicio_reservas -> 69/69 OK (49 previas + 20)
-focal modo_equipo_gui -> 85/85 OK (51 previas + 34)
+focal GUI -> 85/85 OK (51 previas + 34)
+focal conjunta precommit -> 154/154 OK
 "Exception in thread" / Traceback en focal GUI -> 0
 regresión D/E/F -> 375/375 OK
-suite completa -> 1061/1061 OK
-git diff --check -> limpio
-staging -> vacío
+suite completa heredada del árbol certificado -> 1061/1061 OK
+commit -> d1b2ed36ffb8745b2fe412a52a239e94823199c1
 ```
 
 ## Próximo paso
 
 ```text
-AUDITORÍA CHATGPT GG-PROMPT-046 (BLOQUE G)
+AUDITORÍA PRE-STAGING DEL BLOQUE H
 ```
 
-Bloque G está IMPLEMENTADO y validado técnicamente en el working
-tree; NO está aceptado ni cerrado hasta la auditoría ChatGPT.
-Después de F, el siguiente paso natural es la auditoría y, si
-procede, el commit del Bloque G. Bloque H sigue NO iniciado.
-Staging/commit solo con autorización expresa del propietario y
-ejecutados por el propietario desde GestorGit.
+El cierre documental del Bloque H quedó ACEPTADO (GG-PROMPT-050 CON REV2).
+Versionados modificados previstos para el cierre Git → exactamente 4:
+  AGENTS.md
+  CLAUDE.md
+  README.md
+  TRABAJO_ACTUAL.md
+`seguimiento_prompts/README.md` → administrativo, FUERA del commit.
+Staging → vacío. Commit H → NO realizado. Push → NO autorizado.
 
 ## Seguridad
 

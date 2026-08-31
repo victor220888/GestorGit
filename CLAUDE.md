@@ -97,6 +97,17 @@ Los prompts, REV, ADDENDUM y RESULTADO históricos se preservan.
 - `servicio_cambios_locales_git.py`: inspección de cambios.
 - `servicio_descarte_cambios_git.py`: descarte controlado de cambios sin
   preparar preservando el índice.
+- `modelos_reservas.py`: modelos/validación/canon de reservas.
+- `servicio_manifiesto_proyecto.py`: manifiesto compartido
+  `.gestorgit/proyecto.json` y project_uuid/layout.
+- `servicio_objetos_oracle.py`: resolución estricta ruta Oracle ->
+  clave de objeto.
+- `servicio_identidad_equipo.py`: id_cliente local de instalación.
+- `servicio_reservas.py`: máquina/orquestación local de reservas +
+  coordinador de red.
+- `servicio_remoto_reservas.py`: Git remoto dedicado de reservas.
+- `servicio_proteccion_reservas_git.py`: barrera local fail-closed
+  para staging/commit.
 - `principal.py`: GUI Tkinter y coordinación.
 - `ayuda_interfaz.py`: ayuda visual, sin lógica Git.
 - `pruebas/`: `unittest`.
@@ -162,6 +173,24 @@ Esta regla no limita los comandos Git de solo lectura usados para auditoría.
 - Nunca tocar widgets Tkinter desde un hilo secundario.
 - Errores de consulta Git no se interpretan como estado seguro/limpio.
 - `index.lock` se detecta y bloquea; nunca se elimina automáticamente.
+- Con Modo Equipo habilitado, un objeto Oracle reconocido que entra en
+  staging/actualización de preparados/commit exige reserva propia activa
+  y verificada; contexto inválido o backend no verificable bloquea, sin
+  fallback degradante.
+- `project_uuid` es compartido/versionado e inmutable para la ruta del
+  repositorio en V1; `id_cliente` es la identidad local de instalación,
+  separada de alias/hostname/identidad Git.
+- La protección de staging/commit es local en el punto de ejecución:
+  no hace Fetch, Push, reserva, renovación ni liberación automática.
+- Las acciones de reserva de la GUI son explícitas; no existe scheduler
+  ni auto-renovación en V1.
+- `CoordinadorOperacionesRed` es el mutex único compartido entre las
+  remotas Git soportadas y las operaciones remotas de reservas; no crear
+  caminos paralelos que lo eludan.
+- Los avisos de reservas (cambiar/crear rama, Pull, Push, publicar rama,
+  descartar sin preparar) son pedagógicos y cancelables, usan solo
+  reservas propias conocidas localmente, sin red/mutex/hilo; Fetch no
+  muestra ese aviso.
 
 ## Pruebas y cierre de una tarea
 

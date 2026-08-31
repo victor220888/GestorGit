@@ -156,10 +156,27 @@ Acción explícita de la ventana de ramas para publicar la rama local ACTUAL:
 - tras éxito o fallo se exige un Fetch nuevo;
 - puede publicar una rama aunque no tenga commits exclusivos.
 
+### Modo Equipo Oracle V1
+
+Capa preventiva de colaboración para desarrollo Oracle/PLSQL que añade reservas de objetos compartidos sin sustituir a Git:
+
+- manifiesto compartido y versionado `.gestorgit/proyecto.json` con `project_uuid` y layout Oracle compartido;
+- `project_uuid` inmutable para la ruta del repositorio en V1;
+- identidad técnica local `id_cliente` separada de la configuración transportable, en `%APPDATA%\GestorGit\identidad_instalacion.json`;
+- backend Git dedicado de reservas con caché bare local por proyecto;
+- acciones de reservas explícitas desde la GUI: consultar, reservar, renovar, liberar y tomar vencida;
+- sin scheduler ni auto-renovación: staging/commit no reservan, renuevan ni liberan automáticamente;
+- staging, actualización de preparados y commit de objetos Oracle reconocidos se protegen de forma fail-closed: con Modo Equipo habilitado exigen una reserva propia activa y verificada y un contexto válido, sin fallback degradante ante contexto inválido o backend no verificable;
+- `CoordinadorOperacionesRed` actúa como mutex único compartido por las operaciones remotas Git y las operaciones de reservas;
+- avisos pedagógicos cancelables de reservas propias conocidas antes de cambiar/crear rama, Pull, Push, publicar rama y descartar cambios sin preparar (Fetch queda fuera; el aviso es local y no reserva, renueva ni libera).
+
+El layout Oracle de V1 queda limitado a lo implementado (por ejemplo `Paquetes/*.pls -> PACKAGE`); las rutas no resolubles de forma inequívoca bloquean la operación protegida con explicación.
+
 ### Tooltips didácticos V1
 
-- 38 tooltips centralizados (37 de la V1 histórica + la ayuda de Publicar rama local);
-- explicaciones de operaciones, conceptos locales/remotos, staging, commit, Fetch, Pull, Push, historial, Inspector, ramas y sincronización;
+- 53 tooltips centralizados en la V1 actual
+  (38 históricos + 15 de Modo Equipo Oracle V1);
+- explicaciones de operaciones, conceptos locales/remotos, staging, commit, Fetch, Pull, Push, historial, Inspector, ramas, sincronización y Modo Equipo Oracle;
 - sin textos largos dispersos por la GUI.
 
 ### Leyenda/Ayuda contextual de estados Git V1
@@ -188,46 +205,41 @@ La ventana no ejecuta Git ni modifica el repositorio.
 
 ## Estado validado actual
 
-Última etapa cerrada:
-
 ```text
-Publicar rama local V1
+Publicar rama local V1 -> cerrada
+Modo Equipo Oracle V1   -> funcionalmente implementada (bloques A-G)
+Bloque H (documentación/cierre de la V1) -> documental
 ```
 
-Implementada, validada manualmente en Windows (A–F, layout, texto y
-tooltips), cerrada documentalmente y con commit local creado:
+Modo Equipo Oracle V1 está implementada en bloques incrementales
+auditados (modelos/objetos, identidad/configuración, backend local y
+remoto de reservas, protección de staging/commit, GUI y avisos
+pedagógicos); su cierre documental se realiza en el Bloque H. Las
+operaciones Git productivas sobre el repositorio de desarrollo siguen
+el modelo conservador ya documentado: el propietario las ejecuta
+desde GestorGit y los agentes solo auditan en solo lectura. Push del
+repositorio de desarrollo queda pendiente de una decisión/autorización
+explícita del propietario.
 
-```text
-7c603fd Agrega publicación segura de rama local V1
-```
-
-El estado remoto no fue modificado al crear ese commit (`ahead 9` respecto
-de `origin/master`); Push queda pendiente de una decisión/autorización
-explícita.
-
-Suite del último cierre validado:
-
-```text
-426 tests OK
-```
-
-> Importante: este bloque describe el estado conocido al redactar el README. Antes de trabajar, ejecutar siempre `git status` y `git log -1 --oneline`.
+> Importante: este bloque describe el estado de producto conocido al redactar el README. Antes de trabajar, ejecutar siempre `git status` y `git log -1 --oneline`.
 
 ## Próximo paso
 
-La publicación segura de ramas locales ya está implementada, validada y
-commiteada localmente. Push sigue pendiente de decisión/autorización
-explícita.
+La publicación segura de ramas locales y **Modo Equipo Oracle V1**
+ya están implementadas en el producto; la V1 de colaboración de
+equipo para desarrollo Oracle/PLSQL está funcionalmente cerrada en
+sus bloques A-G y su cierre documental corresponde al Bloque H.
 
 Las operaciones Git productivas que GestorGit soporta sobre su propio
 repositorio (staging, commit, Fetch, Pull/Push seguros y ramas) se realizan
 por el usuario desde la propia aplicación, con auditoría de solo lectura de
 los agentes antes y después; los agentes no las sustituyen por CLI salvo
-excepción declarada de forma explícita.
+excepción declarada de forma explícita. Push del repositorio de desarrollo
+no es una acción automática y sigue pendiente de decisión/autorización
+explícita del propietario.
 
-La evolución posterior prevista es avanzar hacia una visión de colaboración
-de equipo para desarrollo Oracle/PLSQL sin perder la filosofía de seguridad
-y comprensión.
+El estado de desarrollo vigente (etapa activa, archivos implicados y
+siguiente paso interno) se consulta en `TRABAJO_ACTUAL.md` y en Git real.
 
 ## Arquitectura principal
 
@@ -267,6 +279,16 @@ Ramas locales:
 - crear.
 
 No publica ramas ni ejecuta Push.
+
+### Modo Equipo Oracle (reservas)
+
+- `modelos_reservas.py`: modelos, validación y canon del payload V1 de reservas (fórmula de ref, timestamps RFC3339, clasificaciones).
+- `servicio_manifiesto_proyecto.py`: lectura del manifiesto compartido versionado `.gestorgit/proyecto.json` (`project_uuid` y layout Oracle).
+- `servicio_objetos_oracle.py`: resolución estricta de ruta Oracle a clave de objeto; las rutas no resolubles de forma inequívoca no se reservan.
+- `servicio_identidad_equipo.py`: `id_cliente` técnico local de la instalación (separado de la configuración transportable).
+- `servicio_reservas.py`: máquina de estados y orquestación local de reservas (consultar/reservar/renovar/liberar/tomar vencida), validación local de reserva propia fresca y coordinador/mutex de operaciones de red.
+- `servicio_remoto_reservas.py`: operaciones Git sobre el backend dedicado de reservas (fetch, lectura/validación de head, commits por plumbing, Push sin force).
+- `servicio_proteccion_reservas_git.py`: barrera local fail-closed que exige reserva propia activa y verificada en staging/actualización de preparados/commit de objetos Oracle.
 
 ### Servicios auxiliares
 
@@ -312,12 +334,17 @@ git diff --stat
 git status --short
 ```
 
-Último cierre validado:
+Último cierre funcional certificado:
 
 ```text
-Ran 426 tests ...
+Ran 1061 tests ...
 OK
 ```
+
+Este número es la evidencia histórica del último cierre funcional
+certificado (árbol del Bloque G de Modo Equipo Oracle V1), no un total
+fijo que futuros cambios deban exigir sin ejecutar la suite: el total
+vigente se confirma por ejecución.
 
 ## Documentación para agentes
 
@@ -355,4 +382,4 @@ El usuario guarda los archivos en `seguimiento_prompts/` y ChatGPT genera los pr
 
 GestorGit ya es un cliente Git educativo y conservador funcional para trabajo individual, incluyendo la publicación explícita y segura de ramas locales.
 
-La evolución prevista es avanzar hacia una visión de colaboración de equipo para desarrollo Oracle/PLSQL sin perder la filosofía de seguridad y comprensión.
+Además del flujo individual, GestorGit incorpora **Modo Equipo Oracle V1**: reservas preventivas de objetos Oracle con backend Git dedicado, protección fail-closed de staging/commit y avisos pedagógicos, manteniendo la filosofía de seguridad y comprensión.
