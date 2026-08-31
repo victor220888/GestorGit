@@ -3363,6 +3363,13 @@ class AplicacionGit:
             or "HEAD separado"
         )
 
+        # Bloque G: aviso pedagógico cancelable si existen
+        # reservas propias activas conocidas en esta sesión.
+        if not self._confirmar_aviso_reservas_propias(
+            parent=self.ventana_ramas
+        ):
+            return
+
         confirmado = messagebox.askyesno(
             "Cambiar de rama",
             (
@@ -3424,6 +3431,13 @@ class AplicacionGit:
         nombre_rama = self.variable_nueva_rama.get()
 
         if not nombre_rama:
+            return
+
+        # Bloque G: aviso pedagógico cancelable si existen
+        # reservas propias activas conocidas en esta sesión.
+        if not self._confirmar_aviso_reservas_propias(
+            parent=self.ventana_ramas
+        ):
             return
 
         confirmado = messagebox.askyesno(
@@ -3525,6 +3539,15 @@ class AplicacionGit:
             return
 
         remoto = self.remotos_repositorio[0]
+
+        # Bloque G: aviso pedagógico cancelable si existen
+        # reservas propias activas conocidas en esta sesión.
+        # Siempre ANTES de la confirmación histórica y antes de
+        # adquirir el mutex de red.
+        if not self._confirmar_aviso_reservas_propias(
+            parent=self.ventana_ramas
+        ):
+            return
 
         confirmado = messagebox.askyesno(
             "Publicar rama local",
@@ -6338,6 +6361,14 @@ class AplicacionGit:
             )
             return
 
+        # Bloque G: aviso pedagógico cancelable si existen
+        # reservas propias activas conocidas en esta sesión.
+        # No relaja ninguna protección del descarte histórico.
+        if not self._confirmar_aviso_reservas_propias(
+            parent=self.ventana_cambios_locales
+        ):
+            return
+
         ruta_archivo = self.ruta_archivo_inspector
 
         if detalle.preparado:
@@ -6654,6 +6685,13 @@ class AplicacionGit:
 
             return
 
+        # Bloque G: aviso pedagógico cancelable si existen
+        # reservas propias activas conocidas en esta sesión.
+        # Siempre ANTES de la confirmación histórica y antes de
+        # adquirir el mutex de red.
+        if not self._confirmar_aviso_reservas_propias():
+            return
+
         mensaje_confirmacion = (
             self._crear_mensaje_confirmacion_pull(
                 estado
@@ -6856,6 +6894,13 @@ class AplicacionGit:
                 "No hay commits locales pendientes de enviar."
             )
 
+            return
+
+        # Bloque G: aviso pedagógico cancelable si existen
+        # reservas propias activas conocidas en esta sesión.
+        # Siempre ANTES de la confirmación histórica y antes de
+        # adquirir el mutex de red.
+        if not self._confirmar_aviso_reservas_propias():
             return
 
         mensaje_confirmacion = (
@@ -8908,6 +8953,87 @@ class AplicacionGit:
 
         if coordinador is not None:
             coordinador.finalizar_remota()
+
+    # ---------------------------------------------------------
+    # BLOQUE G: aviso pedagógico de reservas propias conocidas
+    # ---------------------------------------------------------
+
+    def _confirmar_aviso_reservas_propias(self, parent=None):
+        """
+        Aviso pedagógico cancelable (Bloque G) cuando existen
+        reservas propias ACTIVAS conocidas localmente en esta
+        sesión, antes de cambiar/crear rama, Pull, Push, publicar
+        rama o descartar cambios sin preparar.
+
+        Es SOLO educación, nunca una barrera de propiedad:
+
+        - sin red, sin mutex, sin hilo, sin after;
+        - no libera, no renueva, no reserva;
+        - si Modo Equipo no está listo o el listado informativo
+          falla, no se muestra aviso y la operación histórica
+          continúa (devuelve True);
+        - cancelar (False) aborta la operación productiva sin
+          ejecutarla.
+
+        Devuelve True si la operación puede continuar.
+        """
+
+        try:
+            self._refrescar_estado_modo_equipo()
+
+            if self.modo_equipo_estado != "listo":
+                return True
+
+            servicio_reservas = self.servicio_reservas
+            project_uuid = self.project_uuid_activo
+
+            if servicio_reservas is None or not project_uuid:
+                return True
+
+            reservas = (
+                servicio_reservas
+                .listar_reservas_propias_conocidas(project_uuid)
+            )
+
+            if not reservas:
+                return True
+
+            lineas = []
+            maximo_visible = 5
+
+            for reserva in reservas[:maximo_visible]:
+                lineas.append(
+                    f"- {reserva.clave_objeto} "
+                    f"(vence {reserva.vencimiento})"
+                )
+
+            if len(reservas) > maximo_visible:
+                lineas.append(
+                    f"... y {len(reservas) - maximo_visible} más"
+                )
+
+            mensaje = (
+                f"Tienes {len(reservas)} reserva(s) propia(s) "
+                "activa(s) conocida(s) en esta sesión.\n\n"
+                + "\n".join(lineas)
+                + "\n\n"
+                "Esta operación NO libera ni renueva esas reservas.\n"
+                "Continuar no equivale a liberarlas.\n"
+                "Si prefieres gestionarlas primero, cancela y usa la "
+                "ventana Modo Equipo.\n\n"
+                "¿Deseas continuar con la operación?"
+            )
+
+            return messagebox.askyesno(
+                "Modo Equipo Oracle",
+                mensaje,
+                parent=parent,
+            )
+
+        except Exception:
+            # Fallo informativo: el aviso nunca se convierte en
+            # barrera de la operación Git histórica.
+            return True
 
     # ---------------------------------------------------------
     # Ventana Modo Equipo Oracle

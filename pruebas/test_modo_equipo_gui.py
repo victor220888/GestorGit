@@ -25,10 +25,26 @@ from modelos_reservas import (
     ResultadoValidacionReservaPropia,
 )
 from servicio_objetos_oracle import ServicioObjetosOracle
-from servicio_reservas import CoordinadorOperacionesRed
+from servicio_reservas import (
+    CoordinadorOperacionesRed,
+    ReservaPropiaConocida,
+)
 
 
 CLAVE_FINI004 = "PACKAGE|FINI004"
+
+PROJECT_UUID_PRUEBA = "33333333-3333-4333-8333-333333333333"
+
+
+def _reserva_conocida(clave, vencimiento="2026-08-28T12:00:00Z"):
+    """Snapshot de reserva propia conocida para el aviso G."""
+
+    return ReservaPropiaConocida(
+        project_uuid=PROJECT_UUID_PRUEBA,
+        clave_objeto=clave,
+        vencimiento=vencimiento,
+        alias="equipo",
+    )
 
 
 def _manifiesto(project_uuid=None):
@@ -203,6 +219,14 @@ class ReservasFalsasGUI:
 
     def __init__(self):
         self.llamadas = []
+        self.llamadas_listar = []
+        # Bloque G: reservas propias activas conocidas que la API
+        # local devuelve (snapshots ReservaPropiaConocida).
+        self.reservas_propias = ()
+
+    def listar_reservas_propias_conocidas(self, project_uuid):
+        self.llamadas_listar.append(project_uuid)
+        return tuple(self.reservas_propias)
 
     def _registrar(self, tipo, project_uuid, clave):
         self.llamadas.append((tipo, project_uuid, clave))
@@ -1489,6 +1513,714 @@ class TestInvalidacionPorConfiguracion(_BaseModoEquipo):
                 ),
                 f"La firma no detecta cambios en {campo}",
             )
+
+
+class TestAvisoReservasG(_BaseModoEquipo):
+    """Bloque G: helper del aviso pedagógico cancelable.
+
+    El aviso es solo educación: sin Modo Equipo listo, o ante
+    cualquier fallo informativo, devuelve True sin diálogo y la
+    operación Git histórica continúa.
+    """
+
+    def _listo_con(self, reservas):
+        self._estado_listo(ServicioGitProtegidoFalso())
+        self.aplicacion.servicio_reservas.reservas_propias = tuple(
+            reservas
+        )
+
+    def test_deshabilitado_true_sin_dialogo(self):
+        resultado = self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertTrue(resultado)
+        self.assertEqual(
+            self.aplicacion.modo_equipo_estado, "deshabilitado"
+        )
+        self.mocks_messagebox["askyesno"].assert_not_called()
+
+    def test_no_cargada_true_sin_dialogo(self):
+        self.aplicacion.servicio_configuracion = ConfiguracionFalsa(
+            SimpleNamespace(
+                exitoso=False, configuracion=None, mensaje="corrupto"
+            )
+        )
+        resultado = self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertTrue(resultado)
+        self.assertEqual(
+            self.aplicacion.modo_equipo_estado, "no_cargada"
+        )
+        self.mocks_messagebox["askyesno"].assert_not_called()
+
+    def test_bloqueado_true_sin_dialogo(self):
+        self.aplicacion.servicio_configuracion = ConfiguracionFalsa(
+            SimpleNamespace(
+                exitoso=True, configuracion=_config_habilitada()
+            )
+        )
+        self.aplicacion.servicio_manifiesto = ManifiestoFalso(
+            "x", exitoso=False
+        )
+        resultado = self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertTrue(resultado)
+        self.assertEqual(
+            self.aplicacion.modo_equipo_estado, "bloqueado"
+        )
+        self.mocks_messagebox["askyesno"].assert_not_called()
+
+    def test_listo_sin_reservas_true_sin_dialogo(self):
+        self._listo_con(())
+        resultado = self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertTrue(resultado)
+        self.mocks_messagebox["askyesno"].assert_not_called()
+        self.assertEqual(
+            self.aplicacion.servicio_reservas.llamadas_listar,
+            [PROJECT_UUID_PRUEBA],
+        )
+
+    def test_api_informativa_falla_true_sin_bloquear(self):
+        self._listo_con(())
+
+        def _falla(project_uuid):
+            raise RuntimeError("fallo informativo simulado")
+
+        self.aplicacion.servicio_reservas.listar_reservas_propias_conocidas = (
+            _falla
+        )
+        resultado = self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertTrue(resultado)
+        self.mocks_messagebox["askyesno"].assert_not_called()
+
+    def test_listo_con_reservas_muestra_aviso(self):
+        self._listo_con(
+            (
+                _reserva_conocida("PACKAGE|AAA"),
+                _reserva_conocida(
+                    "PACKAGE|BBB", "2026-09-01T09:30:00Z"
+                ),
+            )
+        )
+        self.mocks_messagebox["askyesno"].return_value = True
+        resultado = self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertTrue(resultado)
+        self.mocks_messagebox["askyesno"].assert_called_once()
+        argumentos = self.mocks_messagebox["askyesno"].call_args
+        titulo = argumentos.args[0]
+        mensaje = argumentos.args[1]
+        self.assertEqual(titulo, "Modo Equipo Oracle")
+        self.assertIn("2 reserva(s) propia(s)", mensaje)
+        self.assertIn(
+            "- PACKAGE|AAA (vence 2026-08-28T12:00:00Z)", mensaje
+        )
+        self.assertIn(
+            "- PACKAGE|BBB (vence 2026-09-01T09:30:00Z)", mensaje
+        )
+        self.assertIn("NO libera ni renueva", mensaje)
+        self.assertIn("Continuar no equivale a liberarlas", mensaje)
+        self.assertIn("ventana Modo Equipo", mensaje)
+
+    def test_cancelar_devuelve_false(self):
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.mocks_messagebox["askyesno"].return_value = False
+        resultado = self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertFalse(resultado)
+
+    def test_continuar_devuelve_true(self):
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.mocks_messagebox["askyesno"].return_value = True
+        resultado = self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertTrue(resultado)
+
+    def test_usa_project_uuid_activo_vigente(self):
+        uuid_otro = "55555555-5555-4555-8555-555555555555"
+        self.aplicacion.servicio_manifiesto = ManifiestoFalso(
+            uuid_otro
+        )
+        self._estado_listo(ServicioGitProtegidoFalso())
+        self.aplicacion.servicio_reservas.reservas_propias = (
+            _reserva_conocida(CLAVE_FINI004),
+        )
+        self.mocks_messagebox["askyesno"].return_value = True
+        self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertEqual(
+            self.aplicacion.servicio_reservas.llamadas_listar,
+            [uuid_otro],
+        )
+
+    def test_truncamiento_y_n_mas(self):
+        reservas = tuple(
+            _reserva_conocida(f"PACKAGE|OBJ{indice:02d}")
+            for indice in range(7)
+        )
+        self._listo_con(reservas)
+        self.mocks_messagebox["askyesno"].return_value = True
+        self.aplicacion._confirmar_aviso_reservas_propias()
+        mensaje = (
+            self.mocks_messagebox["askyesno"].call_args.args[1]
+        )
+        self.assertIn("- PACKAGE|OBJ00 (vence", mensaje)
+        self.assertIn("- PACKAGE|OBJ04 (vence", mensaje)
+        self.assertNotIn("PACKAGE|OBJ05", mensaje)
+        self.assertIn("... y 2 más", mensaje)
+        self.assertIn("7 reserva(s) propia(s)", mensaje)
+
+    def test_sin_servicio_vigente_sin_aviso(self):
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.aplicacion.servicio_reservas = None
+        resultado = self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertTrue(resultado)
+        self.mocks_messagebox["askyesno"].assert_not_called()
+
+    def test_refresco_local_antes_del_lookup(self):
+        config_falsa = self.aplicacion.servicio_configuracion
+        resultado = self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertTrue(resultado)
+        # El refresco del mecanismo F ocurrió antes del lookup.
+        self.assertEqual(config_falsa.llamadas_carga, 1)
+        self.assertEqual(
+            self.aplicacion.modo_equipo_estado, "deshabilitado"
+        )
+
+    def test_cambio_de_contexto_usa_instancia_vigente(self):
+        self._estado_listo(ServicioGitProtegidoFalso())
+        instancia_anterior = self.aplicacion.servicio_reservas
+        instancia_nueva = ReservasFalsasGUI()
+        instancia_nueva.reservas_propias = (
+            _reserva_conocida(CLAVE_FINI004),
+        )
+        self.aplicacion.servicio_reservas = instancia_nueva
+        self.mocks_messagebox["askyesno"].return_value = True
+        self.aplicacion._confirmar_aviso_reservas_propias()
+        self.assertEqual(
+            instancia_nueva.llamadas_listar, [PROJECT_UUID_PRUEBA]
+        )
+        self.assertEqual(instancia_anterior.llamadas_listar, [])
+
+    def test_liberacion_propia_desaparece_del_aviso(self):
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.mocks_messagebox["askyesno"].return_value = True
+        self.aplicacion._confirmar_aviso_reservas_propias()
+        self.mocks_messagebox["askyesno"].assert_called_once()
+        # La liberación propia actualiza el estado conocido; la
+        # reserva deja de provocar el aviso.
+        self.aplicacion.servicio_reservas.reservas_propias = ()
+        self.aplicacion._confirmar_aviso_reservas_propias()
+        self.mocks_messagebox["askyesno"].assert_called_once()
+
+    def test_aviso_sin_red_ni_mutex_ni_cache(self):
+        ruta = Path(principal.__file__).resolve()
+        arbol = ast.parse(
+            ruta.read_text(encoding="utf-8"), filename=str(ruta)
+        )
+        metodo = None
+        for nodo in ast.walk(arbol):
+            if (
+                isinstance(nodo, ast.FunctionDef)
+                and nodo.name == "_confirmar_aviso_reservas_propias"
+            ):
+                metodo = nodo
+        self.assertIsNotNone(metodo)
+        llamadas_prohibidas = {
+            "consultar_reserva",
+            "reservar",
+            "renovar",
+            "liberar",
+            "tomar_vencida",
+            "ejecutar_fetch",
+            "ejecutar_pull_seguro",
+            "ejecutar_push_seguro",
+            "cambiar_rama",
+            "crear_rama",
+            "publicar_rama_local",
+            "descartar_cambios_sin_preparar",
+            "Thread",
+            "after",
+            "intentar_iniciar_reservas",
+            "intentar_iniciar_remota",
+            "ejecutar_git",
+        }
+        for nodo in ast.walk(metodo):
+            if isinstance(nodo, ast.Call):
+                nombre = getattr(nodo.func, "attr", None) or (
+                    getattr(nodo.func, "id", None)
+                )
+                self.assertNotIn(
+                    nombre,
+                    llamadas_prohibidas,
+                    f"el aviso G llama a {nombre}",
+                )
+            if isinstance(nodo, ast.Attribute):
+                self.assertNotEqual(
+                    nodo.attr,
+                    "_cache",
+                    "el aviso G no debe acceder a _cache",
+                )
+
+
+class TestInsercionesAvisoG(_BaseModoEquipo):
+    """Bloque G: las seis operaciones respetan el aviso.
+
+    Orden exigido en remotas: aviso G -> confirmación histórica ->
+    mutex -> hilo. Cancelar el aviso implica: sin confirmación
+    histórica, sin mutex, sin hilo y sin servicio productivo.
+    """
+
+    def _listo_con(self, reservas):
+        self._estado_listo(ServicioGitProtegidoFalso())
+        self.aplicacion.servicio_reservas.reservas_propias = tuple(
+            reservas
+        )
+
+    def _programar_confirmaciones(self, respuestas, secuencia):
+        indice = {"n": 0}
+
+        def _askyesno(titulo=None, mensaje=None, parent=None,
+                      **opciones):
+            secuencia.append(titulo)
+            if indice["n"] < len(respuestas):
+                valor = respuestas[indice["n"]]
+            else:
+                valor = respuestas[-1]
+            indice["n"] += 1
+            return valor
+
+        self.mocks_messagebox["askyesno"].side_effect = _askyesno
+
+    def _observar_mutex(self, secuencia):
+        coordinador = self.aplicacion.coordinador_modo_equipo
+        real = coordinador.intentar_iniciar_remota
+
+        def _envuelto():
+            secuencia.append("mutex")
+            return real()
+
+        coordinador.intentar_iniciar_remota = _envuelto
+
+    def _ejecutar_con_hilo_falso(self, accion, secuencia):
+        creados = []
+
+        class HiloFalso:
+            def __init__(self, target, args, daemon=None):
+                creados.append(
+                    {"target": target, "args": args, "daemon": daemon}
+                )
+                secuencia.append("hilo")
+
+            def start(self):
+                secuencia.append("start")
+
+        with mock.patch.object(
+            principal, "threading", SimpleNamespace(Thread=HiloFalso)
+        ):
+            accion()
+
+        return creados
+
+    def _preparar_cambio_rama(self):
+        app = self.aplicacion
+        app.ventana_ramas = SimpleNamespace(
+            winfo_exists=lambda: True
+        )
+        app.tabla_ramas = SimpleNamespace(
+            selection=lambda: ["feature/x"]
+        )
+        app.rama_actual_ventana_actual = "main"
+        app.refrescar_despues_de_ramas = lambda: None
+        app.servicio_ramas = SimpleNamespace(
+            cambiar_rama=mock.MagicMock(
+                return_value=SimpleNamespace(
+                    exitoso=True,
+                    error="",
+                    mensaje="Rama cambiada a feature/x.",
+                )
+            ),
+        )
+        return app.servicio_ramas
+
+    def _preparar_creacion_rama(self):
+        app = self.aplicacion
+        app.ventana_ramas = SimpleNamespace(
+            winfo_exists=lambda: True
+        )
+        app.variable_nueva_rama = VariableFalsa("feature/nueva")
+        app.refrescar_despues_de_ramas = lambda: None
+        app.servicio_ramas = SimpleNamespace(
+            crear_rama=mock.MagicMock(
+                return_value=SimpleNamespace(
+                    exitoso=True,
+                    error="",
+                    mensaje="Rama feature/nueva creada.",
+                )
+            ),
+        )
+        return app.servicio_ramas
+
+    def _preparar_publicacion(self):
+        app = self.aplicacion
+        app.ventana_ramas = SimpleNamespace(
+            winfo_exists=lambda: True
+        )
+        app.rama_actual_ventana_actual = "main"
+        app.fetch_exitoso_en_sesion = True
+        app.remotos_repositorio = ["origin"]
+        app.actualizar_controles_operacion_remota = lambda: None
+        app.variable_ultima_consulta = VariableFalsa("")
+        self._observar_mutex(app.secuencia_g)
+        return app
+
+    def _estado_sincronizacion(self, por_subir, por_bajar):
+        return SimpleNamespace(
+            exitoso=True,
+            upstream_configurado=True,
+            divergente=False,
+            commits_por_subir=por_subir,
+            commits_por_bajar=por_bajar,
+            rama_local="main",
+            remoto="origin",
+            rama_remota="origin/main",
+        )
+
+    def _preparar_remota(self, por_subir, por_bajar):
+        app = self.aplicacion
+        app.fetch_exitoso_en_sesion = True
+        app.cargar_cambios = lambda: None
+        app.aplicar_estado_sincronizacion = lambda estado: None
+        app.actualizar_controles_operacion_remota = lambda: None
+        app.variable_ultima_consulta = VariableFalsa("")
+        app.servicio_git.obtener_estado_sincronizacion = (
+            lambda ruta: self._estado_sincronizacion(
+                por_subir, por_bajar
+            )
+        )
+        self._observar_mutex(app.secuencia_g)
+        return app
+
+    def _preparar_descarte(self):
+        app = self.aplicacion
+        app.ventana_cambios_locales = SimpleNamespace()
+        app.ruta_archivo_inspector = "Paquetes/FINI004.pls"
+        app.actualizar_cambios_locales = lambda: None
+        app.cargar_cambios = lambda: None
+        app.notebook_cambios_locales = SimpleNamespace(
+            select=lambda: "sin-preparar"
+        )
+        app.marco_sin_preparar_locales = "sin-preparar"
+        app.detalle_cambio_local_actual = SimpleNamespace(
+            nuevo_sin_preparar=False,
+            en_conflicto=False,
+            diff_sin_preparar="diff --git a b",
+            preparado=False,
+        )
+        app.servicio_descarte_cambios = SimpleNamespace(
+            descartar_cambios_sin_preparar=mock.MagicMock(
+                return_value=ResultadoComando(
+                    exitoso=True, codigo_salida=0, salida="",
+                    error="", comando="restore",
+                )
+            ),
+        )
+        return app.servicio_descarte_cambios
+
+    # -- Cambiar rama -----------------------------------------
+
+    def test_cambiar_rama_sin_reservas_comportamiento_historico(self):
+        servicio_ramas = self._preparar_cambio_rama()
+        self._listo_con(())
+        self.aplicacion.secuencia_g = []
+        self._programar_confirmaciones([True],
+                                       self.aplicacion.secuencia_g)
+        self.aplicacion.confirmar_cambio_rama()
+        self.assertEqual(
+            self.aplicacion.secuencia_g, ["Cambiar de rama"]
+        )
+        servicio_ramas.cambiar_rama.assert_called_once_with(
+            "C:/repo/prueba", "feature/x"
+        )
+
+    def test_cambiar_rama_cancelar_aviso_no_continua(self):
+        servicio_ramas = self._preparar_cambio_rama()
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.aplicacion.secuencia_g = []
+        self._programar_confirmaciones([False],
+                                       self.aplicacion.secuencia_g)
+        self.aplicacion.confirmar_cambio_rama()
+        self.assertEqual(
+            self.aplicacion.secuencia_g, ["Modo Equipo Oracle"]
+        )
+        servicio_ramas.cambiar_rama.assert_not_called()
+
+    def test_cambiar_rama_continuar_sigue_flujo_historico(self):
+        servicio_ramas = self._preparar_cambio_rama()
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.aplicacion.secuencia_g = []
+        self._programar_confirmaciones([True],
+                                       self.aplicacion.secuencia_g)
+        self.aplicacion.confirmar_cambio_rama()
+        self.assertEqual(
+            self.aplicacion.secuencia_g,
+            ["Modo Equipo Oracle", "Cambiar de rama"],
+        )
+        servicio_ramas.cambiar_rama.assert_called_once_with(
+            "C:/repo/prueba", "feature/x"
+        )
+
+    # -- Crear rama -------------------------------------------
+
+    def test_crear_rama_sin_reservas_comportamiento_historico(self):
+        servicio_ramas = self._preparar_creacion_rama()
+        self._listo_con(())
+        self.aplicacion.secuencia_g = []
+        self._programar_confirmaciones([True],
+                                       self.aplicacion.secuencia_g)
+        self.aplicacion.confirmar_creacion_rama()
+        self.assertEqual(
+            self.aplicacion.secuencia_g, ["Crear rama local"]
+        )
+        servicio_ramas.crear_rama.assert_called_once_with(
+            "C:/repo/prueba", "feature/nueva"
+        )
+
+    def test_crear_rama_cancelar_aviso_no_continua(self):
+        servicio_ramas = self._preparar_creacion_rama()
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.aplicacion.secuencia_g = []
+        self._programar_confirmaciones([False],
+                                       self.aplicacion.secuencia_g)
+        self.aplicacion.confirmar_creacion_rama()
+        self.assertEqual(
+            self.aplicacion.secuencia_g, ["Modo Equipo Oracle"]
+        )
+        servicio_ramas.crear_rama.assert_not_called()
+
+    def test_crear_rama_continuar_sigue_flujo_historico(self):
+        servicio_ramas = self._preparar_creacion_rama()
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.aplicacion.secuencia_g = []
+        self._programar_confirmaciones([True],
+                                       self.aplicacion.secuencia_g)
+        self.aplicacion.confirmar_creacion_rama()
+        self.assertEqual(
+            self.aplicacion.secuencia_g,
+            ["Modo Equipo Oracle", "Crear rama local"],
+        )
+        servicio_ramas.crear_rama.assert_called_once_with(
+            "C:/repo/prueba", "feature/nueva"
+        )
+
+    # -- Publicar rama ----------------------------------------
+
+    def test_publicar_sin_reservas_comportamiento_historico(self):
+        app = self.aplicacion
+        app.secuencia_g = []
+        self._preparar_publicacion()
+        self._listo_con(())
+        self._programar_confirmaciones([True], app.secuencia_g)
+        creados = self._ejecutar_con_hilo_falso(
+            app.confirmar_publicacion_rama, app.secuencia_g
+        )
+        self.assertEqual(
+            app.secuencia_g,
+            ["Publicar rama local", "mutex", "hilo", "start"],
+        )
+        self.assertEqual(len(creados), 1)
+        self.assertEqual(creados[0]["target"], app.trabajo_publicar_rama)
+        self.assertEqual(
+            creados[0]["args"], ("C:/repo/prueba", "origin", "main")
+        )
+        app._liberar_mutex_red_de_remota()
+
+    def test_publicar_cancelar_aviso_sin_mutex_ni_hilo(self):
+        app = self.aplicacion
+        app.secuencia_g = []
+        self._preparar_publicacion()
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self._programar_confirmaciones([False], app.secuencia_g)
+        creados = self._ejecutar_con_hilo_falso(
+            app.confirmar_publicacion_rama, app.secuencia_g
+        )
+        self.assertEqual(app.secuencia_g, ["Modo Equipo Oracle"])
+        self.assertEqual(creados, [])
+        self.assertFalse(app.coordinador_modo_equipo.ocupado())
+
+    def test_publicar_continuar_orden_aviso_confirmacion_mutex_hilo(self):
+        app = self.aplicacion
+        app.secuencia_g = []
+        self._preparar_publicacion()
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self._programar_confirmaciones([True], app.secuencia_g)
+        creados = self._ejecutar_con_hilo_falso(
+            app.confirmar_publicacion_rama, app.secuencia_g
+        )
+        self.assertEqual(
+            app.secuencia_g,
+            [
+                "Modo Equipo Oracle",
+                "Publicar rama local",
+                "mutex",
+                "hilo",
+                "start",
+            ],
+        )
+        self.assertEqual(len(creados), 1)
+        app._liberar_mutex_red_de_remota()
+
+    # -- Pull ---------------------------------------------------
+
+    def test_pull_sin_reservas_comportamiento_historico(self):
+        app = self.aplicacion
+        app.secuencia_g = []
+        self._preparar_remota(0, 3)
+        self._listo_con(())
+        self._programar_confirmaciones([True], app.secuencia_g)
+        creados = self._ejecutar_con_hilo_falso(
+            app.iniciar_pull, app.secuencia_g
+        )
+        self.assertEqual(
+            app.secuencia_g, ["Confirmar Pull", "mutex", "hilo", "start"]
+        )
+        self.assertEqual(creados[0]["target"], app.trabajo_pull)
+        self.assertEqual(creados[0]["args"], ("C:/repo/prueba",))
+        app._liberar_mutex_red_de_remota()
+
+    def test_pull_cancelar_aviso_sin_mutex_ni_hilo(self):
+        app = self.aplicacion
+        app.secuencia_g = []
+        self._preparar_remota(0, 3)
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self._programar_confirmaciones([False], app.secuencia_g)
+        creados = self._ejecutar_con_hilo_falso(
+            app.iniciar_pull, app.secuencia_g
+        )
+        self.assertEqual(app.secuencia_g, ["Modo Equipo Oracle"])
+        self.assertEqual(creados, [])
+        self.assertFalse(app.coordinador_modo_equipo.ocupado())
+
+    def test_pull_continuar_orden_aviso_confirmacion_mutex_hilo(self):
+        app = self.aplicacion
+        app.secuencia_g = []
+        self._preparar_remota(0, 3)
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self._programar_confirmaciones([True], app.secuencia_g)
+        creados = self._ejecutar_con_hilo_falso(
+            app.iniciar_pull, app.secuencia_g
+        )
+        self.assertEqual(
+            app.secuencia_g,
+            ["Modo Equipo Oracle", "Confirmar Pull", "mutex",
+             "hilo", "start"],
+        )
+        self.assertEqual(len(creados), 1)
+        app._liberar_mutex_red_de_remota()
+
+    # -- Push ---------------------------------------------------
+
+    def test_push_sin_reservas_comportamiento_historico(self):
+        app = self.aplicacion
+        app.secuencia_g = []
+        self._preparar_remota(3, 0)
+        self._listo_con(())
+        self._programar_confirmaciones([True], app.secuencia_g)
+        creados = self._ejecutar_con_hilo_falso(
+            app.iniciar_push, app.secuencia_g
+        )
+        self.assertEqual(
+            app.secuencia_g, ["Confirmar Push", "mutex", "hilo", "start"]
+        )
+        self.assertEqual(creados[0]["target"], app.trabajo_push)
+        self.assertEqual(creados[0]["args"], ("C:/repo/prueba",))
+        app._liberar_mutex_red_de_remota()
+
+    def test_push_cancelar_aviso_sin_mutex_ni_hilo(self):
+        app = self.aplicacion
+        app.secuencia_g = []
+        self._preparar_remota(3, 0)
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self._programar_confirmaciones([False], app.secuencia_g)
+        creados = self._ejecutar_con_hilo_falso(
+            app.iniciar_push, app.secuencia_g
+        )
+        self.assertEqual(app.secuencia_g, ["Modo Equipo Oracle"])
+        self.assertEqual(creados, [])
+        self.assertFalse(app.coordinador_modo_equipo.ocupado())
+
+    def test_push_continuar_orden_aviso_confirmacion_mutex_hilo(self):
+        app = self.aplicacion
+        app.secuencia_g = []
+        self._preparar_remota(3, 0)
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self._programar_confirmaciones([True], app.secuencia_g)
+        creados = self._ejecutar_con_hilo_falso(
+            app.iniciar_push, app.secuencia_g
+        )
+        self.assertEqual(
+            app.secuencia_g,
+            ["Modo Equipo Oracle", "Confirmar Push", "mutex",
+             "hilo", "start"],
+        )
+        self.assertEqual(len(creados), 1)
+        app._liberar_mutex_red_de_remota()
+
+    # -- Descartar sin preparar ---------------------------------
+
+    def test_descarte_sin_reservas_comportamiento_historico(self):
+        servicio_descarte = self._preparar_descarte()
+        self._listo_con(())
+        self.aplicacion.secuencia_g = []
+        self._programar_confirmaciones([True],
+                                       self.aplicacion.secuencia_g)
+        self.aplicacion.descartar_cambios_sin_preparar()
+        self.assertEqual(
+            self.aplicacion.secuencia_g,
+            ["Descartar cambios sin preparar"],
+        )
+        servicio_descarte.descartar_cambios_sin_preparar\
+            .assert_called_once_with(
+                "C:/repo/prueba", "Paquetes/FINI004.pls"
+            )
+
+    def test_descarte_cancelar_aviso_no_descarta(self):
+        servicio_descarte = self._preparar_descarte()
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.aplicacion.secuencia_g = []
+        self._programar_confirmaciones([False],
+                                       self.aplicacion.secuencia_g)
+        self.aplicacion.descartar_cambios_sin_preparar()
+        self.assertEqual(
+            self.aplicacion.secuencia_g, ["Modo Equipo Oracle"]
+        )
+        servicio_descarte.descartar_cambios_sin_preparar\
+            .assert_not_called()
+
+    def test_descarte_continuar_descarta(self):
+        servicio_descarte = self._preparar_descarte()
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.aplicacion.secuencia_g = []
+        self._programar_confirmaciones([True],
+                                       self.aplicacion.secuencia_g)
+        self.aplicacion.descartar_cambios_sin_preparar()
+        self.assertEqual(
+            self.aplicacion.secuencia_g,
+            ["Modo Equipo Oracle", "Descartar cambios sin preparar"],
+        )
+        servicio_descarte.descartar_cambios_sin_preparar\
+            .assert_called_once_with(
+                "C:/repo/prueba", "Paquetes/FINI004.pls"
+            )
+
+    def test_descarte_protecciones_historicas_intactas(self):
+        servicio_descarte = self._preparar_descarte()
+        self._listo_con((_reserva_conocida(CLAVE_FINI004),))
+        self.aplicacion.detalle_cambio_local_actual = SimpleNamespace(
+            nuevo_sin_preparar=False,
+            en_conflicto=True,
+            diff_sin_preparar="diff --git a b",
+            preparado=False,
+        )
+        self.aplicacion.descartar_cambios_sin_preparar()
+        # El conflicto se bloquea ANTES del aviso G: sin askyesno
+        # (ni G ni histórico) y sin descarte.
+        self.mocks_messagebox["askyesno"].assert_not_called()
+        self.mocks_messagebox["showwarning"].assert_called()
+        servicio_descarte.descartar_cambios_sin_preparar\
+            .assert_not_called()
 
 
 if __name__ == "__main__":

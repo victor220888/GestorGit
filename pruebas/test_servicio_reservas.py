@@ -20,6 +20,7 @@ import tempfile
 import threading
 import unittest
 import uuid
+from dataclasses import FrozenInstanceError
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -41,6 +42,7 @@ from servicio_remoto_reservas import (
 )
 from servicio_reservas import (
     CoordinadorOperacionesRed,
+    ReservaPropiaConocida,
     ServicioReservas,
 )
 
@@ -1165,6 +1167,375 @@ class TestMutexConcurrenciaReal(unittest.TestCase):
             self.assertTrue(coordinador.intentar_iniciar_reservas())
             coordinador.finalizar_reservas()
             self.assertFalse(coordinador.ocupado())
+
+
+class TestAvisoReservasPropiasConocidas(_BaseServicioReservas):
+    """Bloque G: API local de reservas propias activas conocidas.
+
+    La API es solo pedagogica: sin red, sin coordinador, sin
+    efectos secundarios y fail-safe. Las entradas defectuosas se
+    ignoran sin eliminar las demas.
+    """
+
+    def _payload_v1(
+        self, proyecto, clave, id_cliente=None,
+        estado=EstadoReservaPersistido.ACTIVA, vencimiento=None,
+    ):
+        """Payload V1 directo (uso white-box de _guardar_cache)."""
+
+        ahora = self.reloj()
+        if vencimiento is None:
+            vencimiento = formatear_timestamp_utc(
+                ahora + timedelta(seconds=self.TTL)
+            )
+        return ReservaPayloadV1(
+            format_version=1,
+            operation_id=_uuid4(),
+            project_uuid=proyecto,
+            clave_objeto=clave,
+            estado=estado,
+            id_cliente=id_cliente or self.id_a,
+            alias="equipo",
+            hostname="pc-a",
+            user_name="ana",
+            inicio=formatear_timestamp_utc(ahora),
+            heartbeat=formatear_timestamp_utc(ahora),
+            vencimiento=vencimiento,
+            rama_local="",
+            rutas=("Paquetes/FINI004.pls",),
+        )
+
+    def _cache_entrada(
+        self, servicio, clave, clasificacion, payload
+    ):
+        servicio._guardar_cache(clave, clasificacion, payload, "")
+
+    def test_cache_vacio_lista_vacia(self):
+        proyecto = _proyecto_uuid()
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_project_uuid_vacio_lista_vacia(self):
+        self.servicio_a.reservar(_proyecto_uuid(), _clave())
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(""),
+            (),
+        )
+
+    def test_propia_activa_vigente_aparece(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(proyecto, _clave()).exitoso
+        )
+        reservas = self.servicio_a.listar_reservas_propias_conocidas(
+            proyecto
+        )
+        self.assertEqual(len(reservas), 1)
+        snapshot = reservas[0]
+        self.assertEqual(snapshot.project_uuid, proyecto)
+        self.assertEqual(snapshot.clave_objeto, _clave())
+        self.assertEqual(snapshot.alias, "equipo")
+        self.assertTrue(snapshot.vencimiento)
+
+    def test_orden_determinista_por_clave(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(
+                proyecto, "PACKAGE|ZZZ"
+            ).exitoso
+        )
+        self.assertTrue(
+            self.servicio_a.reservar(
+                proyecto, "PACKAGE|AAA"
+            ).exitoso
+        )
+        reservas = self.servicio_a.listar_reservas_propias_conocidas(
+            proyecto
+        )
+        self.assertEqual(
+            [r.clave_objeto for r in reservas],
+            ["PACKAGE|AAA", "PACKAGE|ZZZ"],
+        )
+
+    def test_project_uuid_distinto_excluida(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(proyecto, _clave()).exitoso
+        )
+        otro_proyecto = _proyecto_uuid()
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                otro_proyecto
+            ),
+            (),
+        )
+
+    def test_id_cliente_ajeno_excluida(self):
+        proyecto = _proyecto_uuid()
+        payload_ajeno = self._payload_v1(
+            proyecto, _clave(), id_cliente=self.id_b
+        )
+        self._cache_entrada(
+            self.servicio_a,
+            _clave(),
+            ClasificacionReservaObservada.RESERVADO_POR_MI,
+            payload_ajeno,
+        )
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_libre_excluida(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.consultar_reserva(
+                proyecto, _clave()
+            ).exitoso
+        )
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_reservado_por_otro_excluida(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(proyecto, _clave()).exitoso
+        )
+        self.assertTrue(
+            self.servicio_b.consultar_reserva(
+                proyecto, _clave()
+            ).exitoso
+        )
+        self.assertEqual(
+            self.servicio_b.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_vencido_propio_y_ajeno_excluidos(self):
+        proyecto = _proyecto_uuid()
+        self._cache_entrada(
+            self.servicio_a,
+            "PACKAGE|VENCIDA_PROPIA",
+            ClasificacionReservaObservada.VENCIDO_PROPIO,
+            self._payload_v1(proyecto, "PACKAGE|VENCIDA_PROPIA"),
+        )
+        self._cache_entrada(
+            self.servicio_a,
+            "PACKAGE|VENCIDA_AJENA",
+            ClasificacionReservaObservada.VENCIDO_AJENO,
+            self._payload_v1(proyecto, "PACKAGE|VENCIDA_AJENA"),
+        )
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_no_verificable_excluida(self):
+        proyecto = _proyecto_uuid()
+        self._cache_entrada(
+            self.servicio_a,
+            _clave(),
+            ClasificacionReservaObservada.NO_VERIFICABLE,
+            None,
+        )
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_resultado_incierto_excluida(self):
+        proyecto = _proyecto_uuid()
+        self._cache_entrada(
+            self.servicio_a,
+            _clave(),
+            ClasificacionReservaObservada.RESULTADO_INCIERTO,
+            self._payload_v1(proyecto, _clave()),
+        )
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_operacion_en_curso_excluida(self):
+        proyecto = _proyecto_uuid()
+        self._cache_entrada(
+            self.servicio_a,
+            _clave(),
+            ClasificacionReservaObservada.OPERACION_EN_CURSO,
+            self._payload_v1(proyecto, _clave()),
+        )
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_reserva_liberada_excluida(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(proyecto, _clave()).exitoso
+        )
+        self.assertEqual(
+            len(
+                self.servicio_a.listar_reservas_propias_conocidas(
+                    proyecto
+                )
+            ),
+            1,
+        )
+        self.assertTrue(
+            self.servicio_a.liberar(proyecto, _clave()).exitoso
+        )
+        # La liberacion propia se refleja en el cache: la reserva
+        # deja de provocar el aviso.
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_vencimiento_invalido_excluido(self):
+        proyecto = _proyecto_uuid()
+        self._cache_entrada(
+            self.servicio_a,
+            _clave(),
+            ClasificacionReservaObservada.RESERVADO_POR_MI,
+            self._payload_v1(
+                proyecto, _clave(), vencimiento="no-es-fecha"
+            ),
+        )
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_vencimiento_pasado_excluido(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(proyecto, _clave()).exitoso
+        )
+        self.reloj.avanzar(self.TTL + 1)
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
+
+    def test_entrada_defectuosa_conserva_valida(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(proyecto, _clave()).exitoso
+        )
+        self._cache_entrada(
+            self.servicio_a,
+            "PACKAGE|MALA",
+            ClasificacionReservaObservada.RESERVADO_POR_MI,
+            None,
+        )
+        reservas = self.servicio_a.listar_reservas_propias_conocidas(
+            proyecto
+        )
+        self.assertEqual(
+            [r.clave_objeto for r in reservas],
+            [_clave()],
+        )
+
+    def test_snapshot_inmutable_no_expone_cache(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(proyecto, _clave()).exitoso
+        )
+        reservas = self.servicio_a.listar_reservas_propias_conocidas(
+            proyecto
+        )
+        self.assertIsInstance(reservas, tuple)
+        snapshot = reservas[0]
+        self.assertIsInstance(snapshot, ReservaPropiaConocida)
+        with self.assertRaises(FrozenInstanceError):
+            snapshot.clave_objeto = "PACKAGE|OTRA"
+        # El snapshot no es el payload almacenado y el cache no se
+        # modifica al listar.
+        self.assertIsNot(snapshot, self.servicio_a._cache[_clave()])
+        self.assertEqual(len(self.servicio_a._cache), 1)
+
+    def test_no_llama_al_remoto(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(proyecto, _clave()).exitoso
+        )
+
+        class _RemotoProhibido:
+            def __getattr__(self, nombre):
+                raise AssertionError(
+                    f"la API local no debe tocar el remoto: {nombre}"
+                )
+
+        self.servicio_a.remoto = _RemotoProhibido()
+        reservas = self.servicio_a.listar_reservas_propias_conocidas(
+            proyecto
+        )
+        self.assertEqual(
+            [r.clave_objeto for r in reservas],
+            [_clave()],
+        )
+
+    def test_no_adquiere_coordinador(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(proyecto, _clave()).exitoso
+        )
+
+        class _CoordinadorProhibido:
+            def __getattr__(self, nombre):
+                raise AssertionError(
+                    f"la API local no debe usar el coordinador: "
+                    f"{nombre}"
+                )
+
+        self.servicio_a.coordinador = _CoordinadorProhibido()
+        reservas = self.servicio_a.listar_reservas_propias_conocidas(
+            proyecto
+        )
+        self.assertEqual(
+            [r.clave_objeto for r in reservas],
+            [_clave()],
+        )
+
+    def test_falla_global_devuelve_coleccion_vacia(self):
+        proyecto = _proyecto_uuid()
+        self.assertTrue(
+            self.servicio_a.reservar(proyecto, _clave()).exitoso
+        )
+        self.servicio_a._cache = None
+        self.assertEqual(
+            self.servicio_a.listar_reservas_propias_conocidas(
+                proyecto
+            ),
+            (),
+        )
 
 
 if __name__ == "__main__":

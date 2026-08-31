@@ -10,6 +10,8 @@ Responsabilidades:
 - validacion local 100% de reserva propia fresca
   (validar_reserva_propia_fresca);
 - politica determinista de renovacion (debe_renovar);
+- listado local de reservas propias activas conocidas para avisos
+  pedagogicos del Bloque G (listar_reservas_propias_conocidas);
 - reconciliacion por operation_id tras Push no concluyente;
 - coordinador unico de operaciones de red (mutex logico).
 
@@ -146,6 +148,24 @@ class _EstadoCacheReserva:
     payload: ReservaPayloadV1 | None = None
     parent: str = ""
     verificacion: object = None
+
+
+@dataclass(frozen=True)
+class ReservaPropiaConocida:
+    """
+    Snapshot de solo lectura de una reserva PROPIA ACTIVA conocida
+    localmente en esta sesion (Bloque G).
+
+    Dato exclusivamente pedagogico: NO autoriza staging/commit y NO
+    sustituye validar_reserva_propia_fresca. Campos minimos para el
+    aviso; deliberadamente sin rama_local ni rutas porque el aviso
+    no debe depender de ellos.
+    """
+
+    project_uuid: str
+    clave_objeto: str
+    vencimiento: str
+    alias: str
 
 
 class ServicioReservas:
@@ -1328,6 +1348,99 @@ class ServicioReservas:
             return False
         restante = (vencimiento - ahora).total_seconds()
         return restante <= self.renovacion_segundos
+
+    # -- Aviso pedagogico de reservas propias (Bloque G) -----------
+
+    def listar_reservas_propias_conocidas(self, project_uuid):
+        """
+        Lista snapshots de solo lectura de reservas PROPIAS ACTIVAS
+        conocidas localmente en esta sesion (Bloque G).
+
+        100% local: sin red, sin coordinador/mutex, sin efectos
+        secundarios y sin modificar el cache. Una entrada cuenta
+        unicamente si TODO se cumple:
+
+            clasificacion RESERVADO_POR_MI
+            payload existe y es_activa()
+            payload.id_cliente == id_cliente local
+            payload.project_uuid == project_uuid solicitado
+            vencimiento parseable y todavia no alcanzado
+
+        No exige la frescura ni el margen minimo de staging/commit:
+        eso es autorizacion (validar_reserva_propia_fresca); esto
+        es SOLO un aviso pedagogico y nunca autoriza nada.
+
+        Robustez: cada entrada se procesa de forma independiente;
+        una entrada defectuosa se ignora sin eliminar las demas.
+        Cualquier fallo global inesperado devuelve una coleccion
+        vacia para que el aviso nunca se convierta en barrera de
+        la operacion Git.
+
+        Devuelve una tupla ordenada de forma determinista por
+        clave_objeto. No devuelve _EstadoCacheReserva, el cache ni
+        el ReservaPayloadV1 almacenado.
+        """
+
+        if not project_uuid:
+            return ()
+
+        reservas = []
+        try:
+            for clave_objeto in sorted(self._cache):
+                estado = self._cache.get(clave_objeto)
+                snapshot = self._snapshot_reserva_propia_conocida(
+                    project_uuid, clave_objeto, estado
+                )
+                if snapshot is not None:
+                    reservas.append(snapshot)
+        except Exception:
+            # Fail-safe del aviso: una falla inesperada del helper
+            # informativo no debe bloquear la operacion Git.
+            return ()
+        return tuple(reservas)
+
+    def _snapshot_reserva_propia_conocida(
+        self, project_uuid, clave_objeto, estado
+    ):
+        """
+        Construye el snapshot de una entrada del cache si cualifica
+        como reserva propia activa conocida; si no, None.
+
+        Aisla cada entrada: una entrada defectuosa no afecta a las
+        demas ni propaga excepciones a la GUI.
+        """
+
+        try:
+            if estado is None:
+                return None
+            if (
+                estado.clasificacion
+                is not ClasificacionReservaObservada.RESERVADO_POR_MI
+            ):
+                return None
+            payload = estado.payload
+            if payload is None:
+                return None
+            if not payload.es_activa():
+                return None
+            if payload.id_cliente != self.id_cliente:
+                return None
+            if payload.project_uuid != project_uuid:
+                return None
+            vencimiento = parsear_timestamp_utc(payload.vencimiento)
+            if vencimiento is None:
+                return None
+            if self._ahora() >= vencimiento:
+                return None
+            return ReservaPropiaConocida(
+                project_uuid=payload.project_uuid,
+                clave_objeto=clave_objeto,
+                vencimiento=payload.vencimiento,
+                alias=payload.alias,
+            )
+        except Exception:
+            # Entrada defectuosa: se ignora sin eliminar las demas.
+            return None
 
     # -- Helper de operacion bloqueada -----------------------------
 

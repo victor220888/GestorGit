@@ -56,8 +56,9 @@ Bloque B -> CERRADO Y COMMITTEADO
 Bloque C -> CERRADO Y COMMITTEADO
 Bloque D -> CERRADO Y COMMITTEADO (b0c2bbb)
 Bloque E -> CERRADO Y COMMITTEADO (0d8042d)
-Bloque F -> IMPLEMENTADO, PENDIENTE DE AUDITORÍA CHATGPT
-Bloque G -> NO iniciado
+Bloque F -> CERRADO Y COMMITTEADO (b547fae)
+Bloque G -> IMPLEMENTADO, PENDIENTE DE AUDITORÍA CHATGPT
+Bloque H -> NO iniciado
 Push -> NO autorizado
 ```
 
@@ -307,9 +308,16 @@ staging -> vacío
 
 Pruebas del Bloque E: 107 nuevas (846 previas + 107 = 953).
 
-## Resultado Bloque F (resumen, PENDIENTE DE AUDITORÍA CHATGPT REV1)
+## Resultado Bloque F (resumen, CERRADO Y COMMITTEADO en b547fae)
 
-Implementado sobre el working tree (SIN commit; HEAD base 0d8042d).
+Implementado sobre el working tree (HEAD base 0d8042d) y committeado
+posteriormente por el propietario desde GestorGit:
+
+```text
+commit -> b547fae2948982faca9ec19e17ee3812c132b515
+mensaje -> Integra Modo Equipo Oracle en la interfaz
+auditorías -> 043 precommit ACEPTADA (6 SHA-256 exactos)
+```
 Integración GUI del Modo Equipo Oracle V1 en principal.py, sin
 tocar los servicios D/E ni ayuda_interfaz.py.
 
@@ -394,16 +402,86 @@ git diff --check -> 0 avisos reales
 staging -> vacío
 ```
 
+## Resultado Bloque G (resumen, IMPLEMENTADO, PENDIENTE DE AUDITORÍA CHATGPT)
+
+Implementado sobre el working tree (SIN commit; HEAD base b547fae).
+Aviso pedagógico cancelable de reservas propias activas conocidas
+antes de cambiar/crear rama, Pull, Push, publicar rama y descartar
+cambios sin preparar. Fetch NO entra. Staging/commit/Quitar siguen
+con las barreras E/F intactas.
+
+```text
+modificados -> servicio_reservas.py
+              principal.py
+              pruebas/test_servicio_reservas.py
+              pruebas/test_modo_equipo_gui.py
+              TRABAJO_ACTUAL.md
+```
+
+Arquitectura aplicada (diseño GG-PROMPT-045 ACEPTADO, precisiones
+R1-R4):
+
+```text
+API local -> ServicioReservas.listar_reservas_propias_conocidas(
+              project_uuid): 100% local, sin red, sin mutex, sin
+              efectos secundarios; devuelve tupla de snapshots
+              congelados ReservaPropiaConocida (project_uuid,
+              clave_objeto, vencimiento, alias) ordenada por
+              clave_objeto; NO expone _cache ni el payload
+              almacenado; filtrado por project_uuid (R1)
+criterio -> clasificacion RESERVADO_POR_MI + es_activa() +
+              id_cliente propio + project_uuid solicitado +
+              vencimiento parseable y no alcanzado; NO exige
+              frescura/margen de staging/commit (R3)
+fail-safe -> entrada defectuosa se ignora sin eliminar las demás;
+              fallo global -> colección vacía; el aviso nunca es
+              barrera de la operación Git
+helper GUI -> _confirmar_aviso_reservas_propias(parent): refresca
+              el contexto con el mecanismo F, exige estado listo +
+              servicio_reservas + project_uuid_activo VIGENTES
+              (nunca referencia anterior), llama la API local y
+              muestra askyesno pedagógico; sin Modo Equipo listo
+              o ante fallo informativo -> sin aviso y flujo
+              histórico (True) (R4)
+inserciones -> cambiar rama, crear rama, Pull, Push, publicar rama
+              y descarte sin preparar: tras las validaciones
+              históricas y ANTES de la confirmación histórica; en
+              remotas siempre ANTES de adquirir el mutex de red;
+              cancelar aborta la operación sin ejecutarla; los
+              servicios Git especializados siguen agnósticos
+texto -> N reservas conocidas en esta sesión + lista
+              clave/vencimiento (máx. 5 + "... y N más") + no
+              libera ni renueva + continuar no equivale a liberar
+              + cancelar y gestionar desde Modo Equipo; sin
+              depender de rama_local ni rutas (R2)
+```
+
+Pruebas del Bloque G: 54 nuevas (20 servicio + 34 GUI;
+1007 previas + 54 = 1061).
+
+Validaciones ejecutadas (totales reales):
+
+```text
+py_compile -> OK (4 archivos modificados)
+focal servicio_reservas -> 69/69 OK (49 previas + 20)
+focal modo_equipo_gui -> 85/85 OK (51 previas + 34)
+"Exception in thread" / Traceback en focal GUI -> 0
+regresión D/E/F -> 375/375 OK
+suite completa -> 1061/1061 OK
+git diff --check -> limpio
+staging -> vacío
+```
+
 ## Próximo paso
 
 ```text
-AUDITORÍA CHATGPT GG-PROMPT-042 (BLOQUE F)
+AUDITORÍA CHATGPT GG-PROMPT-046 (BLOQUE G)
 ```
 
-Bloque F está IMPLEMENTADO y validado técnicamente en el working
-tree; NO está aceptado ni cerrado hasta la auditoría ChatGPT. Esta
-actualización documental queda pendiente para el siguiente commit
-natural (regla de cierre documental no recursivo, ADDENDUM-1).
+Bloque G está IMPLEMENTADO y validado técnicamente en el working
+tree; NO está aceptado ni cerrado hasta la auditoría ChatGPT.
+Después de F, el siguiente paso natural es la auditoría y, si
+procede, el commit del Bloque G. Bloque H sigue NO iniciado.
 Staging/commit solo con autorización expresa del propietario y
 ejecutados por el propietario desde GestorGit.
 
