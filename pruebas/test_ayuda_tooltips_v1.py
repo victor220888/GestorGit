@@ -1085,5 +1085,53 @@ class TestTooltipsPublicarRamaCableado(unittest.TestCase):
             )
 
 
+class TestTooltipsV11Corregidos(unittest.TestCase):
+    """
+    GG-PROMPT-053-REV1: regresiones de los dos tooltips reparados.
+    No cambia el número de claves: la REV corrige contenido.
+    """
+
+    def test_ruta_objeto_contiene_ejemplo_sql(self):
+        t = texto("modo_equipo_ruta_objeto")
+        self.assertIn("Procedimientos/PR_CERRAR.sql", t)
+
+    def test_ruta_objeto_contiene_clave_procedure(self):
+        t = texto("modo_equipo_ruta_objeto")
+        self.assertIn("PROCEDURE|...", t)
+
+    def test_ruta_objeto_conserva_frase_final(self):
+        t = texto("modo_equipo_ruta_objeto")
+        self.assertIn("puede escribir la ruta relativa conocida", t)
+
+    def test_ruta_objeto_no_duplica_servicio(self):
+        t = texto("modo_equipo_ruta_objeto")
+        self.assertEqual(t.count("ServicioObjetosOracle"), 1)
+
+    def test_ruta_objeto_no_truncado(self):
+        t = texto("modo_equipo_ruta_objeto")
+        self.assertTrue(t.rstrip().endswith("conocida."))
+
+    def test_clave_resuelta_contiene_procedure(self):
+        t = texto("modo_equipo_clave_resuelta")
+        self.assertIn("PROCEDURE|PR_CERRAR", t)
+
+    def test_clave_resuelta_conserva_frase_seguridad(self):
+        t = texto("modo_equipo_clave_resuelta")
+        self.assertIn(
+            "Si la ruta no es un objeto Oracle resoluble de forma segura",
+            t,
+        )
+
+    def test_clave_resuelta_no_duplica_frase(self):
+        t = texto("modo_equipo_clave_resuelta")
+        self.assertEqual(t.count("de la ruta indicada"), 1)
+
+    def test_numero_de_claves_sigue_siendo_53(self):
+        self.assertEqual(
+            len(principal.TEXTOS_AYUDA_GIT_V1),
+            CLAVES_TOTALES_ESPERADAS,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

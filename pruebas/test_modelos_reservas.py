@@ -272,7 +272,7 @@ class TestResultadoRenombradoObjeto(unittest.TestCase):
 
 class TestConstantesV1(unittest.TestCase):
     """
-    Pruebas de las constantes soportadas en V1.
+    Pruebas de las constantes soportadas en V1.1.
     """
 
     def test_tipo_soportado_package(self):
@@ -284,8 +284,33 @@ class TestConstantesV1(unittest.TestCase):
             ".pls"
         )
 
-    def test_no_hay_otros_tipos(self):
-        self.assertEqual(len(TIPOS_ORACLE_SOPORTADOS_V1), 1)
+    def test_tipos_soportados_exactos_v11(self):
+        self.assertEqual(
+            TIPOS_ORACLE_SOPORTADOS_V1,
+            (
+                "PACKAGE",
+                "PROCEDURE",
+                "FUNCTION",
+                "TABLE",
+                "VIEW",
+                "TRIGGER",
+                "SEQUENCE",
+            )
+        )
+
+    def test_extensiones_soportadas_exactas_v11(self):
+        self.assertEqual(
+            EXTENSIONES_ORACLE_SOPORTADAS_V1,
+            {
+                "PACKAGE": ".pls",
+                "PROCEDURE": ".sql",
+                "FUNCTION": ".sql",
+                "TABLE": ".sql",
+                "VIEW": ".sql",
+                "TRIGGER": ".sql",
+                "SEQUENCE": ".sql",
+            }
+        )
 
 
 # =====================================================================

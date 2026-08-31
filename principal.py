@@ -439,7 +439,7 @@ TEXTOS_AYUDA_GIT_V1 = {
     "historial_filtro_archivo": (
         "Filtro por archivo\n\n"
         "Escribe todo o parte del nombre de un archivo.\n\n"
-        "Por ejemplo: FINI004, .pls o Paquetes.\n\n"
+        "Por ejemplo: FINI004, .pls, .sql, Paquetes o Procedimientos.\n\n"
         "La búsqueda no distingue mayúsculas de minúsculas "
         "y solamente muestra commits que modificaron archivos "
         "cuyo nombre o ruta contiene ese texto.\n\n"
@@ -594,7 +594,8 @@ TEXTOS_AYUDA_GIT_V1 = {
     "modo_equipo_oracle": (
         "Abre la ventana de Modo Equipo Oracle.\n\n"
         "Modo Equipo protege los objetos Oracle del proyecto "
-        "(por ejemplo Paquetes/FINI004.pls -> PACKAGE|FINI004) "
+        "(por ejemplo Paquetes/FINI004.pls -> PACKAGE|FINI004,\n"
+        "Procedimientos/PR_CERRAR.sql -> PROCEDURE|PR_CERRAR) "
         "mediante reservas compartidas por el equipo.\n\n"
         "- Con Modo Equipo deshabilitado, GestorGit se comporta "
         "como siempre.\n"
@@ -662,10 +663,11 @@ TEXTOS_AYUDA_GIT_V1 = {
 
     "modo_equipo_ruta_objeto": (
         "Ruta relativa del repositorio del objeto Oracle a "
-        "reservar (por ejemplo Paquetes/FINI004.pls).\n\n"
+        "reservar (por ejemplo Paquetes/FINI004.pls o\n"
+        "Procedimientos/PR_CERRAR.sql).\n\n"
         "La clave Oracle se deriva SIEMPRE con el resolvedor "
-        "(ServicioObjetosOracle); no se aceptan claves PACKAGE|... "
-        "escritas a mano. Para objetos sin cambios pendientes "
+        "(ServicioObjetosOracle); no se aceptan claves PACKAGE|... o\n"
+        "PROCEDURE|... escritas a mano. Para objetos sin cambios pendientes "
         "puede escribir la ruta relativa conocida."
     ),
 
@@ -679,7 +681,8 @@ TEXTOS_AYUDA_GIT_V1 = {
 
     "modo_equipo_clave_resuelta": (
         "Clave Oracle canónica derivada por el resolvedor a partir "
-        "de la ruta indicada (por ejemplo PACKAGE|FINI004).\n\n"
+        "de la ruta indicada (por ejemplo PACKAGE|FINI004 o\n"
+        "PROCEDURE|PR_CERRAR).\n\n"
         "Si la ruta no es un objeto Oracle resoluble de forma "
         "segura, las acciones de reserva quedan bloqueadas con el "
         "motivo correspondiente."

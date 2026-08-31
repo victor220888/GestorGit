@@ -492,5 +492,165 @@ class TestServicioObjetosOracle(unittest.TestCase):
             ServicioObjetosOracle(None)
 
 
+
+
+def _manifiesto_v11():
+    """Manifiesto con PACKAGE (.pls) y PROCEDURE (.sql)."""
+    return ManifiestoProyecto(
+        format_version=1,
+        project_uuid=UUID_PROYECTO,
+        oracle_layout=(
+            ReglaLayoutOracle(
+                carpeta="Paquetes",
+                tipo="PACKAGE",
+                extension=".pls"
+            ),
+            ReglaLayoutOracle(
+                carpeta="Procedimientos",
+                tipo="PROCEDURE",
+                extension=".sql"
+            ),
+        )
+    )
+
+
+def _manifiesto_tipo_sql(tipo, carpeta):
+    """Manifiesto con un solo tipo .sql."""
+    return ManifiestoProyecto(
+        format_version=1,
+        project_uuid=UUID_PROYECTO,
+        oracle_layout=(
+            ReglaLayoutOracle(
+                carpeta=carpeta,
+                tipo=tipo,
+                extension=".sql"
+            ),
+        )
+    )
+
+
+class TestServicioObjetosOracleV11(unittest.TestCase):
+    """
+    Pruebas V1.1: resolucion de los 6 tipos Oracle adicionales.
+    """
+
+    # --- PROCEDURE ---
+
+    def test_procedure_sql_resuelve(self):
+        m = _manifiesto_tipo_sql("PROCEDURE", "Procedimientos")
+        svc = ServicioObjetosOracle(m)
+        r = svc.resolver("Procedimientos/PR_CERRAR.sql")
+        self.assertTrue(r.es_reservable, r.mensaje)
+        self.assertEqual(r.objeto.canonica(), "PROCEDURE|PR_CERRAR")
+
+    def test_procedure_minusculas_a_mayusculas(self):
+        m = _manifiesto_tipo_sql("PROCEDURE", "Procedimientos")
+        svc = ServicioObjetosOracle(m)
+        r = svc.resolver("Procedimientos/pr_cerrar.sql")
+        self.assertTrue(r.es_reservable)
+        self.assertEqual(r.objeto.nombre, "PR_CERRAR")
+
+    # --- FUNCTION ---
+
+    def test_function_sql_resuelve(self):
+        m = _manifiesto_tipo_sql("FUNCTION", "Funciones")
+        svc = ServicioObjetosOracle(m)
+        r = svc.resolver("Funciones/CALCULO_IVA.sql")
+        self.assertTrue(r.es_reservable, r.mensaje)
+        self.assertEqual(r.objeto.canonica(), "FUNCTION|CALCULO_IVA")
+
+    # --- TABLE ---
+
+    def test_table_sql_resuelve(self):
+        m = _manifiesto_tipo_sql("TABLE", "Tablas")
+        svc = ServicioObjetosOracle(m)
+        r = svc.resolver("Tablas/CLIENTES.sql")
+        self.assertTrue(r.es_reservable, r.mensaje)
+        self.assertEqual(r.objeto.canonica(), "TABLE|CLIENTES")
+
+    # --- VIEW ---
+
+    def test_view_sql_resuelve(self):
+        m = _manifiesto_tipo_sql("VIEW", "Vistas")
+        svc = ServicioObjetosOracle(m)
+        r = svc.resolver("Vistas/V_PEDIDOS.sql")
+        self.assertTrue(r.es_reservable, r.mensaje)
+        self.assertEqual(r.objeto.canonica(), "VIEW|V_PEDIDOS")
+
+    # --- TRIGGER ---
+
+    def test_trigger_sql_resuelve(self):
+        m = _manifiesto_tipo_sql("TRIGGER", "Triggers")
+        svc = ServicioObjetosOracle(m)
+        r = svc.resolver("Triggers/TRG_AUDITORIA.sql")
+        self.assertTrue(r.es_reservable, r.mensaje)
+        self.assertEqual(r.objeto.canonica(), "TRIGGER|TRG_AUDITORIA")
+
+    # --- SEQUENCE ---
+
+    def test_sequence_sql_resuelve(self):
+        m = _manifiesto_tipo_sql("SEQUENCE", "Secuencias")
+        svc = ServicioObjetosOracle(m)
+        r = svc.resolver("Secuencias/SEQ_PEDIDO.sql")
+        self.assertTrue(r.es_reservable, r.mensaje)
+        self.assertEqual(r.objeto.canonica(), "SEQUENCE|SEQ_PEDIDO")
+
+    # --- PACKAGE retrocompatible ---
+
+    def test_package_retrocompatible_v11(self):
+        """PACKAGE sigue resolviendo igual con manifiesto V1.1."""
+        m = _manifiesto_v11()
+        svc = ServicioObjetosOracle(m)
+        r = svc.resolver("Paquetes/FINI004.pls")
+        self.assertTrue(r.es_reservable)
+        self.assertEqual(r.objeto.canonica(), "PACKAGE|FINI004")
+
+    # --- .pls en carpeta PROCEDURE -> no resoluble ---
+
+    def test_pls_en_carpeta_procedure_no_resoluble(self):
+        m = _manifiesto_tipo_sql("PROCEDURE", "Procedimientos")
+        svc = ServicioObjetosOracle(m)
+        r = svc.resolver("Procedimientos/PR_CERRAR.pls")
+        self.assertTrue(r.es_objeto_oracle)
+        self.assertFalse(r.es_reservable)
+
+    # --- .sql en carpeta PACKAGE -> no resoluble ---
+
+    def test_sql_en_carpeta_package_no_resoluble(self):
+        svc = ServicioObjetosOracle(_manifiesto_prueba())
+        r = svc.resolver("Paquetes/FINI004.sql")
+        self.assertTrue(r.es_objeto_oracle)
+        self.assertFalse(r.es_reservable)
+
+    # --- Rename entre tipos ---
+
+    def test_rename_entre_procedure_y_function(self):
+        m = ManifiestoProyecto(
+            format_version=1,
+            project_uuid=UUID_PROYECTO,
+            oracle_layout=(
+                ReglaLayoutOracle(carpeta="Procedimientos", tipo="PROCEDURE", extension=".sql"),
+                ReglaLayoutOracle(carpeta="Funciones", tipo="FUNCTION", extension=".sql"),
+            )
+        )
+        svc = ServicioObjetosOracle(m)
+        r = svc.resolver_renombrado(
+            "Funciones/CALC.sql",
+            "Procedimientos/CALC.sql"
+        )
+        self.assertTrue(r.es_resoluble)
+        canon = [c.canonica() for c in r.claves]
+        self.assertIn("PROCEDURE|CALC", canon)
+        self.assertIn("FUNCTION|CALC", canon)
+
+    # --- Hash determinista con nuevo tipo ---
+
+    def test_hash_procedure_determinista(self):
+        c = ClaveObjetoOracle(tipo="PROCEDURE", nombre="PR_CERRAR")
+        h1 = calcular_ref_reserva(UUID_PROYECTO, c)
+        h2 = calcular_ref_reserva(UUID_PROYECTO, c)
+        self.assertEqual(h1, h2)
+        self.assertEqual(len(h1), 64)
+
 if __name__ == "__main__":
     unittest.main()

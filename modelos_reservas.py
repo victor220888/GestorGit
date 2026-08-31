@@ -25,19 +25,38 @@ servicio_remoto_reservas.py y servicio_reservas.py.
 from dataclasses import dataclass, field
 
 
-# Tipos Oracle soportados en V1.
+# Tipos Oracle soportados en V1.1.
 # Cualquier tipo fuera de este conjunto hace que el manifiesto
-# o la resolucion de un objeto se considiere no soportado.
+# o la resolucion de un objeto se considere no soportado.
 #
 # Ampliar este conjunto requiere una tarea explicita y auditada
 # (cambio compartido y versionado del manifiesto).
-TIPOS_ORACLE_SOPORTADOS_V1 = ("PACKAGE",)
+#
+# V1.1 anade PROCEDURE, FUNCTION, TABLE, VIEW, TRIGGER y
+# SEQUENCE (todos con extension .sql) al tipo PACKAGE original
+# (extension .pls).
+TIPOS_ORACLE_SOPORTADOS_V1 = (
+    "PACKAGE",
+    "PROCEDURE",
+    "FUNCTION",
+    "TABLE",
+    "VIEW",
+    "TRIGGER",
+    "SEQUENCE",
+)
 
-# Extensiones soportadas por tipo en V1.
+# Extensiones soportadas por tipo en V1.1.
 # La clave es el tipo Oracle y el valor es la extension
 # (con punto inicial) que se acepta para ese tipo.
+# PACKAGE usa .pls; los demas tipos usan .sql.
 EXTENSIONES_ORACLE_SOPORTADAS_V1 = {
     "PACKAGE": ".pls",
+    "PROCEDURE": ".sql",
+    "FUNCTION": ".sql",
+    "TABLE": ".sql",
+    "VIEW": ".sql",
+    "TRIGGER": ".sql",
+    "SEQUENCE": ".sql",
 }
 
 

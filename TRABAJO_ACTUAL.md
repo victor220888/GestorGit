@@ -14,14 +14,15 @@ defecto.
 
 Git real manda siempre.
 
-Snapshot de inicio de GG-PROMPT-051:
+Snapshot de inicio de GG-PROMPT-053:
 
 ```text
-HEAD -> d1b2ed3 Advierte sobre reservas antes de operaciones Git
-HEAD completo -> d1b2ed36ffb8745b2fe412a52a239e94823199c1
+HEAD -> 3b06617 Cierra documentación de Modo Equipo Oracle V1
+HEAD completo -> 3b06617d4223c22cddbe8ded051a46686ccb6180
 rama -> master
 staging -> vacío
 .git/index.lock: inexistente
+ahead -> 18 respecto de origin/master local conocido
 Push -> NO autorizado
 ```
 
@@ -32,15 +33,12 @@ Estos datos son un snapshot; verificar Git de nuevo al iniciar cada tarea.
 ```text
 Publicar rama local V1 -> CERRADA
 Método/onboarding -> CERRADO Y AUDITADO
-Modo Equipo Oracle V1 / arquitectura -> CERRADA Y APROBADA
-Bloque A -> CERRADO Y COMMITTEADO
-Bloque B -> CERRADO Y COMMITTEADO
-Bloque C -> CERRADO Y COMMITTEADO
-Bloque D -> CERRADO Y COMMITTEADO (b0c2bbb)
-Bloque E -> CERRADO Y COMMITTEADO (0d8042d)
-Bloque F -> CERRADO Y COMMITTEADO (b547fae)
-Bloque G -> CERRADO Y COMMITTEADO (d1b2ed3)
-Bloque H -> CIERRE DOCUMENTAL ACEPTADO (GG-PROMPT-050 CON REV2), PENDIENTE DE CIERRE GIT
+Modo Equipo Oracle V1 -> CERRADA Y COMMITTEADA (Bloque H: commit 3b06617)
+Modo Equipo Oracle V1.1 -> IMPLEMENTACIÓN ACEPTADA, PENDIENTE DE CIERRE GIT
+GG-PROMPT-053 -> ACEPTADO CON REV1
+GG-PROMPT-053-REV1 -> ACEPTADO
+GG-PROMPT-053-REV1-ADDENDUM-1 -> ACEPTADO
+GG-PROMPT-054 -> CIERRE GIT INTEGRAL V1.1, ejecutándose
 Push -> NO autorizado
 ```
 
@@ -73,6 +71,12 @@ G -> GG-PROMPT-046-REV1 ACEPTADO + 047 ACEPTADO + 048 ACEPTADO
 GG-PROMPT-049 -> análisis del Bloque H ACEPTADO
 GG-PROMPT-050-REV2 -> ACEPTADO
 GG-PROMPT-050 -> ACEPTADO CON REV2; Bloque H documental aceptado
+GG-PROMPT-051 -> actualización post-aceptación de 050 ACEPTADO
+GG-PROMPT-052 -> cierre Git del Bloque H ACEPTADO EN RECUPERACIÓN POSTCOMMIT
+             commit -> 3b06617 Cierra documentación de Modo Equipo Oracle V1
+GG-PROMPT-053 -> ACEPTADO CON REV1
+GG-PROMPT-053-REV1 -> ACEPTADO
+GG-PROMPT-053-REV1-ADDENDUM-1 -> ACEPTADO
 ```
 
 ## Resultado final Bloque B (resumen)
@@ -425,17 +429,62 @@ commit -> d1b2ed36ffb8745b2fe412a52a239e94823199c1
 ## Próximo paso
 
 ```text
-AUDITORÍA PRE-STAGING DEL BLOQUE H
+CIERRE GIT INTEGRAL V1.1 (GG-PROMPT-054)
+staging -> vacío
+commit V1.1 -> NO
+Push -> NO autorizado
 ```
 
-El cierre documental del Bloque H quedó ACEPTADO (GG-PROMPT-050 CON REV2).
-Versionados modificados previstos para el cierre Git → exactamente 4:
-  AGENTS.md
-  CLAUDE.md
+GG-PROMPT-053 base implementó la ampliación V1.1 (tipos Oracle de 1 a 7)
+pero NO fue aceptado. GG-PROMPT-053-REV1 corrigió: EOL CRLF, dos tooltips,
+docstring, test_modelos_reservas, integración .sql en protección/Git y
+cobertura GUI/tooltips. GG-PROMPT-053-REV1-ADDENDUM-1 restauró configuración
+Git local.
+
+Catálogo V1.1:
+
+```text
+PACKAGE -> .pls
+PROCEDURE/FUNCTION/TABLE/VIEW/TRIGGER/SEQUENCE -> .sql
+```
+
+Versionados modificados por 053 + REV1:
+  modelos_reservas.py (catálogos)
+  servicio_manifiesto_proyecto.py (docstring)
+  servicio_objetos_oracle.py (comentario)
+  principal.py (textos pedagógicos + tooltips reparados)
+  pruebas/test_modelos_reservas.py (especificación exacta V1.1)
+  pruebas/test_servicio_manifiesto_proyecto.py
+  pruebas/test_servicio_objetos_oracle.py
+  pruebas/test_servicio_proteccion_reservas_git.py (integración .sql)
+  pruebas/test_servicio_git.py (staging/commit .sql end-to-end)
+  pruebas/test_modo_equipo_gui.py (resolución .sql headless)
+  pruebas/test_ayuda_tooltips_v1.py (regresiones tooltips V1.1)
   README.md
   TRABAJO_ACTUAL.md
 `seguimiento_prompts/README.md` → administrativo, FUERA del commit.
-Staging → vacío. Commit H → NO realizado. Push → NO autorizado.
+
+Evidencia real REV1:
+
+```text
+py_compile 11 archivos -> OK
+focal test_modelos_reservas -> 60/60 OK
+focal test_servicio_manifiesto_proyecto -> 72/72 OK
+focal test_servicio_objetos_oracle -> 73/73 OK
+focal test_servicio_proteccion_reservas_git -> 42/42 OK
+focal test_servicio_git -> 115/115 OK
+focal test_ayuda_tooltips_v1 -> 130/130 OK
+focal test_modo_equipo_gui -> 87/87 OK
+suite completa discovery -s pruebas -t . -> 1111/1111 OK (369.5s)
+```
+
+Nota EOL: test_servicio_git.py está históricamente versionado en CRLF
+en HEAD (convención histórica del archivo); las líneas V1.1 añadidas mantienen
+esa convención. Su validación se hizo de forma efímera con
+git -c core.whitespace=cr-at-eol; NO queda core.whitespace persistido
+en la configuración local.
+
+Staging → vacío. Commit V1.1 → NO realizado. Push → NO autorizado.
 
 ## Seguridad
 

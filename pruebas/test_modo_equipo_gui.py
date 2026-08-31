@@ -2223,5 +2223,56 @@ class TestInsercionesAvisoG(_BaseModoEquipo):
             .assert_not_called()
 
 
+class TestV11RutaSqlGUI(unittest.TestCase):
+    """
+    GG-PROMPT-053-REV1: una ruta Procedimientos/*.sql se resuelve
+    con ServicioObjetosOracle y produce PROCEDURE|PR_CERRAR sin
+    ninguna clave escrita a mano. Headless: sin Tkinter real.
+    """
+
+    def _manifiesto_v11(self):
+        return ManifiestoProyecto(
+            format_version=1,
+            project_uuid="44444444-4444-4444-8444-444444444444",
+            oracle_layout=(
+                ReglaLayoutOracle(
+                    carpeta="Paquetes",
+                    tipo="PACKAGE",
+                    extension=".pls",
+                ),
+                ReglaLayoutOracle(
+                    carpeta="Procedimientos",
+                    tipo="PROCEDURE",
+                    extension=".sql",
+                ),
+            ),
+        )
+
+    def test_ruta_procedure_sql_resuelve_clave_v11(self):
+        resolvedor = ServicioObjetosOracle(self._manifiesto_v11())
+        resultado = resolvedor.resolver(
+            ruta="Procedimientos/PR_CERRAR.sql"
+        )
+        self.assertTrue(resultado.reservable)
+        self.assertEqual(
+            str(resultado.objeto.canonica()),
+            "PROCEDURE|PR_CERRAR",
+        )
+
+    def test_resolucion_desde_gui_usa_el_resolvedor_no_clave_manual(self):
+        # La GUI consume la clave producida por el resolvedor; no
+        # hay ninguna literal "PROCEDURE|..." escrita a mano en el
+        # flujo de resolución de esta prueba.
+        resolvedor = ServicioObjetosOracle(self._manifiesto_v11())
+        resultado = resolvedor.resolver(
+            ruta="Procedimientos/PR_CERRAR.sql"
+        )
+        self.assertTrue(resultado.reservable)
+        clave = resultado.objeto
+        self.assertEqual(clave.tipo, "PROCEDURE")
+        self.assertEqual(clave.nombre, "PR_CERRAR")
+        self.assertEqual(clave.canonica(), "PROCEDURE|PR_CERRAR")
+
+
 if __name__ == "__main__":
     unittest.main()

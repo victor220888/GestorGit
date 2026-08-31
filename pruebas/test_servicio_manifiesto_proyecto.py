@@ -531,11 +531,11 @@ class TestServicioManifiestoProyecto(unittest.TestCase):
 
         self.assertFalse(resultado.exitoso)
 
-    # --- Caso 19: tipo distinto de PACKAGE ---
+    # --- Caso 19: tipo distinto de los soportados en V1.1 ---
 
     def test_tipo_no_soportado(self):
         contenido = _manifiesto_valido(
-            layout={"Procedimientos": {"tipo": "PROCEDURE", "extension": ".sql"}}
+            layout={"Tablas": {"tipo": "INDEX", "extension": ".sql"}}
         )
         self.repo.init()
         self.repo.commit_manifiesto(contenido)
@@ -927,6 +927,148 @@ class TestRutaInvalidaControlada(unittest.TestCase):
         self.assertIsNone(resultado.manifiesto)
         self.assertTrue(resultado.mensaje)
 
+
+
+
+class TestManifiestoV11TiposAdicionales(unittest.TestCase):
+    """
+    Pruebas de V1.1: los 6 tipos Oracle adicionales
+    (PROCEDURE, FUNCTION, TABLE, VIEW, TRIGGER, SEQUENCE)
+    con extension .sql se aceptan en el manifiesto.
+    """
+
+    def setUp(self):
+        self.repo = _RepoTemporal()
+        self.servicio = ServicioManifiestoProyecto(
+            servicio_git=self.repo.servicio_git
+        )
+
+    def tearDown(self):
+        self.repo.cleanup()
+
+    def _manifiesto_con_tipo(self, tipo, extension=".sql", carpeta=None):
+        if carpeta is None:
+            carpeta = tipo.capitalize() + "s"
+        return _manifiesto_valido(
+            layout={carpeta: {"tipo": tipo, "extension": extension}}
+        )
+
+    # --- PROCEDURE ---
+
+    def test_procedure_sql_aceptado(self):
+        self.repo.init()
+        self.repo.commit_manifiesto(self._manifiesto_con_tipo("PROCEDURE"))
+        resultado = self.servicio.leer_manifiesto_head(self.repo.ruta)
+        self.assertTrue(resultado.exitoso, resultado.mensaje)
+        regla = resultado.manifiesto.oracle_layout[0]
+        self.assertEqual(regla.tipo, "PROCEDURE")
+        self.assertEqual(regla.extension, ".sql")
+
+    # --- FUNCTION ---
+
+    def test_function_sql_aceptado(self):
+        self.repo.init()
+        self.repo.commit_manifiesto(self._manifiesto_con_tipo("FUNCTION"))
+        resultado = self.servicio.leer_manifiesto_head(self.repo.ruta)
+        self.assertTrue(resultado.exitoso, resultado.mensaje)
+        regla = resultado.manifiesto.oracle_layout[0]
+        self.assertEqual(regla.tipo, "FUNCTION")
+        self.assertEqual(regla.extension, ".sql")
+
+    # --- TABLE ---
+
+    def test_table_sql_aceptado(self):
+        self.repo.init()
+        self.repo.commit_manifiesto(self._manifiesto_con_tipo("TABLE"))
+        resultado = self.servicio.leer_manifiesto_head(self.repo.ruta)
+        self.assertTrue(resultado.exitoso, resultado.mensaje)
+        regla = resultado.manifiesto.oracle_layout[0]
+        self.assertEqual(regla.tipo, "TABLE")
+        self.assertEqual(regla.extension, ".sql")
+
+    # --- VIEW ---
+
+    def test_view_sql_aceptado(self):
+        self.repo.init()
+        self.repo.commit_manifiesto(self._manifiesto_con_tipo("VIEW"))
+        resultado = self.servicio.leer_manifiesto_head(self.repo.ruta)
+        self.assertTrue(resultado.exitoso, resultado.mensaje)
+        regla = resultado.manifiesto.oracle_layout[0]
+        self.assertEqual(regla.tipo, "VIEW")
+        self.assertEqual(regla.extension, ".sql")
+
+    # --- TRIGGER ---
+
+    def test_trigger_sql_aceptado(self):
+        self.repo.init()
+        self.repo.commit_manifiesto(self._manifiesto_con_tipo("TRIGGER"))
+        resultado = self.servicio.leer_manifiesto_head(self.repo.ruta)
+        self.assertTrue(resultado.exitoso, resultado.mensaje)
+        regla = resultado.manifiesto.oracle_layout[0]
+        self.assertEqual(regla.tipo, "TRIGGER")
+        self.assertEqual(regla.extension, ".sql")
+
+    # --- SEQUENCE ---
+
+    def test_sequence_sql_aceptado(self):
+        self.repo.init()
+        self.repo.commit_manifiesto(self._manifiesto_con_tipo("SEQUENCE"))
+        resultado = self.servicio.leer_manifiesto_head(self.repo.ruta)
+        self.assertTrue(resultado.exitoso, resultado.mensaje)
+        regla = resultado.manifiesto.oracle_layout[0]
+        self.assertEqual(regla.tipo, "SEQUENCE")
+        self.assertEqual(regla.extension, ".sql")
+
+    # --- PACKAGE retrocompatible ---
+
+    def test_package_pls_retrocompatible(self):
+        """PACKAGE -> .pls sigue funcionando igual que en V1."""
+        self.repo.init()
+        self.repo.commit_manifiesto(_manifiesto_valido())
+        resultado = self.servicio.leer_manifiesto_head(self.repo.ruta)
+        self.assertTrue(resultado.exitoso, resultado.mensaje)
+        regla = resultado.manifiesto.oracle_layout[0]
+        self.assertEqual(regla.tipo, "PACKAGE")
+        self.assertEqual(regla.extension, ".pls")
+
+    # --- Extension incorrecta para tipo nuevo rechazada ---
+
+    def test_procedure_con_extension_incorrecta_rechazada(self):
+        self.repo.init()
+        contenido = _manifiesto_valido(
+            layout={"Procedimientos": {"tipo": "PROCEDURE", "extension": ".pls"}}
+        )
+        self.repo.commit_manifiesto(contenido)
+        resultado = self.servicio.leer_manifiesto_head(self.repo.ruta)
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("extension", resultado.mensaje.lower())
+
+    # --- Manifiesto con multiples tipos (PACKAGE + PROCEDURE) ---
+
+    def test_multiples_tipos_en_mismo_manifiesto(self):
+        layout = {
+            "Paquetes": {"tipo": "PACKAGE", "extension": ".pls"},
+            "Procedimientos": {"tipo": "PROCEDURE", "extension": ".sql"},
+            "Vistas": {"tipo": "VIEW", "extension": ".sql"},
+        }
+        contenido = _manifiesto_valido(layout=layout)
+        self.repo.init()
+        self.repo.commit_manifiesto(contenido)
+        resultado = self.servicio.leer_manifiesto_head(self.repo.ruta)
+        self.assertTrue(resultado.exitoso, resultado.mensaje)
+        self.assertEqual(len(resultado.manifiesto.oracle_layout), 3)
+
+    # --- INDEX no soportado (tipo fuera del catalogo) ---
+
+    def test_index_no_soportado(self):
+        self.repo.init()
+        contenido = _manifiesto_valido(
+            layout={"Indices": {"tipo": "INDEX", "extension": ".sql"}}
+        )
+        self.repo.commit_manifiesto(contenido)
+        resultado = self.servicio.leer_manifiesto_head(self.repo.ruta)
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("soportado", resultado.mensaje.lower())
 
 if __name__ == "__main__":
     unittest.main()

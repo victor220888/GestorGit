@@ -31,8 +31,10 @@ from modelos_reservas import (
 
 
 # Extensiones consideradas familia Oracle potencial.
-# Solo .pls esta soportada en V1; el resto se reconoce
-# como familia Oracle pero NO resoluble de forma segura.
+# V1.1 soporta .pls (PACKAGE) y .sql (PROCEDURE, FUNCTION,
+# TABLE, VIEW, TRIGGER, SEQUENCE) como extensiones resolubles.
+# .pks y .pkb se reconocen como familia Oracle pero NO
+# resolubles de forma segura.
 EXTENSIONES_FAMILIA_ORACLE = {".pls", ".pks", ".pkb", ".sql"}
 
 # Regla de nombre seguro de identificador Oracle V1.

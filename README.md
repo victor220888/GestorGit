@@ -156,7 +156,7 @@ Acción explícita de la ventana de ramas para publicar la rama local ACTUAL:
 - tras éxito o fallo se exige un Fetch nuevo;
 - puede publicar una rama aunque no tenga commits exclusivos.
 
-### Modo Equipo Oracle V1
+### Modo Equipo Oracle V1.1
 
 Capa preventiva de colaboración para desarrollo Oracle/PLSQL que añade reservas de objetos compartidos sin sustituir a Git:
 
@@ -170,12 +170,24 @@ Capa preventiva de colaboración para desarrollo Oracle/PLSQL que añade reserva
 - `CoordinadorOperacionesRed` actúa como mutex único compartido por las operaciones remotas Git y las operaciones de reservas;
 - avisos pedagógicos cancelables de reservas propias conocidas antes de cambiar/crear rama, Pull, Push, publicar rama y descartar cambios sin preparar (Fetch queda fuera; el aviso es local y no reserva, renueva ni libera).
 
-El layout Oracle de V1 queda limitado a lo implementado (por ejemplo `Paquetes/*.pls -> PACKAGE`); las rutas no resolubles de forma inequívoca bloquean la operación protegida con explicación.
+El layout Oracle se define en el manifiesto del proyecto. V1.1 admite 7 tipos Oracle:
+
+```text
+PACKAGE   -> .pls
+PROCEDURE -> .sql
+FUNCTION  -> .sql
+TABLE     -> .sql
+VIEW      -> .sql
+TRIGGER   -> .sql
+SEQUENCE  -> .sql
+```
+
+La identidad canónica sigue siendo `TIPO|NOMBRE`. `.pks`/`.pkb`, schemas, `TYPE`, `SYNONYM`, `MATERIALIZED VIEW` y el parseo del contenido SQL siguen fuera de alcance. Las rutas no resolubles de forma inequívoca bloquean la operación protegida con explicación.
 
 ### Tooltips didácticos V1
 
 - 53 tooltips centralizados en la V1 actual
-  (38 históricos + 15 de Modo Equipo Oracle V1);
+  (38 históricos + 15 de Modo Equipo Oracle V1.1);
 - explicaciones de operaciones, conceptos locales/remotos, staging, commit, Fetch, Pull, Push, historial, Inspector, ramas, sincronización y Modo Equipo Oracle;
 - sin textos largos dispersos por la GUI.
 
@@ -207,7 +219,7 @@ La ventana no ejecuta Git ni modifica el repositorio.
 
 ```text
 Publicar rama local V1 -> cerrada
-Modo Equipo Oracle V1   -> funcionalmente implementada (bloques A-G)
+Modo Equipo Oracle V1.1 -> ampliación de tipos Oracle (PROCEDURE, FUNCTION, TABLE, VIEW, TRIGGER, SEQUENCE)
 Bloque H (documentación/cierre de la V1) -> documental
 ```
 
@@ -225,10 +237,11 @@ explícita del propietario.
 
 ## Próximo paso
 
-La publicación segura de ramas locales y **Modo Equipo Oracle V1**
+La publicación segura de ramas locales y **Modo Equipo Oracle**
 ya están implementadas en el producto; la V1 de colaboración de
 equipo para desarrollo Oracle/PLSQL está funcionalmente cerrada en
-sus bloques A-G y su cierre documental corresponde al Bloque H.
+sus bloques A-G (documentada como Bloque H). La V1.1 amplía los
+tipos Oracle soportados de 1 a 7 (PACKAGE + 6 tipos .sql).
 
 Las operaciones Git productivas que GestorGit soporta sobre su propio
 repositorio (staging, commit, Fetch, Pull/Push seguros y ramas) se realizan
@@ -284,7 +297,7 @@ No publica ramas ni ejecuta Push.
 
 - `modelos_reservas.py`: modelos, validación y canon del payload V1 de reservas (fórmula de ref, timestamps RFC3339, clasificaciones).
 - `servicio_manifiesto_proyecto.py`: lectura del manifiesto compartido versionado `.gestorgit/proyecto.json` (`project_uuid` y layout Oracle).
-- `servicio_objetos_oracle.py`: resolución estricta de ruta Oracle a clave de objeto; las rutas no resolubles de forma inequívoca no se reservan.
+- `servicio_objetos_oracle.py`: resolución estricta de ruta Oracle a clave de objeto (`TIPO|NOMBRE`); las rutas no resolubles de forma inequívoca no se reservan; V1.1 soporta PACKAGE (.pls) y 6 tipos adicionales (.sql).
 - `servicio_identidad_equipo.py`: `id_cliente` técnico local de la instalación (separado de la configuración transportable).
 - `servicio_reservas.py`: máquina de estados y orquestación local de reservas (consultar/reservar/renovar/liberar/tomar vencida), validación local de reserva propia fresca y coordinador/mutex de operaciones de red.
 - `servicio_remoto_reservas.py`: operaciones Git sobre el backend dedicado de reservas (fetch, lectura/validación de head, commits por plumbing, Push sin force).
@@ -382,4 +395,4 @@ El usuario guarda los archivos en `seguimiento_prompts/` y ChatGPT genera los pr
 
 GestorGit ya es un cliente Git educativo y conservador funcional para trabajo individual, incluyendo la publicación explícita y segura de ramas locales.
 
-Además del flujo individual, GestorGit incorpora **Modo Equipo Oracle V1**: reservas preventivas de objetos Oracle con backend Git dedicado, protección fail-closed de staging/commit y avisos pedagógicos, manteniendo la filosofía de seguridad y comprensión.
+Además del flujo individual, GestorGit incorpora **Modo Equipo Oracle**: reservas preventivas de objetos Oracle con backend Git dedicado, protección fail-closed de staging/commit y avisos pedagógicos, manteniendo la filosofía de seguridad y comprensión. V1.1 soporta 7 tipos Oracle (PACKAGE, PROCEDURE, FUNCTION, TABLE, VIEW, TRIGGER, SEQUENCE).

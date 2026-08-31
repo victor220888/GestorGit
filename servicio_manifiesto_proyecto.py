@@ -1,6 +1,6 @@
 """
 Servicio de carga y validacion del manifiesto compartido
-de Modo Equipo Oracle V1.
+de Modo Equipo Oracle V1.1.
 
 La fuente autoritativa del manifiesto es la version committed en
 HEAD del repositorio Oracle:
@@ -10,6 +10,11 @@ HEAD del repositorio Oracle:
 No se lee el working tree como fuente de autorizacion: una
 modificacion local no commitida no puede redefinir
 project_uuid, oracle_layout ni la identidad de los objetos.
+
+V1.1 soporta 7 tipos Oracle: PACKAGE (.pls), PROCEDURE,
+FUNCTION, TABLE, VIEW, TRIGGER y SEQUENCE (todos .sql).
+El layout se define en el manifiesto y la validacion es
+generica respecto a los catalogos de tipos y extensiones.
 
 Reglas permanentes:
 

@@ -535,5 +535,164 @@ class TestConstructor(_BaseProteccion):
         self.assertIn("PACKAGE|FINI004", resultado.componer_mensaje())
 
 
+# =====================================================================
+# Integración V1.1 (GG-PROMPT-053-REV1): tipos Oracle .sql
+# =====================================================================
+
+
+def _manifiesto_v11():
+    """
+    Manifiesto V1.1 con PACKAGE + 6 tipos .sql.
+    """
+
+    return ManifiestoProyecto(
+        format_version=1,
+        project_uuid="11111111-1111-4111-8111-111111111111",
+        oracle_layout=(
+            ReglaLayoutOracle(
+                carpeta="Paquetes",
+                tipo="PACKAGE",
+                extension=".pls",
+            ),
+            ReglaLayoutOracle(
+                carpeta="Procedimientos",
+                tipo="PROCEDURE",
+                extension=".sql",
+            ),
+            ReglaLayoutOracle(
+                carpeta="Funciones",
+                tipo="FUNCTION",
+                extension=".sql",
+            ),
+            ReglaLayoutOracle(
+                carpeta="Tablas",
+                tipo="TABLE",
+                extension=".sql",
+            ),
+            ReglaLayoutOracle(
+                carpeta="Vistas",
+                tipo="VIEW",
+                extension=".sql",
+            ),
+            ReglaLayoutOracle(
+                carpeta="Triggers",
+                tipo="TRIGGER",
+                extension=".sql",
+            ),
+            ReglaLayoutOracle(
+                carpeta="Secuencias",
+                tipo="SEQUENCE",
+                extension=".sql",
+            ),
+        ),
+    )
+
+
+CLAVE_PROCEDURE_PR_CERRAR = "PROCEDURE|PR_CERRAR"
+CLAVE_VIEW_VW_CLIENTES = "VIEW|VW_CLIENTES"
+CLAVE_TABLE_CLIENTES = "TABLE|CLIENTES"
+
+
+class TestIntegracionTiposSqlV11(unittest.TestCase):
+    """
+    GG-PROMPT-053-REV1: la barrera de protección no está acoplada
+    a PACKAGE; los tipos .sql pasan por el mismo fail-closed vía
+    ServicioObjetosOracle (manifiesto V1.1 real, no claves
+    inventadas).
+    """
+
+    def setUp(self):
+        self.reservas = ReservasFalsas(
+            valida=True,
+            motivo="Reserva propia fresca valida.",
+        )
+        self.protector = ServicioProteccionReservasGit(
+            resolvedor_oracle=ServicioObjetosOracle(_manifiesto_v11()),
+            servicio_reservas=self.reservas,
+            project_uuid="11111111-1111-4111-8111-111111111111",
+        )
+
+    def test_procedure_sql_resuelve_y_exige_reserva(self):
+        # La clave llega al servicio de reservas como
+        # PROCEDURE|PR_CERRAR: el resolvedor V1.1 la produjo.
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertTrue(resultado.permitido)
+        self.assertEqual(
+            [str(c) for c in resultado.claves],
+            [CLAVE_PROCEDURE_PR_CERRAR],
+        )
+        self.assertEqual(
+            [str(c) for c in self.reservas.llamadas_validar],
+            [CLAVE_PROCEDURE_PR_CERRAR],
+        )
+
+    def test_view_sql_segunda_clave_distinta_exige_reserva(self):
+        resultado = self.protector.proteger_staging(
+            ["Vistas/VW_CLIENTES.sql"]
+        )
+        self.assertTrue(resultado.permitido)
+        self.assertEqual(
+            [str(c) for c in resultado.claves],
+            [CLAVE_VIEW_VW_CLIENTES],
+        )
+
+    def test_tipos_distintos_mismo_nombre_claves_distintas(self):
+        # TABLE|CLIENTES y VIEW|CLIENTES... el manifiesto mapea
+        # Tablas/ y Vistas/ a tipos distintos.
+        r1 = self.protector.proteger_staging(
+            ["Tablas/CLIENTES.sql"]
+        )
+        r2 = self.protector.proteger_staging(
+            ["Vistas/CLIENTES.sql"]
+        )
+        self.assertTrue(r1.permitido)
+        self.assertTrue(r2.permitido)
+        claves = {str(c) for c in r1.claves} | {str(c) for c in r2.claves}
+        self.assertEqual(claves, {CLAVE_TABLE_CLIENTES, "VIEW|CLIENTES"})
+
+    def test_procedure_sql_sin_reserva_bloqueado_fail_closed(self):
+        self.reservas.valida = False
+        self.reservas.motivo = "Sin reserva propia activa."
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.requiere_reserva)
+        self.assertIn(CLAVE_PROCEDURE_PR_CERRAR, resultado.componer_mensaje())
+
+    def test_view_sql_con_reserva_valida_permitida(self):
+        resultado = self.protector.proteger_commit(
+            ["Vistas/VW_CLIENTES.sql"]
+        )
+        self.assertTrue(resultado.permitido)
+        self.assertEqual(
+            [str(c) for c in self.reservas.llamadas_validar],
+            [CLAVE_VIEW_VW_CLIENTES],
+        )
+
+    def test_procedure_package_mixto_dos_reservas(self):
+        # Un .sql y un .pls en la misma operacion: dos claves
+        # distintas, dos validaciones.
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql", "Paquetes/FINI004.pls"]
+        )
+        self.assertTrue(resultado.permitido)
+        self.assertEqual(len(resultado.claves), 2)
+        self.assertEqual(
+            sorted(str(c) for c in resultado.claves),
+            sorted([CLAVE_PROCEDURE_PR_CERRAR, CLAVE_FINI004]),
+        )
+
+    def test_pls_en_carpeta_procedure_bloqueado(self):
+        # Extensión incorrecta para la carpeta mapeada:
+        # Oracle no resoluble -> fail-closed.
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.pls"]
+        )
+        self.assertFalse(resultado.permitido)
+
+
 if __name__ == "__main__":
     unittest.main()

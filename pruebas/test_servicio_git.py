@@ -3818,5 +3818,200 @@ class PruebasGramaticaDiff(_BaseProteccionIntegracion):
         )
 
 
+# =====================================================================
+# Integración V1.1 (GG-PROMPT-053-REV1): staging/commit para .sql
+# =====================================================================
+
+MANIFIESTO_V11 = ManifiestoProyecto(
+    format_version=1,
+    project_uuid="33333333-3333-4333-8333-333333333333",
+    oracle_layout=(
+        ReglaLayoutOracle(
+            carpeta="Paquetes",
+            tipo="PACKAGE",
+            extension=".pls",
+        ),
+        ReglaLayoutOracle(
+            carpeta="Procedimientos",
+            tipo="PROCEDURE",
+            extension=".sql",
+        ),
+        ReglaLayoutOracle(
+            carpeta="Vistas",
+            tipo="VIEW",
+            extension=".sql",
+        ),
+    ),
+)
+
+CLAVE_PROCEDURE_PR_CERRAR = "PROCEDURE|PR_CERRAR"
+CLAVE_VIEW_VW_CLIENTES = "VIEW|VW_CLIENTES"
+
+
+class _BaseProteccionIntegracionV11(unittest.TestCase):
+    """
+    Fixture con repositorio temporal que incluye objetos
+    PACKAGE (.pls) y PROCEDURE/VIEW (.sql) V1.1.
+    """
+
+    def setUp(self):
+        self.temporal = tempfile.TemporaryDirectory()
+        self.ruta = Path(self.temporal.name)
+        self.reservas = ReservasPrueba()
+
+        self.protector = ServicioProteccionReservasGit(
+            resolvedor_oracle=ServicioObjetosOracle(MANIFIESTO_V11),
+            servicio_reservas=self.reservas,
+            project_uuid=MANIFIESTO_V11.project_uuid,
+        )
+        self.servicio_base = ServicioGit()
+        self.servicio = ServicioGit(protector_reservas=self.protector)
+
+        self.assertTrue(
+            self.servicio_base.ejecutar_git(
+                argumentos=["init"], ruta_repositorio=self.ruta
+            ).exitoso
+        )
+        self.servicio_base.ejecutar_git(
+            argumentos=["config", "user.name", "Usuario Prueba"],
+            ruta_repositorio=self.ruta,
+        )
+        self.servicio_base.ejecutar_git(
+            argumentos=["config", "user.email", "prueba@example.com"],
+            ruta_repositorio=self.ruta,
+        )
+
+        (self.ruta / "archivo_base.txt").write_text("SELECT 1;\n", encoding="utf-8")
+        paquetes = self.ruta / "Paquetes"
+        paquetes.mkdir()
+        (paquetes / "FINI004.pls").write_text("CREATE PACKAGE FINI004;\n", encoding="utf-8")
+        procedimientos = self.ruta / "Procedimientos"
+        procedimientos.mkdir()
+        (procedimientos / "PR_CERRAR.sql").write_text("CREATE PROCEDURE PR_CERRAR;\n", encoding="utf-8")
+        vistas = self.ruta / "Vistas"
+        vistas.mkdir()
+        (vistas / "VW_CLIENTES.sql").write_text("CREATE VIEW VW_CLIENTES;\n", encoding="utf-8")
+
+        for f in ("archivo_base.txt", "Paquetes/FINI004.pls", "Procedimientos/PR_CERRAR.sql", "Vistas/VW_CLIENTES.sql"):
+            self.assertTrue(self.servicio_base.ejecutar_git(
+                argumentos=["add", "--", f], ruta_repositorio=self.ruta
+            ).exitoso)
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["commit", "-m", "Commit inicial V1.1"], ruta_repositorio=self.ruta
+        ).exitoso)
+
+    def tearDown(self):
+        self.temporal.cleanup()
+
+    def staged_set(self):
+        exitoso, entradas, _error = self.servicio._leer_staged_set(self.ruta)
+        self.assertTrue(exitoso)
+        return entradas
+
+
+class PruebasProteccionStagingV11(_BaseProteccionIntegracionV11):
+    """
+    GG-PROMPT-053-REV1: staging de PROCEDURE .sql y VIEW .sql
+    pasa por la barrera real del resolvedor.
+    """
+
+    def test_procedure_sql_staging_con_reserva_valida(self):
+        self.reservas.valida = True
+        (self.ruta / "Procedimientos" / "PR_CERRAR.sql").write_text("CREATE PROCEDURE PR_CERRAR v2;\n", encoding="utf-8")
+        resultado = self.servicio.agregar_archivos(self.ruta, ["Procedimientos/PR_CERRAR.sql"])
+        self.assertTrue(resultado.exitoso, resultado.error)
+        self.assertIn(CLAVE_PROCEDURE_PR_CERRAR, self.reservas.llamadas)
+
+    def test_procedure_sql_staging_sin_reserva_bloqueado(self):
+        self.reservas.valida = False
+        (self.ruta / "Procedimientos" / "PR_CERRAR.sql").write_text("v2;\n", encoding="utf-8")
+        resultado = self.servicio.agregar_archivos(self.ruta, ["Procedimientos/PR_CERRAR.sql"])
+        self.assertFalse(resultado.exitoso)
+        self.assertEqual(self.staged_set(), [])
+
+    def test_view_sql_staging_con_reserva_valida(self):
+        self.reservas.valida = True
+        (self.ruta / "Vistas" / "VW_CLIENTES.sql").write_text("v2;\n", encoding="utf-8")
+        resultado = self.servicio.agregar_archivos(self.ruta, ["Vistas/VW_CLIENTES.sql"])
+        self.assertTrue(resultado.exitoso, resultado.error)
+
+    def test_mixto_pls_y_sql_staging(self):
+        """PACKAGE .pls y PROCEDURE .sql en la misma operacion."""
+        self.reservas.valida = True
+        (self.ruta / "Paquetes" / "FINI004.pls").write_text("v2;\n", encoding="utf-8")
+        (self.ruta / "Procedimientos" / "PR_CERRAR.sql").write_text("v2;\n", encoding="utf-8")
+        resultado = self.servicio.agregar_archivos(
+            self.ruta, ["Paquetes/FINI004.pls", "Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertTrue(resultado.exitoso, resultado.error)
+
+    def test_actualizar_preparados_procedure_sql_exige_reserva(self):
+        """Actualizar preparados de un .sql pasa por la misma barrera."""
+        self.reservas.valida = False
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text("v2;\n", encoding="utf-8")
+        self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        )
+        proc.write_text("v3;\n", encoding="utf-8")
+        resultado = self.servicio.actualizar_archivos_preparados(
+            self.ruta, ["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertFalse(resultado.exitoso)
+
+    def test_actualizar_preparados_procedure_sql_con_reserva_valida(self):
+        self.reservas.valida = True
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text("v2;\n", encoding="utf-8")
+        self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        )
+        proc.write_text("v3;\n", encoding="utf-8")
+        resultado = self.servicio.actualizar_archivos_preparados(
+            self.ruta, ["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertTrue(resultado.exitoso, resultado.error)
+
+
+class PruebasProteccionCommitV11(_BaseProteccionIntegracionV11):
+    """
+    GG-PROMPT-053-REV1: commit revalida la reserva del objeto .sql.
+    """
+
+    def test_commit_procedure_sql_con_reserva_valida(self):
+        self.reservas.valida = True
+        (self.ruta / "Procedimientos" / "PR_CERRAR.sql").write_text("v2;\n", encoding="utf-8")
+        self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        )
+        resultado = self.servicio.crear_commit(self.ruta, "Actualiza PROCEDURE")
+        self.assertTrue(resultado.exitoso, resultado.error)
+
+    def test_commit_procedure_sql_sin_reserva_bloqueado(self):
+        self.reservas.valida = False
+        (self.ruta / "Procedimientos" / "PR_CERRAR.sql").write_text("v2;\n", encoding="utf-8")
+        self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        )
+        resultado = self.servicio.crear_commit(self.ruta, "Actualiza sin reserva")
+        self.assertFalse(resultado.exitoso)
+
+    def test_commit_mixto_package_y_view(self):
+        """PACKAGE y VIEW en el mismo commit: ambas reservas validadas."""
+        self.reservas.valida = True
+        (self.ruta / "Paquetes" / "FINI004.pls").write_text("v2;\n", encoding="utf-8")
+        (self.ruta / "Vistas" / "VW_CLIENTES.sql").write_text("v2;\n", encoding="utf-8")
+        for f in ("Paquetes/FINI004.pls", "Vistas/VW_CLIENTES.sql"):
+            self.servicio_base.ejecutar_git(
+                argumentos=["add", "--", f], ruta_repositorio=self.ruta,
+            )
+        resultado = self.servicio.crear_commit(self.ruta, "Mixto PACKAGE+VIEW")
+        self.assertTrue(resultado.exitoso, resultado.error)
+
+
 if __name__ == "__main__":
     unittest.main()
