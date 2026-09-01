@@ -26,6 +26,9 @@ from servicio_proteccion_reservas_git import (
     ServicioProteccionReservasGit,
 )
 from servicio_reservas import ServicioReservas
+from servicio_validacion_contenido_oracle import (
+    ServicioValidacionContenidoOracle,
+)
 
 
 CLAVE_FINI004 = "PACKAGE|FINI004"
@@ -692,6 +695,304 @@ class TestIntegracionTiposSqlV11(unittest.TestCase):
             ["Procedimientos/PR_CERRAR.pls"]
         )
         self.assertFalse(resultado.permitido)
+
+
+# =====================================================================
+# V1.2 (GG-PROMPT-055): validación de contenido SQL ↔ archivo
+# =====================================================================
+
+
+def _manifiesto_v12():
+    return ManifiestoProyecto(
+        format_version=1,
+        project_uuid="44444444-4444-4444-8444-444444444444",
+        oracle_layout=(
+            ReglaLayoutOracle(
+                carpeta="Paquetes",
+                tipo="PACKAGE",
+                extension=".pls",
+            ),
+            ReglaLayoutOracle(
+                carpeta="Procedimientos",
+                tipo="PROCEDURE",
+                extension=".sql",
+            ),
+        ),
+    )
+
+
+class _BaseProteccionV12(unittest.TestCase):
+    """
+    Protector con la segunda evidencia V1.2 inyectada: el
+    contenido debe concordar con la identidad de la ruta además
+    de la reserva. Reservas válidas por defecto.
+    """
+
+    def setUp(self):
+        self.reservas = ReservasFalsas(
+            valida=True,
+            motivo="Reserva propia fresca valida.",
+        )
+        self.validador = ServicioValidacionContenidoOracle()
+        self.protector = ServicioProteccionReservasGit(
+            resolvedor_oracle=ServicioObjetosOracle(
+                _manifiesto_v12()
+            ),
+            servicio_reservas=self.reservas,
+            project_uuid="44444444-4444-4444-8444-444444444444",
+            validador_contenido=self.validador,
+        )
+
+
+class TestProteccionContenidoV12(_BaseProteccionV12):
+    """Concordancia contenido ↔ ruta en staging/commit."""
+
+    def test_contenido_correcto_y_reserva_valida_permitido(self):
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": (
+                    b"CREATE OR REPLACE PROCEDURE PR_CERRAR "
+                    b"IS NULL;\n"
+                )
+            },
+        )
+        self.assertTrue(resultado.permitido, resultado.motivo)
+        self.assertFalse(resultado.bloqueo_contenido)
+
+    def test_nombre_incorrecto_bloqueado_por_contenido(self):
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": (
+                    b"CREATE PROCEDURE PR_ABRIR IS NULL;\n"
+                )
+            },
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.bloqueo_contenido)
+        self.assertFalse(resultado.requiere_reserva)
+        self.assertIn("no coincide", resultado.motivo)
+
+    def test_tipo_incorrecto_bloqueado_por_contenido(self):
+        resultado = self.protector.proteger_commit(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": (
+                    b"CREATE FUNCTION PR_CERRAR RETURN NUMBER "
+                    b"IS NULL;\n"
+                )
+            },
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.bloqueo_contenido)
+        self.assertIn("tipo", resultado.motivo)
+
+    def test_ambiguo_bloqueado_por_contenido(self):
+        resultado = self.protector.proteger_staging(
+            ["Paquetes/FINI004.pls"],
+            contenido_por_ruta={
+                "Paquetes/FINI004.pls": (
+                    b"CREATE PACKAGE FINI004 IS END;\n"
+                    b"CREATE PACKAGE OTRO IS END;\n"
+                )
+            },
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.bloqueo_contenido)
+
+    def test_no_verificable_bloqueado_por_contenido(self):
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": b"SELECT 1;\n"
+            },
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.bloqueo_contenido)
+
+    def test_eliminacion_origen_explicito_no_aplica(self):
+        """None explícito en el mapeo de una ruta Oracle recibe
+        NO_APLICA (eliminación/lado origen demostrado)."""
+
+        resultado = self.protector.proteger_commit(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": None
+            },
+        )
+        self.assertTrue(resultado.permitido, resultado.motivo)
+
+    def test_ruta_oracle_ausente_del_mapeo_bloqueado(self):
+        """Con validador activo, una ruta Oracle reservable que no
+        aparece en el mapeo BLOQUEA (fail-closed REV1 R4)."""
+
+        resultado = self.protector.proteger_commit(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={},
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.bloqueo_contenido)
+        self.assertIn("No fue suministrado", resultado.motivo)
+
+    def test_contenido_por_ruta_none_bloqueado(self):
+        """contenido_por_ruta=None con validador activo BLOQUEA
+        (fail-closed REV1 R4)."""
+
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.bloqueo_contenido)
+        self.assertIn("no fue suministrado", resultado.motivo.lower())
+
+    def test_contenido_no_bytes_bloqueado(self):
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": "texto suelto"
+            },
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.bloqueo_contenido)
+
+    def test_mapeo_no_diccionario_bloqueado(self):
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta=[
+                ("Procedimientos/PR_CERRAR.sql", b"x")
+            ],
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.bloqueo_contenido)
+
+    def test_validador_resultado_no_contractual_bloqueado(self):
+        protector = ServicioProteccionReservasGit(
+            resolvedor_oracle=ServicioObjetosOracle(
+                _manifiesto_v12()
+            ),
+            servicio_reservas=self.reservas,
+            project_uuid="44444444-4444-4444-8444-444444444444",
+            validador_contenido=types.SimpleNamespace(
+                validar=lambda clave, contenido: "ok"
+            ),
+        )
+
+        resultado = protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": b"CREATE X;"
+            },
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.bloqueo_contenido)
+
+    def test_validador_con_excepcion_bloqueado_sin_detalle(self):
+        secreto = "token-ficticio-123"
+
+        class ValidadorQueExplota:
+            def validar(self, clave, contenido):
+                raise RuntimeError(secreto)
+
+        protector = ServicioProteccionReservasGit(
+            resolvedor_oracle=ServicioObjetosOracle(
+                _manifiesto_v12()
+            ),
+            servicio_reservas=self.reservas,
+            project_uuid="44444444-4444-4444-8444-444444444444",
+            validador_contenido=ValidadorQueExplota(),
+        )
+
+        resultado = protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": b"CREATE X;"
+            },
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.bloqueo_contenido)
+        self.assertNotIn(secreto, resultado.componer_mensaje())
+
+    def test_ruta_ordinaria_ignora_mapeo(self):
+        """Una ruta no Oracle con contenido en el mapeo no
+        participa de la validación de contenido."""
+
+        resultado = self.protector.proteger_staging(
+            ["Lecturas/nota.txt"],
+            contenido_por_ruta={
+                "Lecturas/nota.txt": b"CREATE PROCEDURE X;"
+            },
+        )
+        self.assertTrue(resultado.permitido, resultado.motivo)
+
+    def test_reserva_y_contenido_se_validan_ambas(self):
+        """Contenido correcto pero reserva inválida: bloqueo por
+        reserva (la validación de contenido no la sustituye)."""
+
+        self.reservas.valida = False
+        self.reservas.motivo = "Sin reserva propia activa."
+
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": (
+                    b"CREATE PROCEDURE PR_CERRAR IS NULL;\n"
+                )
+            },
+        )
+        self.assertFalse(resultado.permitido)
+        self.assertTrue(resultado.requiere_reserva)
+        self.assertFalse(resultado.bloqueo_contenido)
+
+    def test_sin_validador_inyectado_semantica_v11(self):
+        """Sin validador el protector conserva V1.1: un contenido
+        contradictorio NO bloquea si la reserva es válida."""
+
+        protector_v11 = ServicioProteccionReservasGit(
+            resolvedor_oracle=ServicioObjetosOracle(
+                _manifiesto_v12()
+            ),
+            servicio_reservas=self.reservas,
+            project_uuid="44444444-4444-4444-8444-444444444444",
+        )
+
+        resultado = protector_v11.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": (
+                    b"CREATE PROCEDURE PR_ABRIR IS NULL;\n"
+                )
+            },
+        )
+        self.assertTrue(resultado.permitido, resultado.motivo)
+
+    def test_constructor_rechaza_validador_sin_validar(self):
+        with self.assertRaises(ValueError):
+            ServicioProteccionReservasGit(
+                resolvedor_oracle=ServicioObjetosOracle(
+                    _manifiesto_v12()
+                ),
+                servicio_reservas=self.reservas,
+                project_uuid="x",
+                validador_contenido=types.SimpleNamespace(),
+            )
+
+    def test_mensaje_bloqueo_contenido_pedagogico(self):
+        resultado = self.protector.proteger_staging(
+            ["Procedimientos/PR_CERRAR.sql"],
+            contenido_por_ruta={
+                "Procedimientos/PR_CERRAR.sql": (
+                    b"CREATE PROCEDURE PR_ABRIR IS NULL;\n"
+                )
+            },
+        )
+
+        mensaje = resultado.componer_mensaje()
+
+        self.assertIn("validación de contenido", mensaje)
+        self.assertIn("Procedimientos/PR_CERRAR.sql", mensaje)
+        self.assertIn("PROCEDURE|PR_CERRAR", mensaje)
+        self.assertNotIn("Traceback", mensaje)
 
 
 if __name__ == "__main__":

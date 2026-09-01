@@ -975,9 +975,28 @@ class ServicioGit:
             cambios_por_ruta
         )
 
+        # V1.2: el staging valida el contenido EXACTO del working
+        # tree que se va a preparar contra la identidad de la ruta.
+        exitoso_contenido, contenido_por_ruta, error_contenido = (
+            self._obtener_contenido_working_tree(
+                estado_repositorio.ruta_raiz,
+                rutas_involucradas
+            )
+        )
+
+        if not exitoso_contenido:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=error_contenido,
+                comando=""
+            )
+
         resultado_proteccion = self._aplicar_proteccion_reservas(
             "staging",
-            rutas_involucradas
+            rutas_involucradas,
+            contenido_por_ruta=contenido_por_ruta
         )
 
         if resultado_proteccion is not None:
@@ -1309,9 +1328,28 @@ class ServicioGit:
             cambios_por_ruta
         )
 
+        # V1.2: Actualizar preparados revalida el contenido EXACTO
+        # del working tree (nunca reutiliza una validación previa).
+        exitoso_contenido, contenido_por_ruta, error_contenido = (
+            self._obtener_contenido_working_tree(
+                estado_repositorio.ruta_raiz,
+                rutas_involucradas
+            )
+        )
+
+        if not exitoso_contenido:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=error_contenido,
+                comando=""
+            )
+
         resultado_proteccion = self._aplicar_proteccion_reservas(
             "staging",
-            rutas_involucradas
+            rutas_involucradas,
+            contenido_por_ruta=contenido_por_ruta
         )
 
         if resultado_proteccion is not None:
@@ -1588,10 +1626,16 @@ class ServicioGit:
             tiempo_maximo=60
         )
 
-    def _aplicar_proteccion_reservas(self, operacion, rutas):
+    def _aplicar_proteccion_reservas(self, operacion, rutas,
+                                     contenido_por_ruta=None):
         """
         Aplica la protección de reservas de Modo Equipo si hay un
         protector configurado.
+
+        contenido_por_ruta (V1.2) transporta el contenido exacto a
+        validar: working tree para staging y blob del índice para
+        commit. None conserva la semántica V1.1 (sin validación
+        de contenido).
 
         Devuelve None cuando la operación puede continuar (no hay
         protector o la protección devuelve PERMITIDA), o un
@@ -1616,11 +1660,13 @@ class ServicioGit:
         try:
             if operacion == "staging":
                 resultado = self.protector_reservas.proteger_staging(
-                    rutas
+                    rutas,
+                    contenido_por_ruta=contenido_por_ruta,
                 )
             else:
                 resultado = self.protector_reservas.proteger_commit(
-                    rutas
+                    rutas,
+                    contenido_por_ruta=contenido_por_ruta,
                 )
         except Exception:
             return self._proteccion_fallida_generico()
@@ -1929,6 +1975,391 @@ class ServicioGit:
             and getattr(resultado, "es_reservable", False)
         )
 
+    def _ruta_oracle_reservable(self, ruta):
+        """
+        V1.2: True SOLO si la ruta resuelve a un objeto Oracle
+        reservable según el resolvedor inyectado del protector.
+
+        A diferencia de _ruta_requiere_analisis_copia, un resultado
+        no verificable devuelve False: esas rutas ya bloquean por
+        sí mismas dentro de la protección y no reciben lectura de
+        contenido.
+        """
+
+        resolvedor = getattr(
+            self.protector_reservas, "resolvedor_oracle", None
+        )
+
+        if resolvedor is None or not callable(
+            getattr(resolvedor, "resolver", None)
+        ):
+            return False
+
+        try:
+            resultado = resolvedor.resolver(ruta)
+        except Exception:
+            return False
+
+        if resultado is None:
+            return False
+
+        return bool(
+            getattr(resultado, "es_ruta_valida", False)
+            and getattr(resultado, "es_objeto_oracle", False)
+            and getattr(resultado, "es_reservable", False)
+        )
+
+    def _obtener_contenido_working_tree(self, ruta_raiz, rutas):
+        """
+        V1.2 (REV1 R4): lee los bytes EXACTOS del working tree de
+        las rutas Oracle reservables y las incluye EXPLÍCITAMENTE
+        en el mapeo. Preparar y Actualizar preparados validan el
+        contenido que realmente se va a stagear.
+
+        - ruta sin archivo: None explícito (eliminación/lado
+          origen demostrado → NO_APLICA en el protector);
+        - fallo de lectura: BLOQUEA (fail-closed).
+
+        Devuelve (exitoso, contenido_por_ruta, error). Sin
+        protector devuelve (True, None, "").
+        """
+
+        if self.protector_reservas is None:
+            return (True, None, "")
+
+        contenido = {}
+
+        for ruta in rutas:
+            if not self._ruta_oracle_reservable(ruta):
+                continue
+
+            archivo = Path(ruta_raiz) / ruta
+
+            if not archivo.exists():
+                contenido[ruta] = None
+                continue
+
+            try:
+                contenido[ruta] = archivo.read_bytes()
+            except OSError:
+                return (
+                    False,
+                    None,
+                    (
+                        "Modo Equipo Oracle: no fue posible leer "
+                        f"el contenido de '{ruta}' para verificar "
+                        "el objeto declarado; la operación queda "
+                        "bloqueada."
+                    ),
+                )
+
+        return (True, contenido, "")
+
+    def _obtener_contenido_staged(self, ruta_repositorio, entradas):
+        """
+        V1.2 (REV1 R3+R4, REV2 R/C): lee los bytes EXACTOS de los
+        blobs preparados en el índice para las rutas Oracle
+        reservables del staged set y captura los OIDs para
+        revalidación.
+
+        El commit valida lo YA preparado, nunca el working tree.
+        Consultas 100% de SOLO LECTURA (ls-files --stage para el
+        OID del índice; cat-file blob para el contenido).
+
+        Mapa por lado:
+
+        - A/M/T Oracle -> bytes exactos staged + OID;
+        - D Oracle -> None explícito (NO_APLICA);
+        - R/C destino Oracle -> bytes exactos staged + OID del
+          DESTINO (validación SQL ↔ identidad del destino);
+        - R/C origen Oracle -> None explícito (NO_APLICA de
+          contenido; su reserva SIGUE siendo obligatoria y la
+          exige el protector por la ruta involucrada); nunca se
+          lee el working tree para suplir el origen y nunca entra
+          en oids_por_ruta.
+
+        Si una entrada propia del origen aporta contenido real
+        (p. ej. el origen de una copia fue también modificado),
+        ese contenido gana sobre el None estructural.
+
+        Si el OID o el blob no pueden determinarse con certeza
+        BLOQUEA.
+
+        Devuelve (exitoso, contenido_por_ruta, oids_por_ruta,
+        error). Sin protector devuelve (True, None, None, "").
+        """
+
+        if self.protector_reservas is None:
+            return (True, None, None, "")
+
+        contenido = {}
+        oids = {}
+
+        for estado, ruta, ruta_anterior in entradas:
+            # REV2: lado origen de renombrado/copiado explícito.
+            if (
+                estado in ("R", "C")
+                and ruta_anterior
+                and ruta_anterior not in contenido
+                and self._ruta_oracle_reservable(ruta_anterior)
+            ):
+                contenido[ruta_anterior] = None
+
+            if not self._ruta_oracle_reservable(ruta):
+                continue
+
+            if estado == "D":
+                contenido[ruta] = None
+                continue
+
+            exitoso_oid, oid, error_oid = self._leer_oid_staged(
+                ruta_repositorio,
+                ruta
+            )
+
+            if not exitoso_oid:
+                return (False, None, None, error_oid)
+
+            exitoso_blob, datos, error_blob = self._leer_blob_staged(
+                ruta_repositorio,
+                oid,
+                ruta
+            )
+
+            if not exitoso_blob:
+                return (False, None, None, error_blob)
+
+            contenido[ruta] = datos
+            oids[ruta] = oid
+
+        return (True, contenido, oids, "")
+
+    def _leer_oid_staged(self, ruta_repositorio, ruta):
+        """
+        Lee el OID del blob de la ruta en el índice (etapa 0) con
+        `git ls-files --stage -z` (SOLO LECTURA).
+
+        Devuelve (exitoso, oid, error). Un registro malformado, un
+        conflicto no resuelto o la ausencia de la ruta BLOQUEAN.
+        """
+
+        resultado = self._ejecutar_git_interno(
+            argumentos=[
+                "--literal-pathspecs",
+                "ls-files",
+                "--stage",
+                "-z",
+                "--",
+                ruta,
+            ],
+            ruta_repositorio=ruta_repositorio
+        )
+
+        if not resultado.exitoso:
+            return (
+                False,
+                None,
+                (
+                    "Modo Equipo Oracle: no fue posible consultar "
+                    f"el área preparada de '{ruta}'; la operación "
+                    "queda bloqueada."
+                ),
+            )
+
+        oid = None
+
+        for entrada in resultado.salida.split("\0"):
+            if not entrada:
+                continue
+
+            meta, separador, ruta_entrada = entrada.partition("\t")
+
+            if not separador:
+                return (
+                    False,
+                    None,
+                    (
+                        "Modo Equipo Oracle: salida de ls-files "
+                        "malformada; la operación queda "
+                        "bloqueada."
+                    ),
+                )
+
+            partes = meta.split()
+
+            if len(partes) != 3:
+                return (
+                    False,
+                    None,
+                    (
+                        "Modo Equipo Oracle: salida de ls-files "
+                        "malformada; la operación queda "
+                        "bloqueada."
+                    ),
+                )
+
+            _modo, oid_entrada, etapa = partes
+
+            if ruta_entrada != ruta:
+                continue
+
+            if etapa != "0":
+                return (
+                    False,
+                    None,
+                    (
+                        f"La ruta '{ruta}' presenta etapas de "
+                        "conflicto en el índice; resuélvalas "
+                        "antes de continuar."
+                    ),
+                )
+
+            oid = oid_entrada.lower()
+
+        if oid is None:
+            return (
+                False,
+                None,
+                (
+                    "Modo Equipo Oracle: no se encontró la "
+                    f"versión preparada de '{ruta}' en el "
+                    "índice; la operación queda bloqueada."
+                ),
+            )
+
+        if (
+            len(oid) not in (40, 64)
+            or any(caracter not in "0123456789abcdef" for caracter in oid)
+        ):
+            return (
+                False,
+                None,
+                (
+                    "Modo Equipo Oracle: identificador de blob "
+                    "no reconocido; la operación queda "
+                    "bloqueada."
+                ),
+            )
+
+        return (True, oid, "")
+
+    def _leer_blob_staged(self, ruta_repositorio, oid, ruta):
+        """
+        Lee el contenido EXACTO (bytes) de un blob preparado con
+        `git cat-file blob <oid>` (SOLO LECTURA).
+
+        Devuelve (exitoso, bytes, error).
+        """
+
+        exitoso, datos, error = self._ejecutar_git_bytes(
+            argumentos=["cat-file", "blob", oid],
+            ruta_repositorio=ruta_repositorio
+        )
+
+        if not exitoso or datos is None:
+            return (
+                False,
+                None,
+                (
+                    "Modo Equipo Oracle: no fue posible leer el "
+                    f"contenido preparado de '{ruta}' para "
+                    "verificar el objeto declarado; la operación "
+                    "queda bloqueada."
+                ),
+            )
+
+        return (True, datos, "")
+
+    def _ejecutar_git_bytes(
+        self,
+        argumentos,
+        ruta_repositorio=None,
+        tiempo_maximo=30
+    ):
+        """
+        Ejecutor Git de SOLO LECTURA con salida binaria exacta.
+
+        Uso exclusivo V1.2: leer el contenido exacto de un blob
+        del índice (git cat-file blob <oid>) para la validación
+        SQL ↔ archivo, sin la decodificación con reemplazo del
+        ejecutor textual. El llamador solo pasa formas auditadas
+        de lectura; nunca ejecuta escrituras.
+        """
+
+        if not self.git_disponible():
+            return (False, None, "Git no fue encontrado en el sistema.")
+
+        comando = [self.ruta_git] + argumentos
+
+        carpeta_trabajo = None
+
+        if ruta_repositorio is not None:
+            carpeta_trabajo = Path(ruta_repositorio)
+
+            if not carpeta_trabajo.exists():
+                return (
+                    False,
+                    None,
+                    "La carpeta indicada no existe."
+                )
+
+            if not carpeta_trabajo.is_dir():
+                return (
+                    False,
+                    None,
+                    "La ruta indicada no corresponde a una carpeta."
+                )
+
+        try:
+            resultado = subprocess.run(
+                comando,
+                cwd=carpeta_trabajo,
+                capture_output=True,
+                text=False,
+                timeout=tiempo_maximo,
+                shell=False
+            )
+
+            if resultado.returncode != 0:
+                error = resultado.stderr.decode(
+                    "utf-8", errors="replace"
+                ).rstrip("\r\n")
+
+                return (False, None, error)
+
+            return (True, resultado.stdout, "")
+
+        except subprocess.TimeoutExpired:
+            return (
+                False,
+                None,
+                (
+                    f"El comando superó el tiempo máximo "
+                    f"de {tiempo_maximo} segundos."
+                ),
+            )
+
+        except FileNotFoundError:
+            return (
+                False,
+                None,
+                "No fue posible encontrar git.exe."
+            )
+
+        except PermissionError:
+            return (
+                False,
+                None,
+                "No fue posible ejecutar Git (permiso denegado)."
+            )
+
+        except OSError:
+            return (
+                False,
+                None,
+                "Error inesperado del sistema al ejecutar Git."
+            )
+
     def _leer_staged_set(self, ruta_repositorio):
         """
         Lee el conjunto preparado con una consulta Git de SOLO
@@ -2042,13 +2473,20 @@ class ServicioGit:
     def _proteger_commit_con_relectura(self, ruta_repositorio):
         """
         Protege el commit con relectura conservadora del conjunto
-        preparado:
+        preparado (REV1 R3: también revalida OIDs):
 
-            snapshot staged inicial
+            snapshot staged inicial (rutas + OIDs)
+            -> obtener contenido + OIDs del índice
+            -> validar contenido (V1.2 SQL ↔ archivo)
             -> validar reservas
-            -> releer staged
+            -> releer staged set + OIDs
             -> si difiere: BLOQUEAR y pedir reintento
             -> si coincide: permitir el commit histórico
+
+        OIDs revalidados: aunque las tuplas de staged set sean
+        idénticas (mismas rutas/estados), un OID diferente
+        demuestra que el contenido validado ya NO es el
+        contenido preparado -> BLOQUEAR.
 
         Devuelve None si el commit puede continuar o un
         ResultadoComando fallido y controlado. Nunca "arregla" el
@@ -2085,29 +2523,71 @@ class ServicioGit:
             ):
                 rutas_involucradas.append(ruta_anterior)
 
+        # V1.2 (REV1 R3+R4): el commit valida el contenido EXACTO
+        # ya preparado en el índice (blobs staged) y captura los
+        # OIDs para revalidación posterior.
+        (
+            exitoso_contenido,
+            contenido_por_ruta,
+            oids_por_ruta,
+            error_contenido,
+        ) = self._obtener_contenido_staged(
+            ruta_repositorio,
+            entradas
+        )
+
+        if not exitoso_contenido:
+            return ResultadoComando(
+                exitoso=False,
+                codigo_salida=-1,
+                salida="",
+                error=error_contenido,
+                comando=""
+            )
+
         resultado_proteccion = self._aplicar_proteccion_reservas(
             "commit",
-            rutas_involucradas
+            rutas_involucradas,
+            contenido_por_ruta=contenido_por_ruta
         )
 
         if resultado_proteccion is not None:
             return resultado_proteccion
 
-        # Relectura conservadora contra cambios del staged set
-        # durante la validación.
+        # Relectura conservadora del staged set + OIDs (REV1 R3).
         exitoso_relectura, entradas_relectura, error_relectura = (
             self._leer_staged_set(ruta_repositorio)
         )
 
         if not exitoso_relectura:
             detalle = error_relectura
-        elif entradas_relectura != entradas:
-            detalle = (
-                "El conjunto preparado cambió durante la "
-                "validación."
-            )
         else:
-            return None
+            # Comparar staged set de rutas/estados.
+            if entradas_relectura != entradas:
+                detalle = (
+                    "El conjunto preparado cambió durante la "
+                    "validación."
+                )
+            else:
+                # Comparar OIDs de las rutas Oracle relevantes:
+                # aunque el staged set sea idéntico, el blob
+                # contenido en un OID diferente debe bloquear.
+                exitoso_oids2, oids_relectura, error_oids2 = (
+                    self._releer_oids_staged(
+                        ruta_repositorio, oids_por_ruta
+                    )
+                )
+
+                if not exitoso_oids2:
+                    detalle = error_oids2
+                elif oids_relectura != oids_por_ruta:
+                    detalle = (
+                        "El contenido preparado (blob OID) cambió "
+                        "durante la validación a pesar de que el "
+                        "conjunto de rutas preparadas es el mismo."
+                    )
+                else:
+                    return None
 
         return ResultadoComando(
             exitoso=False,
@@ -2124,6 +2604,42 @@ class ServicioGit:
             ),
             comando=""
         )
+
+    def _releer_oids_staged(self, ruta_repositorio, oids_por_ruta):
+        """
+        V1.2 REV1 R3: relee los OIDs del índice para las rutas
+        Oracle previamente validadas.
+
+        Devuelve (exitoso, oids_relectura, error). Una ruta que
+        desapareció del índice o cuyo OID no puede leerse se
+        considera cambio (BLOQUEAR).
+        """
+
+        if oids_por_ruta is None:
+            return (True, None, "")
+
+        oids_relectura = {}
+
+        for ruta, _oid_esperado in oids_por_ruta.items():
+            exitoso_oid, oid, error_oid = self._leer_oid_staged(
+                ruta_repositorio, ruta
+            )
+
+            if not exitoso_oid:
+                return (
+                    False,
+                    None,
+                    (
+                        "No fue posible releer el identificador "
+                        f"del contenido preparado de '{ruta}' "
+                        "para confirmar la validez del commit; "
+                        "operación bloqueada."
+                    ),
+                )
+
+            oids_relectura[ruta] = oid
+
+        return (True, oids_relectura, "")
 
     def obtener_hash_actual(self, ruta_repositorio):
         """

@@ -182,7 +182,20 @@ TRIGGER   -> .sql
 SEQUENCE  -> .sql
 ```
 
-La identidad canónica sigue siendo `TIPO|NOMBRE`. `.pks`/`.pkb`, schemas, `TYPE`, `SYNONYM`, `MATERIALIZED VIEW` y el parseo del contenido SQL siguen fuera de alcance. Las rutas no resolubles de forma inequívoca bloquean la operación protegida con explicación.
+La identidad canónica sigue siendo `TIPO|NOMBRE`. `.pks`/`.pkb`, schemas, `TYPE`, `SYNONYM` y `MATERIALIZED VIEW` siguen fuera de alcance. Las rutas no resolubles de forma inequívoca bloquean la operación protegida con explicación.
+
+### Modo Equipo Oracle V1.2 (validación SQL ↔ archivo)
+
+Segunda evidencia de identidad, conservadora y 100% local (`servicio_validacion_contenido_oracle.py`):
+
+- el contenido `CREATE...` del archivo debe concordar con la identidad `TIPO|NOMBRE` resuelta por la ruta; PACKAGE BODY se normaliza a `PACKAGE|NOMBRE` (un `.pls` con spec+body del mismo nombre se acepta; no habilita `.pks`/`.pkb`);
+- Preparar y Actualizar preparados validan el contenido exacto del working tree que se va a stagear; Commit valida el contenido exacto YA PREPARADO en el índice (blob staged, OID revalidado tras la protección — REV1 R3), nunca el working tree (estados MM);
+- el detector ignora `CREATE` dentro de comentarios (`--`, `/* */`), literales `'string'` y literales alternativos Oracle `q'...'`/`nq'...'` con cualquier delimitador (REV1 R1: el contenido interno de un q-quote nunca expone CREATE; formas mal cerradas son NO_VERIFICABLE); decodifica con política conservadora (BOM UTF-8, UTF-8, Windows-1252; sin `errors="replace"`);
+- gramática positiva de modificadores por tipo (REV1 R2): `EDITIONABLE`/`NONEDITIONABLE` (tipos editables), `FORCE`/`NO FORCE` (solo VIEW), `GLOBAL TEMPORARY` (solo TABLE); combinaciones cruzadas o duplicadas no reconocidas NO verifican (no se inventa identidad); tolera `SCHEMA.OBJETO` comparando solo el objeto;
+- resultados estructurados: `COINCIDE`, `NO_COINCIDE_NOMBRE`, `NO_COINCIDE_TIPO`, `AMBIGUO`, `NO_VERIFICABLE`, `NO_APLICA`; las eliminaciones/lados origen reciben `NO_APLICA` de forma EXPLÍCITA (REV1 R4): con validador activo, la ausencia de contenido BLOQUEA (fail-closed), nunca degrada silenciosamente a V1.1;
+- fail-closed: contradicción, ambigüedad o contenido no verificable BLOQUEAN la operación protegida con explicación, sin degradar a la protección V1.1;
+- la GUI muestra pedagógicamente (en la resolución de la ruta del objeto) la identidad por ruta, la identidad detectada en el SQL y el resultado; no renombra, no mueve ni reescribe nada;
+- sigue sin acceso a Oracle: el desarrollador trae manualmente la versión vigente y la guarda con la convención correcta; funciona con archivos nuevos/untracked.
 
 ### Tooltips didácticos V1
 
@@ -220,6 +233,7 @@ La ventana no ejecuta Git ni modifica el repositorio.
 ```text
 Publicar rama local V1 -> cerrada
 Modo Equipo Oracle V1.1 -> ampliación de tipos Oracle (PROCEDURE, FUNCTION, TABLE, VIEW, TRIGGER, SEQUENCE)
+Modo Equipo Oracle V1.2 -> validación de contenido SQL ↔ archivo (implementación auditada y aceptada; pendiente de cierre Git local)
 Bloque H (documentación/cierre de la V1) -> documental
 ```
 
@@ -301,7 +315,8 @@ No publica ramas ni ejecuta Push.
 - `servicio_identidad_equipo.py`: `id_cliente` técnico local de la instalación (separado de la configuración transportable).
 - `servicio_reservas.py`: máquina de estados y orquestación local de reservas (consultar/reservar/renovar/liberar/tomar vencida), validación local de reserva propia fresca y coordinador/mutex de operaciones de red.
 - `servicio_remoto_reservas.py`: operaciones Git sobre el backend dedicado de reservas (fetch, lectura/validación de head, commits por plumbing, Push sin force).
-- `servicio_proteccion_reservas_git.py`: barrera local fail-closed que exige reserva propia activa y verificada en staging/actualización de preparados/commit de objetos Oracle.
+- `servicio_proteccion_reservas_git.py`: barrera local fail-closed que exige reserva propia activa y verificada en staging/actualización de preparados/commit de objetos Oracle; con V1.2 exige además la concordancia contenido ↔ identidad cuando hay validador inyectado.
+- `servicio_validacion_contenido_oracle.py`: V1.2 — detección conservadora del `CREATE...` declarado en el contenido (fuera de comentarios y literales) y comparación contra la identidad `TIPO|NOMBRE` de la ruta.
 
 ### Servicios auxiliares
 
@@ -395,4 +410,4 @@ El usuario guarda los archivos en `seguimiento_prompts/` y ChatGPT genera los pr
 
 GestorGit ya es un cliente Git educativo y conservador funcional para trabajo individual, incluyendo la publicación explícita y segura de ramas locales.
 
-Además del flujo individual, GestorGit incorpora **Modo Equipo Oracle**: reservas preventivas de objetos Oracle con backend Git dedicado, protección fail-closed de staging/commit y avisos pedagógicos, manteniendo la filosofía de seguridad y comprensión. V1.1 soporta 7 tipos Oracle (PACKAGE, PROCEDURE, FUNCTION, TABLE, VIEW, TRIGGER, SEQUENCE).
+Además del flujo individual, GestorGit incorpora **Modo Equipo Oracle**: reservas preventivas de objetos Oracle con backend Git dedicado, protección fail-closed de staging/commit y avisos pedagógicos, manteniendo la filosofía de seguridad y comprensión. V1.1 soporta 7 tipos Oracle (PACKAGE, PROCEDURE, FUNCTION, TABLE, VIEW, TRIGGER, SEQUENCE). La V1.2 añade la validación de contenido SQL ↔ archivo (el `CREATE...` declarado debe concordar con la identidad de la ruta) para Preparar, Actualizar preparados y Commit.

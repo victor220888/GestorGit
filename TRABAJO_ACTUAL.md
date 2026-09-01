@@ -14,15 +14,15 @@ defecto.
 
 Git real manda siempre.
 
-Snapshot de inicio de GG-PROMPT-053:
+Snapshot de inicio de GG-PROMPT-055:
 
 ```text
-HEAD -> 3b06617 Cierra documentación de Modo Equipo Oracle V1
-HEAD completo -> 3b06617d4223c22cddbe8ded051a46686ccb6180
+HEAD -> e706061 Amplía tipos Oracle en Modo Equipo V1.1
+HEAD completo -> e7060619c3f8d37fc735a30104300f3c435edb7e
 rama -> master
 staging -> vacío
 .git/index.lock: inexistente
-ahead -> 18 respecto de origin/master local conocido
+ahead -> 19 respecto de origin/master local conocido
 Push -> NO autorizado
 ```
 
@@ -34,11 +34,15 @@ Estos datos son un snapshot; verificar Git de nuevo al iniciar cada tarea.
 Publicar rama local V1 -> CERRADA
 Método/onboarding -> CERRADO Y AUDITADO
 Modo Equipo Oracle V1 -> CERRADA Y COMMITTEADA (Bloque H: commit 3b06617)
-Modo Equipo Oracle V1.1 -> IMPLEMENTACIÓN ACEPTADA, PENDIENTE DE CIERRE GIT
+Modo Equipo Oracle V1.1 -> CERRADA Y COMMITTEADA (commit e706061)
 GG-PROMPT-053 -> ACEPTADO CON REV1
 GG-PROMPT-053-REV1 -> ACEPTADO
 GG-PROMPT-053-REV1-ADDENDUM-1 -> ACEPTADO
-GG-PROMPT-054 -> CIERRE GIT INTEGRAL V1.1, ejecutándose
+GG-PROMPT-054 -> CIERRE GIT INTEGRAL V1.1, ACEPTADO (commit e706061)
+GG-PROMPT-055 -> ACEPTADO CON REV2
+GG-PROMPT-055-REV1 -> NO ACEPTADO; corregido por REV2
+GG-PROMPT-055-REV2 -> ACEPTADO
+Modo Equipo Oracle V1.2 -> IMPLEMENTACIÓN ACEPTADA; PENDIENTE CIERRE GIT
 Push -> NO autorizado
 ```
 
@@ -77,6 +81,7 @@ GG-PROMPT-052 -> cierre Git del Bloque H ACEPTADO EN RECUPERACIÓN POSTCOMMIT
 GG-PROMPT-053 -> ACEPTADO CON REV1
 GG-PROMPT-053-REV1 -> ACEPTADO
 GG-PROMPT-053-REV1-ADDENDUM-1 -> ACEPTADO
+GG-PROMPT-054 -> ACEPTADO; V1.1 CERRADO Y COMMITTEADO en e706061
 ```
 
 ## Resultado final Bloque B (resumen)
@@ -426,22 +431,213 @@ suite completa heredada del árbol certificado -> 1061/1061 OK
 commit -> d1b2ed36ffb8745b2fe412a52a239e94823199c1
 ```
 
-## Próximo paso
+## Resultado V1.2 (resumen, GG-PROMPT-055, ACEPTADO CON REV2)
+
+Segunda evidencia de identidad para operaciones protegidas: el contenido
+`CREATE...` del archivo debe concordar con la identidad `TIPO|NOMBRE`
+resuelta por la ruta. Sin acceso a Oracle y sin cambios de catálogo
+(V1.1 intacto: 7 tipos, `TIPO|NOMBRE` canónico).
 
 ```text
-CIERRE GIT INTEGRAL V1.1 (GG-PROMPT-054)
+creados -> servicio_validacion_contenido_oracle.py
+           pruebas/test_servicio_validacion_contenido_oracle.py
+modificados -> servicio_proteccion_reservas_git.py
+               servicio_git.py
+               principal.py
+               pruebas/test_servicio_proteccion_reservas_git.py
+               pruebas/test_servicio_git.py
+               pruebas/test_modo_equipo_gui.py
+               README.md
+               TRABAJO_ACTUAL.md
+```
+
+Arquitectura aplicada:
+
+```text
+validador -> ServicioValidacionContenidoOracle (puro, sin filesystem
+              ni Git ni red): detectar(bytes) -> DeteccionContenidoOracle
+              y validar(clave, bytes) -> ResultadoValidacionContenido
+              con estados COINCIDE / NO_COINCIDE_NOMBRE /
+              NO_COINCIDE_TIPO / AMBIGUO / NO_VERIFICABLE / NO_APLICA
+léxico -> solo CREATE soportados FUERA de -- , /* */ y 'strings'
+              (con escape ''); formas CREATE [OR REPLACE]
+              [EDITIONABLE|NONEDITIONABLE], FORCE/NO FORCE (VIEW),
+              GLOBAL TEMPORARY (TABLE); PACKAGE BODY -> PACKAGE|nombre
+              (spec+body mismo nombre aceptado); SCHEMA.OBJETO
+              tolerado comparando solo el objeto; identificadores
+              entrecomillados -> NO_VERIFICABLE; cualquier otra
+              construcción se ignora sin inventar identidad
+decodificación -> BOM UTF-8 -> utf-8-sig estricto; si no, UTF-8
+              estricto y luego Windows-1252 estricto; sin
+              errors="replace"; UTF-16/NUL/ilegible -> NO_VERIFICABLE
+protector -> validador_contenido inyectable (constructor) y
+              contenido_por_ruta opcional en proteger_staging/
+              proteger_commit; resultado con bloqueo_contenido=True
+              y mensaje pedagógico propio; sin validador inyectado
+              conserva semántica V1.1 (los dobles históricos de
+              pruebas no se rompen)
+staging -> Preparar y Actualizar preparados validan los bytes
+              EXACTOS del working tree que se van a stagear;
+              archivo ausente (eliminación/lado origen) -> NO_APLICA;
+              fallo de lectura -> BLOQUEO
+commit -> crear_commit valida el blob EXACTO ya preparado en el
+              índice (ls-files --stage -z + cat-file blob vía
+              ejecutor binario _ejecutar_git_bytes, solo lectura);
+              el working tree NO participa; eliminación (D) ->
+              NO_APLICA; la barrera histórica MM (pedir Actualizar
+              preparados) se conserva ANTES de la validación
+GUI -> _resumen_validacion_contenido_objeto compone el resumen
+              pedagógico (Ruta / Identidad por ruta / Identidad
+              detectada en SQL / Validación) al resolver la clave;
+              solo lectura: no renombra, no mueve, no reescribe
+              SQL; contexto Modo Equipo se construye solo con
+              validador disponible (fail-closed, sin fallback V1.1)
+```
+
+Pruebas V1.2: 51 validador + 16 protector + 16 servicio_git + 6 GUI.
+
+Evidencia (no constantes eternas):
+
+```text
+py_compile 8 archivos -> OK
+focal conjunta 4 módulos -> 333/333 OK
+suite completa (discover -s pruebas) -> 1200/1200 OK (~155 s;
+              1111 previas + 89 nuevas V1.2)
+diff --check -> con convención efímera cr-at-eol: OK (archivos
+              históricos CRLF preservados; sin core.whitespace
+              persistido)
 staging -> vacío
-commit V1.1 -> NO
+commit V1.2 -> NO
 Push -> NO autorizado
 ```
 
-GG-PROMPT-053 base implementó la ampliación V1.1 (tipos Oracle de 1 a 7)
-pero NO fue aceptado. GG-PROMPT-053-REV1 corrigió: EOL CRLF, dos tooltips,
-docstring, test_modelos_reservas, integración .sql en protección/Git y
-cobertura GUI/tooltips. GG-PROMPT-053-REV1-ADDENDUM-1 restauró configuración
-Git local.
+## Resultado V1.2 REV1 (resumen, GG-PROMPT-055-REV1, NO ACEPTADO; corregido por REV2)
 
-Catálogo V1.1:
+Corrección conservadora de los 4 bloqueos de auditoría, sin ampliar
+el alcance funcional de V1.2:
+
+```text
+R1 q-quote -> el limpiador léxico reconoce q'...' / Q'...' /
+    nq'...' / NQ'...' (delimitadores emparejados [], {}, (), <>
+    o simple de un carácter); el contenido interno NUNCA se
+    expone al detector de CREATE; formas mal cerradas o
+    delimitador no interpretable -> NO_VERIFICABLE (fail-closed,
+    sin recuperación parcial); un literal simple sin cerrar
+    también pasa a NO_VERIFICABLE (antes consumía el resto)
+
+R2 gramática positiva -> se elimina la bolsa global de
+    modificadores; tras CREATE [OR REPLACE] solo se aceptan
+    secuencias EXACTAS por tipo: EDITIONABLE/NONEDITIONABLE
+    (PACKAGE, PROCEDURE, FUNCTION, TRIGGER, VIEW), FORCE y
+    NO FORCE (solo VIEW, incl. EDITIONABLE + [NO] FORCE),
+    GLOBAL TEMPORARY (solo TABLE); SEQUENCE sin modificadores;
+    combinaciones cruzadas o duplicadas -> sentencia ignorada
+
+R3 revalidación OID -> _proteger_commit_con_relectura conserva
+    oids_por_ruta (etapa 0) tras validar contenido y reservas,
+    relee el staged set Y los OIDs (_releer_oids_staged) y
+    compara AMBOS; un blob diferente con staged set idéntico
+    BLOQUEA; prueba ServicioGitStagedOIDInestable demuestra el
+    caso
+
+R4 fail-closed del protector -> con validador V1.2 activo:
+    contenido_por_ruta=None BLOQUEA (antes significaba V1.1);
+    ruta Oracle esperada ausente del mapeo BLOQUEA; None explícito
+    en el mapeo = eliminación/lado origen DEMOSTRADO -> NO_APLICA;
+    _obtener_contenido_working_tree/_obtener_contenido_staged
+    insertan TODAS las rutas Oracle reservables (bytes o None);
+    compatibilidad V1.1 SOLO con validador_contenido is None
+```
+
+Pruebas REV1 (conteo corregido en REV2): validador 51 -> 70 = +19;
+protector 58 -> 59 = +1 neto (2 reemplazados por 3); servicio_git
+131 -> 132 = +1; GUI 93 -> 93 = +0; total 1200 -> 1221 = +21 neto.
+
+Evidencia REV1 (no constantes eternas):
+
+```text
+py_compile 8 archivos -> OK
+focal validador -> 70/70 OK
+focal protector -> 59/59 OK
+focal servicio_git -> 132/132 OK
+focal GUI -> 93/93 OK
+suite completa (discover -s pruebas) -> 1221/1221 OK (~147 s;
+              1200 previas de 055 + 21 nuevas REV1)
+diff --check -> con convención efímera cr-at-eol: OK
+staging -> vacío
+commit V1.2 -> NO
+Push -> NO autorizado
+```
+
+## Resultado V1.2 REV2 (resumen, GG-PROMPT-055-REV2, ACEPTADO)
+
+Corrección acotada: los renames/copias que Git representa como R/C
+quedan compatibles con la validación V1.2 (R1-R4 sin rediseñar).
+
+```text
+defecto -> _obtener_contenido_staged ignoraba ruta_anterior; con R4
+    activo el lado origen Oracle quedaba ausente del mapeo y
+    BLOQUEABA incorrectamente todo R/C
+regla -> para cada entrada staged R/C: destino Oracle -> bytes
+    staged + OID (validación SQL ↔ identidad del DESTINO); origen
+    Oracle -> None EXPLÍCITO (NO_APLICA de contenido; su reserva
+    SIGUE siendo obligatoria vía la ruta involucrada); nunca se
+    lee el working tree para suplir el origen; el origen nunca
+    entra en oids_por_ruta; si una entrada propia del origen
+    aporta contenido real (copia con origen también modificado),
+    ese contenido gana sobre el None estructural
+docstring -> contrato exacto corregido en el protector:
+    contenido_por_ruta is None -> BLOQUEAR; ruta Oracle ausente
+    del dict -> BLOQUEAR; dict[ruta] is None -> NO_APLICA
+    explícito; dict[ruta] is bytes -> validar
+```
+
+Pruebas REV2 (+6 en test_servicio_git, repositorios temporales
+REALES con detección R/C afirmada antes de evaluar):
+
+```text
+R Oracle->Oracle -> permitido (destino bytes+OID, origen None sin
+    OID, reservas de AMBOS lados exigidas)
+C Oracle->Oracle -> permitido (mismo contrato)
+R Oracle->ordinario -> permitido con reserva del origen
+R ordinario->Oracle -> destino valida su contenido staged
+R reserva origen inválida -> BLOQUEA por reserva
+R SQL destino contradictorio -> BLOQUEA por contenido
+R3 preservada -> PruebasCommitRevalidacionOID intacta; el origen
+    None no necesita OID
+```
+
+Evidencia REV2 (no constantes eternas):
+
+```text
+py_compile -> OK
+focal conjunta 4 módulos -> 360/360 OK
+suite completa -> 1227/1227 OK
+staging -> vacío
+commit V1.2 -> NO
+Push -> NO autorizado
+```
+
+## Próximo paso
+
+```text
+CIERRE GIT INTEGRAL V1.2 (GG-PROMPT-056)
+staging -> vacío
+commit V1.2 -> NO
+Push -> NO autorizado
+```
+
+GG-PROMPT-054 cerró el ciclo Git V1.1: commit e706061 (Amplía tipos Oracle
+en Modo Equipo V1.1) con suite 1111/1111 OK. GG-PROMPT-055 implementa la
+segunda evidencia de identidad: el contenido CREATE... del archivo debe
+coincidir con la identidad TIPO|NOMBRE resuelta por la ruta, para
+Preparar, Actualizar preparados y Commit (este último contra el contenido
+exacto del índice, no del working tree). GG-PROMPT-055-REV1 cierra
+conservadoramente los 4 bloqueos de auditoría: q-quote, gramática
+positiva de modificadores, revalidación OID del commit y contrato
+fail-closed de contenido ausente.
+
+Catálogo V1.1 (V1.2 no añade tipos):
 
 ```text
 PACKAGE -> .pls

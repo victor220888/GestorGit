@@ -27,6 +27,14 @@ from servicio_ramas_git import ServicioRamasGit
 from servicio_remoto_git import ServicioRemotoGit
 from servicio_remoto_reservas import ServicioRemotoReservas
 from servicio_reservas import CoordinadorOperacionesRed, ServicioReservas
+from servicio_validacion_contenido_oracle import (
+    AMBIGUO,
+    COINCIDE,
+    NO_COINCIDE_NOMBRE,
+    NO_COINCIDE_TIPO,
+    NO_VERIFICABLE,
+    ServicioValidacionContenidoOracle,
+)
 
 
 # Textos didácticos V1 para las acciones Git más críticas.
@@ -1194,6 +1202,14 @@ class AplicacionGit:
         self.servicio_reservas = None
         self.protector_reservas = None
         self.servicio_git_protegido = None
+
+        # V1.2: validación de contenido SQL ↔ archivo. Servicio
+        # puro, sin estado ni dependencias; se inyecta en el
+        # protector de reservas y alimenta la consulta pedagógica
+        # de la GUI. No lee archivos por sí sola ni ejecuta Git.
+        self.servicio_validacion_contenido = (
+            ServicioValidacionContenidoOracle()
+        )
 
         # REV1 B2: firma de la configuración EFECTIVA con la que
         # se construyó el contexto. Un contexto solo puede
@@ -8783,6 +8799,25 @@ class AplicacionGit:
             resultado_manifiesto.manifiesto
         )
 
+        # V1.2: sin validador de contenido SQL ↔ archivo no se
+        # construye el contexto (fail-closed, sin fallback que
+        # degrade a la protección V1.1).
+        validador_contenido = getattr(
+            self, "servicio_validacion_contenido", None
+        )
+
+        if validador_contenido is None:
+            self.modo_equipo_estado = "bloqueado"
+            self.modo_equipo_mensaje = (
+                "El validador de contenido SQL ↔ archivo (V1.2) "
+                "no está disponible en esta instalación.\n\n"
+                "Las operaciones sobre objetos Oracle quedan "
+                "bloqueadas: no se degradará a la protección "
+                "V1.1 ni al Git normal."
+            )
+
+            return
+
         user_name = self._leer_user_name_informativo()
 
         servicio_reservas = ServicioReservas(
@@ -8809,6 +8844,7 @@ class AplicacionGit:
             resolvedor_oracle=resolvedor,
             servicio_reservas=servicio_reservas,
             project_uuid=project_uuid,
+            validador_contenido=self.servicio_validacion_contenido,
         )
 
         # Instancia Git SEPARADA con protector, destinada
@@ -9778,7 +9814,128 @@ class AplicacionGit:
 
         self.variable_modo_equipo_clave.set(clave)
 
+        resumen = self._resumen_validacion_contenido_objeto(
+            ruta, clave
+        )
+
+        if resumen is not None:
+            messagebox.showinfo(
+                "Validación de contenido (SQL ↔ archivo)",
+                resumen,
+            )
+
         return clave
+
+    def _resumen_validacion_contenido_objeto(self, ruta, clave):
+        """
+        V1.2: compone el resumen pedagógico de la validación de
+        contenido SQL ↔ archivo para la ruta resuelta.
+
+        100% local y de solo lectura: NO renombra, NO mueve,
+        NO reescribe SQL y NO corrige el CREATE; solo explica.
+
+        Devuelve el texto del resumen o None cuando el contenido
+        no puede inspeccionarse localmente (archivo ausente), en
+        cuyo caso no se muestra nada.
+        """
+
+        validador = getattr(
+            self, "servicio_validacion_contenido", None
+        )
+
+        if validador is None:
+            return None
+
+        ruta_completa = Path(self.ruta_repositorio) / ruta
+
+        if not ruta_completa.is_file():
+            return None
+
+        try:
+            contenido = ruta_completa.read_bytes()
+        except OSError:
+            return (
+                "Ruta:\n"
+                f"{ruta}\n\n"
+                "Identidad por ruta:\n"
+                f"{clave}\n\n"
+                "Validación:\n"
+                "No se pudo verificar de forma segura el objeto "
+                "declarado en el archivo (el contenido local no "
+                "pudo leerse)."
+            )
+
+        resultado = validador.validar(clave, contenido)
+
+        lineas = [
+            "Ruta:",
+            ruta,
+            "",
+            "Identidad por ruta:",
+            clave,
+            "",
+        ]
+
+        estado = resultado.resultado
+
+        if estado == COINCIDE:
+            lineas.extend([
+                "Identidad detectada en SQL:",
+                (
+                    f"{resultado.tipo_detectado}|"
+                    f"{resultado.nombre_detectado}"
+                ),
+                "",
+                "Validación:",
+                "Correcta",
+            ])
+
+            return "\n".join(lineas)
+
+        if estado in (NO_COINCIDE_NOMBRE, NO_COINCIDE_TIPO):
+            lineas.extend([
+                "Identidad detectada en SQL:",
+                (
+                    f"{resultado.tipo_detectado}|"
+                    f"{resultado.nombre_detectado}"
+                ),
+                "",
+                "Validación:",
+            ])
+
+            if estado == NO_COINCIDE_NOMBRE:
+                lineas.append(
+                    "El nombre del archivo no coincide con el "
+                    "objeto declarado."
+                )
+            else:
+                lineas.append(
+                    "El tipo de objeto declarado no coincide con "
+                    "el tipo de la ruta."
+                )
+
+            return "\n".join(lineas)
+
+        if estado == AMBIGUO:
+            lineas.extend([
+                "Validación:",
+                resultado.motivo,
+            ])
+
+            return "\n".join(lineas)
+
+        # NO_VERIFICABLE y cualquier estado futuro no reconocido:
+        # nunca se afirma una coincidencia que no se pudo verificar.
+        lineas.extend([
+            "Validación:",
+            "No se pudo verificar de forma segura el objeto "
+            "declarado en el archivo.",
+        ])
+
+        if resultado.motivo:
+            lineas.append(f"({resultado.motivo})")
+
+        return "\n".join(lineas)
 
     # ---------------------------------------------------------
     # Acciones explícitas de reservas (asíncronas)

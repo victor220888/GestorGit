@@ -12,6 +12,9 @@ from modelos_reservas import (
 from servicio_git import ServicioGit
 from servicio_objetos_oracle import ServicioObjetosOracle
 from servicio_proteccion_reservas_git import ServicioProteccionReservasGit
+from servicio_validacion_contenido_oracle import (
+    ServicioValidacionContenidoOracle,
+)
 
 
 class PruebasServicioGit(unittest.TestCase):
@@ -4011,6 +4014,781 @@ class PruebasProteccionCommitV11(_BaseProteccionIntegracionV11):
             )
         resultado = self.servicio.crear_commit(self.ruta, "Mixto PACKAGE+VIEW")
         self.assertTrue(resultado.exitoso, resultado.error)
+
+
+# =====================================================================
+# V1.2 (GG-PROMPT-055): validación de contenido SQL ↔ archivo
+# =====================================================================
+
+
+class _BaseProteccionIntegracionV12(unittest.TestCase):
+    """
+    Fixture V1.2: repositorio temporal con objetos PACKAGE (.pls)
+    y PROCEDURE/VIEW (.sql), protector con validador de contenido
+    inyectado (segunda evidencia) y reservas válidas por defecto.
+
+    Los archivos del commit inicial declaran exactamente el
+    objeto que su ruta indica, de modo que la segunda evidencia
+    parte de un estado coherente.
+    """
+
+    def setUp(self):
+        self.temporal = tempfile.TemporaryDirectory()
+        self.ruta = Path(self.temporal.name)
+        self.reservas = ReservasPrueba(valida=True)
+
+        self.protector = ServicioProteccionReservasGit(
+            resolvedor_oracle=ServicioObjetosOracle(MANIFIESTO_V11),
+            servicio_reservas=self.reservas,
+            project_uuid=MANIFIESTO_V11.project_uuid,
+            validador_contenido=ServicioValidacionContenidoOracle(),
+        )
+        self.servicio_base = ServicioGit()
+        self.servicio = ServicioGit(protector_reservas=self.protector)
+
+        self.assertTrue(
+            self.servicio_base.ejecutar_git(
+                argumentos=["init"], ruta_repositorio=self.ruta
+            ).exitoso
+        )
+        self.servicio_base.ejecutar_git(
+            argumentos=["config", "user.name", "Usuario Prueba"],
+            ruta_repositorio=self.ruta,
+        )
+        self.servicio_base.ejecutar_git(
+            argumentos=["config", "user.email", "prueba@example.com"],
+            ruta_repositorio=self.ruta,
+        )
+
+        (self.ruta / "archivo_base.txt").write_text("SELECT 1;\n", encoding="utf-8")
+        paquetes = self.ruta / "Paquetes"
+        paquetes.mkdir()
+        (paquetes / "FINI004.pls").write_text(
+            "CREATE OR REPLACE PACKAGE FINI004 IS END;\n", encoding="utf-8"
+        )
+        procedimientos = self.ruta / "Procedimientos"
+        procedimientos.mkdir()
+        (procedimientos / "PR_CERRAR.sql").write_text(
+            "CREATE OR REPLACE PROCEDURE PR_CERRAR IS NULL;\n", encoding="utf-8"
+        )
+        vistas = self.ruta / "Vistas"
+        vistas.mkdir()
+        (vistas / "VW_CLIENTES.sql").write_text(
+            "CREATE OR REPLACE VIEW VW_CLIENTES AS SELECT 1 FROM DUAL;\n",
+            encoding="utf-8",
+        )
+
+        for f in (
+            "archivo_base.txt",
+            "Paquetes/FINI004.pls",
+            "Procedimientos/PR_CERRAR.sql",
+            "Vistas/VW_CLIENTES.sql",
+        ):
+            self.assertTrue(self.servicio_base.ejecutar_git(
+                argumentos=["add", "--", f], ruta_repositorio=self.ruta
+            ).exitoso)
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["commit", "-m", "Commit inicial V1.2"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+    def tearDown(self):
+        self.temporal.cleanup()
+
+    def hash_head(self):
+        resultado = self.servicio_base.ejecutar_git(
+            argumentos=["rev-parse", "HEAD"],
+            ruta_repositorio=self.ruta,
+        )
+        self.assertTrue(resultado.exitoso)
+        return resultado.salida.strip()
+
+    def staged_set(self):
+        exitoso, entradas, _error = self.servicio._leer_staged_set(self.ruta)
+        self.assertTrue(exitoso)
+        return entradas
+
+
+class PruebasProteccionStagingV12(_BaseProteccionIntegracionV12):
+    """
+    GG-PROMPT-055 §11/§21.2: Preparar valida el contenido del
+    working tree que se va a stagear contra la identidad de la
+    ruta, además de la reserva.
+    """
+
+    def test_nuevo_untracked_sql_correcto_con_reserva_permitido(self):
+        nuevo = self.ruta / "Procedimientos" / "PR_NUEVO.sql"
+        nuevo.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_NUEVO IS NULL;\n",
+            encoding="utf-8",
+        )
+        resultado = self.servicio.agregar_archivos(
+            self.ruta, ["Procedimientos/PR_NUEVO.sql"]
+        )
+        self.assertTrue(resultado.exitoso, resultado.error)
+        self.assertIn("PROCEDURE|PR_NUEVO", self.reservas.llamadas)
+
+    def test_nuevo_untracked_sql_nombre_incorrecto_bloqueado(self):
+        nuevo = self.ruta / "Procedimientos" / "PR_NUEVO.sql"
+        nuevo.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_OTRO IS NULL;\n",
+            encoding="utf-8",
+        )
+        resultado = self.servicio.agregar_archivos(
+            self.ruta, ["Procedimientos/PR_NUEVO.sql"]
+        )
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("no coincide", resultado.error)
+        self.assertEqual(self.staged_set(), [])
+
+    def test_modificado_tipo_incorrecto_bloqueado(self):
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE FUNCTION PR_CERRAR RETURN NUMBER IS NULL;\n",
+            encoding="utf-8",
+        )
+        resultado = self.servicio.agregar_archivos(
+            self.ruta, ["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("tipo", resultado.error)
+        self.assertEqual(self.staged_set(), [])
+
+    def test_contenido_no_verificable_bloqueado(self):
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text("SELECT 1 FROM DUAL;\n", encoding="utf-8")
+        resultado = self.servicio.agregar_archivos(
+            self.ruta, ["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("CREATE", resultado.error)
+        self.assertEqual(self.staged_set(), [])
+
+    def test_reserva_ausente_con_contenido_correcto_bloqueado_por_reserva(self):
+        self.reservas.valida = False
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_CERRAR IS NULL;\n",
+            encoding="utf-8",
+        )
+        resultado = self.servicio.agregar_archivos(
+            self.ruta, ["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("reserva", resultado.error.lower())
+        self.assertEqual(self.staged_set(), [])
+
+    def test_contenido_correcto_reserva_correcta_permitido(self):
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_CERRAR IS NULL; -- v2\n",
+            encoding="utf-8",
+        )
+        resultado = self.servicio.agregar_archivos(
+            self.ruta, ["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertTrue(resultado.exitoso, resultado.error)
+
+    def test_ordinario_con_contenido_oracle_ignorado(self):
+        """Un archivo no Oracle con CREATE dentro no se valida."""
+
+        nota = self.ruta / "Lecturas"
+        nota.mkdir()
+        (nota / "nota.txt").write_text(
+            "CREATE PROCEDURE X IS NULL;\n", encoding="utf-8"
+        )
+        resultado = self.servicio.agregar_archivos(
+            self.ruta, ["Lecturas/nota.txt"]
+        )
+        self.assertTrue(resultado.exitoso, resultado.error)
+
+
+class PruebasActualizarPreparadosV12(_BaseProteccionIntegracionV12):
+    """
+    GG-PROMPT-055 §12/§21.3: Actualizar preparados revalida el
+    contenido EXACTO del working tree, sin reutilizar la
+    validación anterior.
+    """
+
+    def _preparar_v2(self):
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_CERRAR IS NULL; -- v2\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+    def test_actualizar_working_tree_incompatible_bloqueado(self):
+        self._preparar_v2()
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_OTRO IS NULL; -- v3\n",
+            encoding="utf-8",
+        )
+        resultado = self.servicio.actualizar_archivos_preparados(
+            self.ruta, ["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("no coincide", resultado.error)
+
+    def test_actualizar_working_tree_correcto_permitido(self):
+        self._preparar_v2()
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_CERRAR IS NULL; -- v3\n",
+            encoding="utf-8",
+        )
+        resultado = self.servicio.actualizar_archivos_preparados(
+            self.ruta, ["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertTrue(resultado.exitoso, resultado.error)
+
+
+class PruebasCommitContenidoV12(_BaseProteccionIntegracionV12):
+    """
+    GG-PROMPT-055 §13/§21.4: Commit valida el contenido EXACTO
+    del índice (blob staged), nunca el working tree. Estados MM
+    explícitos.
+    """
+
+    def test_commit_staged_correcto_permitido(self):
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_CERRAR IS NULL; -- v2\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+        resultado = self.servicio.crear_commit(
+            self.ruta, "Actualiza PROCEDURE coherente"
+        )
+        self.assertTrue(resultado.exitoso, resultado.error)
+
+    def test_commit_staged_incorrecto_bloqueado(self):
+        """El staged declara otro objeto: el commit usa LO
+        PREPARADO y debe bloquearse aunque nadie haya vuelto a
+        tocar el working tree."""
+
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_OTRO IS NULL;\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+        hash_antes = self.hash_head()
+
+        resultado = self.servicio.crear_commit(
+            self.ruta, "Commit con staged incoherente"
+        )
+
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("no coincide", resultado.error)
+        self.assertEqual(self.hash_head(), hash_antes)
+
+    def test_mm_staged_correcto_working_tree_incorrecto_no_bloquea_por_contenido(self):
+        """Caso crítico MM: lo preparado es correcto y el working
+        tree cambió a algo incompatible. La validación del commit
+        lee el BLOB STAGED y NO bloquea por el working tree."""
+
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_CERRAR IS NULL; -- v2\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_OTRO IS NULL; -- v3 roto\n",
+            encoding="utf-8",
+        )
+
+        self.assertIsNone(
+            self.servicio._proteger_commit_con_relectura(self.ruta)
+        )
+
+    def test_mm_staged_incorrecto_working_tree_corregido_bloquea(self):
+        """MM inverso: lo preparado es incorrecto y el working
+        tree fue corregido después. El commit entraría con el
+        staged incorrecto: la validación del blob staged BLOQUEA."""
+
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_OTRO IS NULL; -- v2 roto\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_CERRAR IS NULL; -- v3 ok\n",
+            encoding="utf-8",
+        )
+
+        resultado = self.servicio._proteger_commit_con_relectura(self.ruta)
+
+        self.assertIsNotNone(resultado)
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("no coincide", resultado.error)
+
+    def test_mm_crear_commit_conserva_barrera_historica(self):
+        """El flujo completo crear_commit conserva la barrera
+        histórica MM (pedir 'Actualizar preparados') ANTES de la
+        validación de contenido: comportamiento preexistente."""
+
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_CERRAR IS NULL; -- v2\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_OTRO IS NULL; -- v3\n",
+            encoding="utf-8",
+        )
+
+        hash_antes = self.hash_head()
+
+        resultado = self.servicio.crear_commit(
+            self.ruta, "Commit en estado MM"
+        )
+
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("Actualizar preparados", resultado.error)
+        self.assertEqual(self.hash_head(), hash_antes)
+
+    def test_commit_eliminacion_preparada_permitido(self):
+        """Eliminación preparada: sin contenido que comparar
+        (NO_APLICA); la reserva existente decide."""
+
+        (self.ruta / "Procedimientos" / "PR_CERRAR.sql").unlink()
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+        resultado = self.servicio.crear_commit(
+            self.ruta, "Elimina PROCEDURE"
+        )
+        self.assertTrue(resultado.exitoso, resultado.error)
+        self.assertIn("PROCEDURE|PR_CERRAR", self.reservas.llamadas)
+
+    def test_commit_package_pls_correcto_permitido(self):
+        pkg = self.ruta / "Paquetes" / "FINI004.pls"
+        pkg.write_text(
+            "CREATE OR REPLACE PACKAGE FINI004 IS PROCEDURE P1; END;\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Paquetes/FINI004.pls"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+        resultado = self.servicio.crear_commit(
+            self.ruta, "Actualiza PACKAGE coherente"
+        )
+        self.assertTrue(resultado.exitoso, resultado.error)
+
+
+class ServicioGitStagedOIDInestable(ServicioGitEspiaComandos):
+    """
+    REV1 R3: simula que el OID del blob preparado cambia durante
+    la validación aunque el staged set de rutas/estados sea el
+    mismo. La primera llamada a _leer_oid_staged usa Git real; la
+    segunda emite un OID diferente (alterado) para esa ruta.
+    """
+
+    def __init__(self, ruta_alterada, protector_reservas=None):
+        super().__init__(protector_reservas=protector_reservas)
+        self.ruta_alterada = ruta_alterada
+        self.lectura_oid = 0
+
+    def _leer_oid_staged(self, ruta_repositorio, ruta):
+        if ruta == self.ruta_alterada:
+            self.lectura_oid += 1
+
+            if self.lectura_oid == 2:
+                # OID ficticio: el real no puede ser todo ceros.
+                return (True, "0000000000000000000000000000000000000000", "")
+
+        return super()._leer_oid_staged(ruta_repositorio, ruta)
+
+
+class PruebasCommitRevalidacionOID(_BaseProteccionIntegracionV12):
+    """
+    REV1 R3: la relectura del commit verifica también los OIDs;
+    un cambio de blob con staged set idéntico BLOQUEA.
+    """
+
+    def test_oid_cambiado_bloquea_con_mismas_rutas(self):
+        """Misma ruta/mismo estado M, pero el OID del blob cambia:
+        la relectura detecta la diferencia y BLOQUEA."""
+
+        proc = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        proc.write_text(
+            "CREATE OR REPLACE PROCEDURE PR_CERRAR IS NULL; -- v2\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+        # Crear un servicio con inestabilidad de OID.
+        self.inestable = ServicioGitStagedOIDInestable(
+            ruta_alterada="Procedimientos/PR_CERRAR.sql",
+            protector_reservas=self.protector,
+        )
+
+        hash_antes = self.hash_head()
+
+        resultado = self.inestable._proteger_commit_con_relectura(
+            self.ruta
+        )
+
+        self.assertIsNotNone(resultado)
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("OID", resultado.error)
+        self.assertIn("cambió", resultado.error)
+        self.assertEqual(self.hash_head(), hash_antes)
+
+
+# =====================================================================
+# REV2: renames/copias R/C compatibles con la validación V1.2
+# =====================================================================
+
+
+def _sql_procedure_largo(nombre):
+    """
+    Cuerpo de procedimiento multi-línea: cambiar solo el nombre
+    mantiene la similitud alta para que Git detecte R/C reales.
+    """
+
+    lineas = [f"CREATE OR REPLACE PROCEDURE {nombre} IS"]
+
+    for i in range(1, 13):
+        lineas.append(f"  v_paso_{i:02d} NUMBER := {i};")
+
+    lineas.extend(["BEGIN", "  NULL;", "END;", ""])
+
+    return "\n".join(lineas)
+
+
+class PruebasCommitRenamesCopiasV12(_BaseProteccionIntegracionV12):
+    """
+    GG-PROMPT-055-REV2: con validador V1.2 activo, un rename/copy
+    real (R/C de Git) NO puede bloquearse por contenido ausente
+    del lado origen; el origen recibe None explícito (NO_APLICA)
+    y su reserva sigue siendo obligatoria.
+    """
+
+    def _comitear_procedure_largo(self):
+        vieja = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        vieja.write_text(
+            _sql_procedure_largo("PR_CERRAR"), encoding="utf-8"
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_CERRAR.sql"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["commit", "-m", "Procedure largo"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+    def _renombrar_y_preparar(self, nombre_destino, sql_destino):
+        """Renombra PR_CERRAR.sql -> <nombre_destino>.sql con el
+        SQL indicado y prepara ambos lados con Git real."""
+
+        nueva_ruta = f"Procedimientos/{nombre_destino}.sql"
+        vieja = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        nueva = self.ruta / "Procedimientos" / (
+            f"{nombre_destino}.sql"
+        )
+
+        nueva.write_text(sql_destino, encoding="utf-8")
+        vieja.unlink()
+
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=[
+                "add",
+                "--",
+                "Procedimientos/PR_CERRAR.sql",
+                nueva_ruta,
+            ],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+        return nueva_ruta
+
+    def _entradas_staged(self):
+        exitoso, entradas, _error = self.servicio._leer_staged_set(
+            self.ruta
+        )
+        self.assertTrue(exitoso)
+        return entradas
+
+    def test_rename_real_oracle_a_oracle_permitido(self):
+        """R Oracle->Oracle: destino bytes+OID validados; origen
+        None explícito sin OID; ambas reservas exigidas."""
+
+        self._comitear_procedure_largo()
+
+        nueva_ruta = self._renombrar_y_preparar(
+            "PR_NUEVO", _sql_procedure_largo("PR_NUEVO")
+        )
+
+        # La prueba exige que Git realmente detectó R.
+        entradas = self._entradas_staged()
+        self.assertIn(
+            ("R", nueva_ruta, "Procedimientos/PR_CERRAR.sql"),
+            entradas,
+        )
+
+        # Contrato de contenido/OID por lado.
+        exitoso_c, contenido, oids, _error = (
+            self.servicio._obtener_contenido_staged(
+                self.ruta, entradas
+            )
+        )
+        self.assertTrue(exitoso_c)
+        self.assertIsInstance(
+            contenido[nueva_ruta], (bytes, bytearray)
+        )
+        self.assertIsNone(
+            contenido["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertIn(nueva_ruta, oids)
+        self.assertNotIn("Procedimientos/PR_CERRAR.sql", oids)
+
+        # Protección completa del commit: permitida.
+        self.assertIsNone(
+            self.servicio._proteger_commit_con_relectura(self.ruta)
+        )
+        # Reservas de AMBOS lados exigidas.
+        self.assertIn(
+            "PROCEDURE|PR_NUEVO", self.reservas.llamadas
+        )
+        self.assertIn(
+            "PROCEDURE|PR_CERRAR", self.reservas.llamadas
+        )
+
+    def test_copia_real_oracle_a_oracle_permitido(self):
+        """C Oracle->Oracle: mismo contrato que R."""
+
+        self._comitear_procedure_largo()
+
+        destino = self.ruta / "Procedimientos" / "PR_COPIA.sql"
+        destino.write_text(
+            _sql_procedure_largo("PR_COPIA"), encoding="utf-8"
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "Procedimientos/PR_COPIA.sql"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+        # La prueba exige que Git realmente detectó C.
+        entradas = self._entradas_staged()
+        self.assertIn(
+            (
+                "C",
+                "Procedimientos/PR_COPIA.sql",
+                "Procedimientos/PR_CERRAR.sql",
+            ),
+            entradas,
+        )
+
+        exitoso_c, contenido, oids, _error = (
+            self.servicio._obtener_contenido_staged(
+                self.ruta, entradas
+            )
+        )
+        self.assertTrue(exitoso_c)
+        self.assertIsInstance(
+            contenido["Procedimientos/PR_COPIA.sql"],
+            (bytes, bytearray),
+        )
+        self.assertIsNone(
+            contenido["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertIn("Procedimientos/PR_COPIA.sql", oids)
+        self.assertNotIn("Procedimientos/PR_CERRAR.sql", oids)
+
+        self.assertIsNone(
+            self.servicio._proteger_commit_con_relectura(self.ruta)
+        )
+
+    def test_rename_oracle_a_ordinario_permitido_con_reserva(self):
+        """R Oracle->ordinario: el destino no participa; el origen
+        Oracle conserva None + reserva obligatoria."""
+
+        self._comitear_procedure_largo()
+
+        destino_ordinario = self.ruta / "Lecturas"
+        destino_ordinario.mkdir()
+        destino = destino_ordinario / "PR_CERRAR_movido.txt"
+
+        vieja = self.ruta / "Procedimientos" / "PR_CERRAR.sql"
+        contenido_original = vieja.read_bytes()
+        destino.write_bytes(contenido_original)
+        vieja.unlink()
+
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=[
+                "add",
+                "--",
+                "Procedimientos/PR_CERRAR.sql",
+                "Lecturas/PR_CERRAR_movido.txt",
+            ],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+        entradas = self._entradas_staged()
+        self.assertIn(
+            (
+                "R",
+                "Lecturas/PR_CERRAR_movido.txt",
+                "Procedimientos/PR_CERRAR.sql",
+            ),
+            entradas,
+        )
+
+        exitoso_c, contenido, _oids, _error = (
+            self.servicio._obtener_contenido_staged(
+                self.ruta, entradas
+            )
+        )
+        self.assertTrue(exitoso_c)
+        self.assertIsNone(
+            contenido["Procedimientos/PR_CERRAR.sql"]
+        )
+        self.assertNotIn("Lecturas/PR_CERRAR_movido.txt", contenido)
+
+        self.assertIsNone(
+            self.servicio._proteger_commit_con_relectura(self.ruta)
+        )
+        self.assertIn(
+            "PROCEDURE|PR_CERRAR", self.reservas.llamadas
+        )
+
+    def test_rename_ordinario_a_oracle_valida_contenido_destino(self):
+        """R ordinario->Oracle: el destino Oracle valida su
+        contenido staged; el origen ordinario no participa."""
+
+        # El origen ordinario se comitea con contenido SQL largo.
+        base = self.ruta / "archivo_base.txt"
+        base.write_text(
+            _sql_procedure_largo("PR_NUEVO"), encoding="utf-8"
+        )
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["add", "--", "archivo_base.txt"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=["commit", "-m", "Base con SQL"],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+        destino = self.ruta / "Procedimientos" / "PR_NUEVO.sql"
+        destino.write_bytes(base.read_bytes())
+        base.unlink()
+
+        self.assertTrue(self.servicio_base.ejecutar_git(
+            argumentos=[
+                "add",
+                "--",
+                "archivo_base.txt",
+                "Procedimientos/PR_NUEVO.sql",
+            ],
+            ruta_repositorio=self.ruta,
+        ).exitoso)
+
+        entradas = self._entradas_staged()
+        self.assertIn(
+            ("R", "Procedimientos/PR_NUEVO.sql", "archivo_base.txt"),
+            entradas,
+        )
+
+        self.assertIsNone(
+            self.servicio._proteger_commit_con_relectura(self.ruta)
+        )
+        self.assertIn(
+            "PROCEDURE|PR_NUEVO", self.reservas.llamadas
+        )
+
+    def test_rename_reserva_origen_invalida_bloqueado(self):
+        """El contenido correcto del destino NO sustituye la
+        reserva del origen: BLOQUEA por reserva."""
+
+        self._comitear_procedure_largo()
+
+        self._renombrar_y_preparar(
+            "PR_NUEVO", _sql_procedure_largo("PR_NUEVO")
+        )
+
+        entradas = self._entradas_staged()
+        self.assertIn(
+            ("R", "Procedimientos/PR_NUEVO.sql",
+             "Procedimientos/PR_CERRAR.sql"),
+            entradas,
+        )
+
+        self.reservas.resultados["PROCEDURE|PR_CERRAR"] = (
+            _resultado_reserva(False, "Sin reserva del origen.")
+        )
+
+        hash_antes = self.hash_head()
+
+        resultado = self.servicio._proteger_commit_con_relectura(
+            self.ruta
+        )
+
+        self.assertIsNotNone(resultado)
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("PROCEDURE|PR_CERRAR", resultado.error)
+        self.assertIn("reserva", resultado.error.lower())
+        self.assertEqual(self.hash_head(), hash_antes)
+
+    def test_rename_sql_destino_contradictorio_bloqueado(self):
+        """Destino PR_NUEVO.sql cuyo staged declara PR_OTRO:
+        BLOQUEA por contradicción de contenido."""
+
+        self._comitear_procedure_largo()
+
+        self._renombrar_y_preparar(
+            "PR_NUEVO", _sql_procedure_largo("PR_OTRO")
+        )
+
+        entradas = self._entradas_staged()
+        self.assertIn(
+            ("R", "Procedimientos/PR_NUEVO.sql",
+             "Procedimientos/PR_CERRAR.sql"),
+            entradas,
+        )
+
+        hash_antes = self.hash_head()
+
+        resultado = self.servicio._proteger_commit_con_relectura(
+            self.ruta
+        )
+
+        self.assertIsNotNone(resultado)
+        self.assertFalse(resultado.exitoso)
+        self.assertIn("no coincide", resultado.error)
+        self.assertEqual(self.hash_head(), hash_antes)
 
 
 if __name__ == "__main__":

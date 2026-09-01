@@ -10,6 +10,7 @@ Cobertura GG-PROMPT-042 §18 (A-G).
 
 import ast
 import queue
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -326,6 +327,9 @@ def _aplicacion_base():
     aplicacion.servicio_reservas = None
     aplicacion.protector_reservas = None
     aplicacion.servicio_git_protegido = None
+    aplicacion.servicio_validacion_contenido = (
+        principal.ServicioValidacionContenidoOracle()
+    )
     aplicacion.servicio_git = ServicioGitFalso()
     aplicacion.servicio_configuracion = ConfiguracionFalsa(
         SimpleNamespace(
@@ -2272,6 +2276,165 @@ class TestV11RutaSqlGUI(unittest.TestCase):
         self.assertEqual(clave.tipo, "PROCEDURE")
         self.assertEqual(clave.nombre, "PR_CERRAR")
         self.assertEqual(clave.canonica(), "PROCEDURE|PR_CERRAR")
+
+
+# =====================================================================
+# V1.2 (GG-PROMPT-055): validación de contenido SQL <-> archivo en GUI
+# =====================================================================
+
+
+class TestValidacionContenidoGUI(_BaseModoEquipo):
+    """
+    GG-PROMPT-055 15/21.5: la consulta pedagogica muestra la
+    identidad por ruta, la identidad detectada en SQL y el
+    resultado de la validacion; NO renombra, NO mueve y NO
+    reescribe nada.
+    """
+
+    def _preparar_archivo(self, contenido):
+        self.temporal = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporal.cleanup)
+
+        self.aplicacion.ruta_repositorio = self.temporal.name
+
+        carpeta = Path(self.temporal.name) / "Paquetes"
+        carpeta.mkdir()
+
+        archivo = carpeta / "FINI004.pls"
+        archivo.write_bytes(contenido)
+
+        return archivo
+
+    def test_coincidencia_muestra_identidades_y_validacion(self):
+        self._preparar_archivo(
+            b"CREATE OR REPLACE PACKAGE FINI004 IS END;\n"
+        )
+
+        resumen = (
+            self.aplicacion._resumen_validacion_contenido_objeto(
+                "Paquetes/FINI004.pls", CLAVE_FINI004
+            )
+        )
+
+        self.assertIn("Ruta:\nPaquetes/FINI004.pls", resumen)
+        self.assertIn(
+            "Identidad por ruta:\nPACKAGE|FINI004", resumen
+        )
+        self.assertIn(
+            "Identidad detectada en SQL:\nPACKAGE|FINI004", resumen
+        )
+        self.assertIn("Validación:\nCorrecta", resumen)
+
+    def test_contradaccion_nombre_explicada_sin_acciones(self):
+        self._preparar_archivo(
+            b"CREATE OR REPLACE PACKAGE FINI005 IS END;\n"
+        )
+
+        resumen = (
+            self.aplicacion._resumen_validacion_contenido_objeto(
+                "Paquetes/FINI004.pls", CLAVE_FINI004
+            )
+        )
+
+        self.assertIn(
+            "Identidad detectada en SQL:\nPACKAGE|FINI005",
+            resumen,
+        )
+        self.assertIn(
+            "El nombre del archivo no coincide con el objeto "
+            "declarado.",
+            resumen,
+        )
+
+    def test_no_verificable_mensaje_pedagogico(self):
+        self._preparar_archivo(b"SELECT 1 FROM DUAL;\n")
+
+        resumen = (
+            self.aplicacion._resumen_validacion_contenido_objeto(
+                "Paquetes/FINI004.pls", CLAVE_FINI004
+            )
+        )
+
+        self.assertIn(
+            "No se pudo verificar de forma segura el objeto "
+            "declarado en el archivo.",
+            resumen,
+        )
+
+    def test_archivo_ausente_no_muestra_validacion(self):
+        vacia = tempfile.TemporaryDirectory()
+        self.addCleanup(vacia.cleanup)
+
+        self.aplicacion.ruta_repositorio = vacia.name
+
+        resumen = (
+            self.aplicacion._resumen_validacion_contenido_objeto(
+                "Paquetes/FINI004.pls", CLAVE_FINI004
+            )
+        )
+
+        self.assertIsNone(resumen)
+
+    def test_resolver_clave_muestra_dialogo_pedagogico(self):
+        self._preparar_archivo(
+            b"CREATE OR REPLACE PACKAGE FINI004 IS END;\n"
+        )
+
+        self.aplicacion.modo_equipo_estado = "listo"
+        self.aplicacion.modo_equipo_mensaje = ""
+        self.aplicacion.resolvedor_oracle = ServicioObjetosOracle(
+            _manifiesto()
+        )
+        self.aplicacion.variable_modo_equipo_ruta_objeto = (
+            VariableFalsa("Paquetes/FINI004.pls")
+        )
+        self.aplicacion.variable_modo_equipo_clave = VariableFalsa("")
+
+        clave = self.aplicacion._resolver_clave_objeto_desde_gui()
+
+        self.assertEqual(clave, CLAVE_FINI004)
+        self.mocks_messagebox["showinfo"].assert_called()
+
+        args, kwargs = (
+            self.mocks_messagebox["showinfo"].call_args
+        )
+
+        texto = (
+            args[1] if len(args) > 1 else kwargs.get("message", "")
+        )
+
+        self.assertIn("Identidad por ruta", texto)
+        self.assertIn("Identidad detectada en SQL", texto)
+
+    def test_validacion_es_solo_lectura(self):
+        """Contradiccion incluida: el archivo NO se toca, NO se
+        renombra, NO se mueve y NO se reescribe."""
+
+        archivo = self._preparar_archivo(
+            b"CREATE OR REPLACE PACKAGE FINI005 IS END;\n"
+        )
+
+        contenido_antes = archivo.read_bytes()
+        listado_antes = sorted(
+            elemento.name
+            for elemento in archivo.parent.iterdir()
+        )
+
+        resumen = (
+            self.aplicacion._resumen_validacion_contenido_objeto(
+                "Paquetes/FINI004.pls", CLAVE_FINI004
+            )
+        )
+
+        self.assertIsNotNone(resumen)
+        self.assertEqual(archivo.read_bytes(), contenido_antes)
+        self.assertEqual(
+            sorted(
+                elemento.name
+                for elemento in archivo.parent.iterdir()
+            ),
+            listado_antes,
+        )
 
 
 if __name__ == "__main__":
