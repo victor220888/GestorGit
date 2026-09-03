@@ -33,3 +33,10 @@ IDENTITY.md
 SOUL.md
 TOOLS.md
 USER.md
+
+# Archivos administrativos locales del flujo de trabajo
+.zcode/
+CONTINUIDAD_CHATGPT.md
+GestorGit_plan_continuidad_y_modo_equipo.md
+PropuestaTecnica.html
+seguimiento_prompts/

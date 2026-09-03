@@ -161,6 +161,21 @@ debe declararse de forma explícita en el prompt y, cuando implique una acción
 Git de escritura o remota, requerir autorización expresa del usuario.
 Esta regla no limita los comandos Git de solo lectura usados para auditoría.
 
+### Staging selectivo ya protegido por GestorGit
+
+La auditoría previa de solo lectura del conjunto previsto permanece.
+Cuando el staging selectivo se hace íntegramente desde GestorGit sobre
+rutas previamente auditadas, sin cambios posteriores ni anomalías, NO se
+pide por defecto otra auditoría separada del staged set: la confirmación
+del usuario de que GestorGit preparó las rutas autorizadas habilita el
+checkpoint de autorización de commit. La auditoría separada del staged set
+se mantiene cuando: el staging se hizo por CLI u otra herramienta; existe
+recuperación/diagnóstico; el estado reportado contradice lo esperado; hubo
+cambios posteriores a la auditoría o al staging; cambió la lógica de
+staging/protección de GestorGit y aún requiere revalidación; el prompt la
+exige expresamente; o ChatGPT/agente detecta incertidumbre material.
+La auditoría postcommit sigue siendo el checkpoint normal.
+
 ## Reglas funcionales que no deben degradarse
 
 - Pull únicamente con `--ff-only`.

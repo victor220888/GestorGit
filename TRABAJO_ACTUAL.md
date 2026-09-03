@@ -14,16 +14,16 @@ defecto.
 
 Git real manda siempre.
 
-Snapshot de inicio de GG-PROMPT-055:
+Snapshot de inicio de GG-PROMPT-057:
 
 ```text
-HEAD -> e706061 Amplía tipos Oracle en Modo Equipo V1.1
-HEAD completo -> e7060619c3f8d37fc735a30104300f3c435edb7e
+HEAD -> e606a6ae Valida contenido Oracle en Modo Equipo V1.2
+HEAD completo -> e606a6aeeb4aef330b3b245bb4599c1964558352
 rama -> master
 staging -> vacío
 .git/index.lock: inexistente
-ahead -> 19 respecto de origin/master local conocido
-Push -> NO autorizado
+ahead -> 20 respecto de origin/master local conocido
+Push -> NO autorizado / NO ejecutado
 ```
 
 Estos datos son un snapshot; verificar Git de nuevo al iniciar cada tarea.
@@ -42,8 +42,30 @@ GG-PROMPT-054 -> CIERRE GIT INTEGRAL V1.1, ACEPTADO (commit e706061)
 GG-PROMPT-055 -> ACEPTADO CON REV2
 GG-PROMPT-055-REV1 -> NO ACEPTADO; corregido por REV2
 GG-PROMPT-055-REV2 -> ACEPTADO
-Modo Equipo Oracle V1.2 -> IMPLEMENTACIÓN ACEPTADA; PENDIENTE CIERRE GIT
-Push -> NO autorizado
+GG-PROMPT-056 -> ACEPTADO (commit e606a6ae)
+Modo Equipo Oracle V1.2 -> CERRADA Y COMMITTEADA (commit e606a6ae)
+suite V1.2 -> 1227/1227 OK
+GG-PROMPT-057 -> cierre documental postcommit; cambios documentales
+             pendientes del siguiente commit natural
+GG-PROMPT-058 -> CERRADO POR AUDITORÍA CHATGPT
+clasificación 058 -> B. NO PREPARABLE TODAVÍA
+causa 058 -> working tree no limpio; administrativos untracked +
+             cambios documentales 057
+preparación local para publicación -> EN CURSO (GG-PROMPT-059)
+GG-PROMPT-060 -> ACEPTADO; pre-staging apto
+staging selectivo -> ejecutado por el propietario desde GestorGit
+GG-PROMPT-061 -> ACEPTADO; staged set exacto verificado
+decisión de método -> en adelante no se repite auditoría separada del
+                  staged set en el flujo normal cuando GestorGit hizo
+                  staging de un conjunto preauditado y no hay anomalías
+GG-PROMPT-062 -> ACEPTADO
+simplificación estable de método -> incorporada: no se repite auditoría
+                  separada del staged set en el flujo normal cuando
+                  GestorGit hizo staging de un conjunto preauditado y no
+                  hay anomalías; la auditoría postcommit sigue siendo el
+                  checkpoint normal
+commit -> NO autorizado / NO ejecutado
+Push -> NO autorizado / NO ejecutado
 ```
 
 Cierres registrados:
@@ -210,14 +232,21 @@ Ninguna autorización anterior se hereda automáticamente a una tarea nueva.
 
 ## Administrativos fuera del versionado
 
-Conocidos:
+Conocidos y formalmente excluidos del versionado mediante `.gitignore`
+desde GG-PROMPT-059:
 
 ```text
 .zcode/
 CONTINUIDAD_CHATGPT.md
 seguimiento_prompts/
 GestorGit_plan_continuidad_y_modo_equipo.md
+PropuestaTecnica.html
 ```
+
+GG-PROMPT-059 los registra con rutas concretas en el `.gitignore`
+versionado para que la política sea reproducible y visible en el
+repositorio: permanecen fuera del versionado y dejan de ensuciar el
+working tree, sin depender de estado oculto de una máquina.
 
 ## Resultado Bloque E (resumen, CERRADO Y COMMITTEADO en 0d8042d)
 
@@ -613,29 +642,50 @@ Evidencia REV2 (no constantes eternas):
 py_compile -> OK
 focal conjunta 4 módulos -> 360/360 OK
 suite completa -> 1227/1227 OK
+commit V1.2 -> e606a6aeeb4aef330b3b245bb4599c1964558352
+mensaje -> Valida contenido Oracle en Modo Equipo V1.2
+GG-PROMPT-056 -> ACEPTADO
 staging -> vacío
-commit V1.2 -> NO
-Push -> NO autorizado
+Push -> NO autorizado / NO ejecutado
 ```
 
 ## Próximo paso
 
 ```text
-CIERRE GIT INTEGRAL V1.2 (GG-PROMPT-056)
-staging -> vacío
-commit V1.2 -> NO
-Push -> NO autorizado
+Modo Equipo Oracle V1.2 -> CERRADA EN COMMIT LOCAL e606a6ae
+preparación local para publicación -> EN CURSO
+staging heredado (verificado por 061) -> .gitignore + README.md +
+    TRABAJO_ACTUAL.md (versión previa a 062)
+cambios unstaged de 062 -> AGENTS.md + CLAUDE.md +
+    METODO_TRABAJO_AGENTES.md + GUIA_TRABAJO_CON_AGENTES.md +
+    TRABAJO_ACTUAL.md
+siguiente paso -> el propietario prepara/reprepara desde GestorGit los
+    documentos modificados por 062; tras su confirmación, y si no hay
+    anomalías, se pasa directamente al checkpoint de autorización del
+    commit, sin auditoría separada del staged set
+commit -> NO autorizado / NO ejecutado
+Push -> NO autorizado / NO ejecutado
 ```
 
+El working tree todavía NO está limpio: el índice conserva el staging
+heredado verificado por 061 y quedan además cambios unstaged de 062 en
+cinco documentos. El propietario resolverá el staging/re-staging desde
+GestorGit como siguiente paso.
+
 GG-PROMPT-054 cerró el ciclo Git V1.1: commit e706061 (Amplía tipos Oracle
-en Modo Equipo V1.1) con suite 1111/1111 OK. GG-PROMPT-055 implementa la
+en Modo Equipo V1.1) con suite 1111/1111 OK. GG-PROMPT-055 implementó la
 segunda evidencia de identidad: el contenido CREATE... del archivo debe
 coincidir con la identidad TIPO|NOMBRE resuelta por la ruta, para
 Preparar, Actualizar preparados y Commit (este último contra el contenido
-exacto del índice, no del working tree). GG-PROMPT-055-REV1 cierra
-conservadoramente los 4 bloqueos de auditoría: q-quote, gramática
+exacto del índice, no del working tree). GG-PROMPT-055-REV2 cerró
+los 4 bloqueos de auditoría: q-quote, gramática
 positiva de modificadores, revalidación OID del commit y contrato
 fail-closed de contenido ausente.
+
+GG-PROMPT-056 cerró el ciclo Git V1.2: commit e606a6ae (Valida contenido
+Oracle en Modo Equipo V1.2) con suite 1227/1227 OK. GG-PROMPT-057 es el
+cierre documental postcommit; los cambios documentales quedan pendientes
+del siguiente commit natural.
 
 Catálogo V1.1 (V1.2 no añade tipos):
 

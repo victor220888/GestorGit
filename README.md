@@ -233,7 +233,7 @@ La ventana no ejecuta Git ni modifica el repositorio.
 ```text
 Publicar rama local V1 -> cerrada
 Modo Equipo Oracle V1.1 -> ampliación de tipos Oracle (PROCEDURE, FUNCTION, TABLE, VIEW, TRIGGER, SEQUENCE)
-Modo Equipo Oracle V1.2 -> validación de contenido SQL ↔ archivo (implementación auditada y aceptada; pendiente de cierre Git local)
+Modo Equipo Oracle V1.2 -> validación de contenido SQL ↔ archivo (cerrada en commit local e606a6ae)
 Bloque H (documentación/cierre de la V1) -> documental
 ```
 

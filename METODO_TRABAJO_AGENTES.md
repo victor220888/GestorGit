@@ -165,7 +165,9 @@ autorización explícita del usuario cuando aplique
         ↓
 usuario ejecuta staging selectivo desde GestorGit (lista exacta)
         ↓
-auditoría de solo lectura del staged set
+usuario confirma que GestorGit preparó las rutas autorizadas
+        ↓
+autorización explícita del commit cuando aplique
         ↓
 usuario crea UN commit local desde GestorGit
         ↓
@@ -179,6 +181,33 @@ continuar con la siguiente etapa
 El cierre documental postcommit NO genera por defecto un nuevo ciclo
 staging/commit/postcommit exclusivamente documental (regla de cierre
 documental no recursivo; ver invariantes).
+
+### Staging selectivo ya protegido por GestorGit
+
+En el flujo normal **no se exige una auditoría separada del staged set**
+antes del commit si:
+
+1. hubo auditoría pre-staging del conjunto previsto;
+2. el usuario hizo el staging íntegramente desde GestorGit;
+3. el usuario confirmó las rutas preparadas;
+4. no hubo cambios posteriores, anomalías ni incertidumbre material.
+
+La confirmación del usuario de que GestorGit preparó exactamente las rutas
+autorizadas satisface la verificación exacta del conjunto preparado exigida
+por los invariantes (sin faltantes ni extras).
+
+La auditoría del staged set sigue siendo obligatoria o recomendable cuando:
+
+- el staging se hizo por CLI, otra herramienta o fuera de GestorGit;
+- existe recuperación/diagnóstico;
+- el estado reportado contradice lo esperado;
+- hubo cambios posteriores a la auditoría previa o al staging;
+- cambió la lógica de staging/protección de GestorGit y aún requiere
+  revalidación;
+- el prompt la exige expresamente;
+- ChatGPT/agente detecta incertidumbre material.
+
+La auditoría postcommit sigue siendo el checkpoint normal.
 
 Invariantes que no se negocian:
 

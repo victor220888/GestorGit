@@ -55,12 +55,24 @@ local V1"):
 8. microcorrección documental precommit si la auditoría la pide
 9. cierre del bloque documental: auditoría previa de solo lectura →
    autorización explícita suya cuando aplique → USTED ejecuta el staging
-   selectivo desde GestorGit (lista exacta) → auditoría del staged set →
-   USTED crea UN commit local desde GestorGit → auditoría postcommit
+   selectivo desde GestorGit (lista exacta) → USTED confirma que GestorGit
+   preparó las rutas autorizadas → autorización de commit → USTED crea UN
+   commit local desde GestorGit → auditoría postcommit
 10. cierre documental postcommit
 11. continuar con la siguiente etapa; el cierre documental NO abre
     automáticamente otro ciclo Git solo para versionar el propio cierre
 ```
+
+Nota sobre la auditoría del staged set: en el flujo normal NO se exige una
+auditoría separada del staged set antes del commit cuando hubo auditoría
+pre-staging del conjunto previsto, USTED hizo el staging íntegramente desde
+GestorGit, confirmó las rutas preparadas y no hubo cambios ni anomalías
+posteriores. Esa auditoría se mantiene como checkpoint excepcional si el
+staging se hizo por CLI u otra herramienta, en recuperaciones/diagnósticos,
+ante contradicciones entre lo reportado y lo esperado, ante cambios
+posteriores, si cambió la lógica de staging/protección de GestorGit
+pendiente de revalidación, o si el prompt/ChatGPT/agente lo exige por
+incertidumbre material.
 
 ## Reglas de oro que usted debe hacer valer
 
