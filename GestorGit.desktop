@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GestorGit
+Comment=Aplicacion visual para aprender y usar Git
+Exec=/home/victor/GestorGit/iniciar_gestorgit.sh
+Icon=git
+Terminal=false
+Categories=Development;
+StartupNotify=true
