@@ -2,7 +2,7 @@
 Type=Application
 Name=GestorGit
 Comment=Aplicacion visual para aprender y usar Git
-Exec=/home/victor/GestorGit/iniciar_gestorgit.sh
+Exec=/home/victor/Proyectos/GestorGit/iniciar_gestorgit.sh
 Icon=folder-git
 Terminal=false
 Categories=Development;
